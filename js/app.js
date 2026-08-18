@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=21.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=21.0';
-import { SupabaseBackend } from './supabase-backend.js?v=23.3';
+import { SupabaseBackend } from './supabase-backend.js?v=24.0';
 
 class ValidaFlowApp {
   constructor() {
@@ -33,6 +33,8 @@ class ValidaFlowApp {
     this.currentScope = null;
     this.pendingStaffRole = 'supervisor';
     this.adminData = { countries: [], studies: [], supervisors: [], assignments: [] };
+    this.validatorHistoryRows = [];
+    this.validatorHistoryLoaded = false;
 
     // Sub-Pestaña activa en Métricas & Reportes: 'operational' | 'executive'
     this.reportsSubtab = 'operational';
@@ -107,6 +109,7 @@ class ValidaFlowApp {
     this.initReportsSubtabs();
     this.initStudyFilter();
     this.initDailyReportsModule();
+    this.initValidatorHistoryModule();
     this.validatorUI = new ValidatorUI(this);
     this.validatorUI.populateQuickSelect(this.validators);
 
@@ -785,6 +788,7 @@ class ValidaFlowApp {
     this.saveState();
 
     this.validatorUI?.populateQuickSelect(this.validators);
+    this.populateHistoryValidatorFilter();
     this.renderAdminView();
     this.renderReportsView();
     this.renderQueriesView();
@@ -1614,7 +1618,7 @@ class ValidaFlowApp {
     modal?.classList.remove('hidden');
   }
 
-  confirmStudyUpload(selectedStudy) {
+  async confirmStudyUpload(selectedStudy) {
     const studyName = this.currentScope?.study?.name || selectedStudy || document.getElementById('study-custom-input')?.value.trim() || this.currentProject || 'Chile';
     const opDate = document.getElementById('study-operation-date')?.value || new Date().toISOString().split('T')[0];
     const modal = document.getElementById('modal-select-study');
@@ -1654,6 +1658,25 @@ class ValidaFlowApp {
     const projectVals = this.getValidatorsForCurrentProject();
     if (projectVals.length > 0) {
       result.audits = Distributor.distribute(result.audits, projectVals);
+    }
+
+    if (this.backend.configured && this.isSupervisor) {
+      try {
+        await this.backend.importDailyBatch({
+          audits: result.audits,
+          module: this.currentModule,
+          operationDate: opDate,
+          fileName: this.pendingUpload.fileName,
+          validators: this.validators
+        });
+        this.pendingUpload = null;
+        await this.refreshFromBackend();
+        this.showToast(`¡${result.audits.length} auditorías guardadas como una nueva jornada para ${studyName} (${opDate})!`, 'success');
+      } catch (error) {
+        console.error('Error importando la jornada en Supabase:', error);
+        this.showToast(error.message || 'No fue posible guardar la nueva jornada en Supabase.', 'error');
+      }
+      return;
     }
 
     // Acumular automáticamente día por día al historial existente (con deduplicación por ID)
@@ -1854,11 +1877,11 @@ class ValidaFlowApp {
   async clearCurrentStudyAudits() {
     const projectAudits = this.getAuditsForCurrentProject();
     if (projectAudits.length === 0) {
-      this.showToast(`No hay auditorías cargadas en el estudio ${this.currentProject} para eliminar.`, 'info');
+      this.showToast(`No hay una jornada activa en el estudio ${this.currentProject} para archivar.`, 'info');
       return;
     }
 
-    const confirmMsg = `¿Estás seguro de que deseas eliminar las ${projectAudits.length} auditorías del estudio "${this.currentProject}"?\n\nEsta acción liberará este estudio para que puedas volver a subir el archivo correcto. Los demás estudios no se verán afectados.`;
+    const confirmMsg = `¿Deseas archivar la jornada activa con ${projectAudits.length} auditorías del estudio "${this.currentProject}"?\n\nDejará de aparecer en la operación diaria, pero seguirá disponible en el histórico por validador.`;
     if (!confirm(confirmMsg)) {
       return;
     }
@@ -1868,7 +1891,7 @@ class ValidaFlowApp {
       try {
         await this.backend.deleteAudits(this.currentModule, deletedStudy);
       } catch (error) {
-        this.showToast(error.message || 'No fue posible eliminar las auditorías en Supabase.', 'error');
+        this.showToast(error.message || 'No fue posible archivar la jornada en Supabase.', 'error');
         return;
       }
     }
@@ -1887,16 +1910,16 @@ class ValidaFlowApp {
     this.renderQueriesView();
     this.populateLookupQuickTags();
 
-    this.showToast(`Auditorías de ${deletedStudy} eliminadas correctamente. Ahora puedes cargar el archivo correcto.`, 'success');
+    this.showToast(`Jornada de ${deletedStudy} archivada. El histórico permanece disponible.`, 'success');
   }
 
   async clearAllDatabase() {
     if (this.audits.length === 0) {
-      this.showToast('La base de datos ya está vacía.', 'info');
+      this.showToast('Este módulo no tiene una jornada activa.', 'info');
       return;
     }
 
-    const confirmMsg = `⚠️ ¿Deseas vaciar TODAS las auditorías de este módulo (${this.audits.length} registros en total)?\n\nEsta acción reseteará este módulo a un estado limpio.`;
+    const confirmMsg = `¿Deseas archivar la operación activa de este módulo (${this.audits.length} auditorías)?\n\nLos registros no se borrarán y seguirán disponibles en el histórico.`;
     if (!confirm(confirmMsg)) {
       return;
     }
@@ -1905,7 +1928,7 @@ class ValidaFlowApp {
       try {
         await this.backend.deleteAudits(this.currentModule);
       } catch (error) {
-        this.showToast(error.message || 'No fue posible vaciar el módulo en Supabase.', 'error');
+        this.showToast(error.message || 'No fue posible archivar el módulo en Supabase.', 'error');
         return;
       }
     }
@@ -2257,26 +2280,27 @@ class ValidaFlowApp {
     const val = this.validators.find(v => v.id === id);
     if (!val) return;
 
-    if (confirm(`¿Estás seguro de eliminar al validador "${val.name}"? Las auditorías asignadas quedarán sin asignar.`)) {
+    const activeAssignments = this.audits.filter(a => a.assignedValidatorId === id).length;
+    if (activeAssignments > 0) {
+      this.showToast(`Antes de desactivar a ${val.name}, reasigna o archiva sus ${activeAssignments} auditorías de la jornada activa.`, 'warning');
+      return;
+    }
+
+    if (confirm(`¿Deseas desactivar al validador "${val.name}"? Su histórico y sus auditorías anteriores se conservarán.`)) {
       if (this.backend.configured && this.isSupervisor) {
         try {
           await this.backend.deleteValidator(id);
         } catch (error) {
-          this.showToast(error.message || 'No fue posible eliminar el validador en Supabase.', 'error');
+          this.showToast(error.message || 'No fue posible desactivar el validador en Supabase.', 'error');
           return;
         }
       }
       this.validators = this.validators.filter(v => v.id !== id);
-      this.audits.forEach(a => {
-        if (a.assignedValidatorId === id) {
-          a.assignedValidatorId = null;
-        }
-      });
       this.syncStateAcrossTabs();
       this.renderAdminView();
       this.renderAlertsView();
       this.validatorUI?.populateQuickSelect(this.validators);
-      this.showToast(`Validador ${val.name} eliminado.`, 'info');
+      this.showToast(`Validador ${val.name} desactivado. Su histórico se conservó.`, 'info');
     }
   }
 
@@ -3500,6 +3524,236 @@ class ValidaFlowApp {
     this.renderDailyReportsView();
 
     this.pendingQueryToResolve = null;
+  }
+
+  // ==========================================
+  // HISTÓRICO SEMANAL AGREGADO POR VALIDADOR
+  // ==========================================
+  toLocalDateInputValue(date) {
+    const value = date instanceof Date ? date : new Date(date);
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+
+  initValidatorHistoryModule() {
+    const dateFrom = document.getElementById('history-date-from');
+    const dateTo = document.getElementById('history-date-to');
+    const moduleFilter = document.getElementById('history-module-filter');
+    const today = new Date();
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - 6);
+
+    if (dateFrom && !dateFrom.value) dateFrom.value = this.toLocalDateInputValue(weekStart);
+    if (dateTo && !dateTo.value) dateTo.value = this.toLocalDateInputValue(today);
+    if (moduleFilter) moduleFilter.value = this.currentModule || '';
+
+    document.getElementById('btn-load-validator-history')?.addEventListener('click', () => {
+      this.loadValidatorHistory();
+    });
+
+    this.populateHistoryValidatorFilter();
+  }
+
+  populateHistoryValidatorFilter() {
+    const select = document.getElementById('history-validator-filter');
+    if (!select) return;
+    const selected = select.value;
+    const options = new Map();
+
+    (this.validators || []).forEach(validator => {
+      options.set(validator.id, { id: validator.id, code: validator.code, name: validator.name });
+    });
+    (this.validatorHistoryRows || []).forEach(row => {
+      options.set(row.validatorId, {
+        id: row.validatorId,
+        code: row.validatorCode,
+        name: row.validatorName
+      });
+    });
+
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    }[char]));
+    const ordered = [...options.values()].sort((a, b) => a.name.localeCompare(b.name, 'es'));
+    select.innerHTML = '<option value="">Todos los validadores</option>' + ordered.map(item =>
+      `<option value="${escapeHtml(item.id)}">${escapeHtml(item.code)} · ${escapeHtml(item.name)}</option>`
+    ).join('');
+    if ([...select.options].some(option => option.value === selected)) select.value = selected;
+  }
+
+  async loadValidatorHistory() {
+    if (!this.backend.configured || !this.isSupervisor) {
+      this.showToast('El histórico en la nube está disponible para supervisores autenticados.', 'warning');
+      return;
+    }
+
+    const dateFrom = document.getElementById('history-date-from')?.value || '';
+    const dateTo = document.getElementById('history-date-to')?.value || '';
+    const validatorId = document.getElementById('history-validator-filter')?.value || null;
+    const module = document.getElementById('history-module-filter')?.value || null;
+    const fromDate = new Date(`${dateFrom}T00:00:00`);
+    const toDate = new Date(`${dateTo}T00:00:00`);
+
+    if (!dateFrom || !dateTo || Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime()) || fromDate > toDate) {
+      this.showToast('Selecciona un rango de fechas válido.', 'warning');
+      return;
+    }
+
+    const rangeDays = Math.floor((toDate - fromDate) / 86400000);
+    if (rangeDays > 366) {
+      this.showToast('Para cuidar el rendimiento, consulta periodos de máximo 366 días.', 'warning');
+      return;
+    }
+
+    const button = document.getElementById('btn-load-validator-history');
+    const previousLabel = button?.textContent;
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Consultando…';
+    }
+
+    try {
+      this.validatorHistoryRows = await this.backend.loadValidatorHistory({
+        dateFrom,
+        dateTo,
+        module,
+        validatorId
+      });
+      this.validatorHistoryLoaded = true;
+      this.populateHistoryValidatorFilter();
+      this.renderValidatorHistory(dateFrom, dateTo);
+      this.showToast(`Histórico consultado: ${dateFrom} a ${dateTo}.`, 'success');
+    } catch (error) {
+      console.error('Error consultando el histórico:', error);
+      this.showToast(error.message || 'No fue posible consultar el histórico.', 'error');
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = previousLabel || 'Consultar histórico';
+      }
+    }
+  }
+
+  renderValidatorHistory(dateFrom = '', dateTo = '') {
+    const container = document.getElementById('validator-history-results');
+    if (!container || !this.validatorHistoryLoaded) return;
+
+    const rows = this.validatorHistoryRows || [];
+    const groups = new Map();
+    rows.forEach(row => {
+      if (!groups.has(row.validatorId)) {
+        groups.set(row.validatorId, {
+          id: row.validatorId,
+          code: row.validatorCode,
+          name: row.validatorName,
+          total: 0,
+          completed: 0,
+          inProgress: 0,
+          pending: 0,
+          timed: 0,
+          duration: 0,
+          days: new Set(),
+          lastActivityAt: null,
+          rows: []
+        });
+      }
+      const group = groups.get(row.validatorId);
+      group.total += row.totalAudits;
+      group.completed += row.completedAudits;
+      group.inProgress += row.inProgressAudits;
+      group.pending += row.pendingAudits;
+      group.timed += row.timedAudits;
+      group.duration += row.totalDurationSeconds;
+      group.days.add(row.operationDate);
+      group.rows.push(row);
+      if (row.lastActivityAt && (!group.lastActivityAt || row.lastActivityAt > group.lastActivityAt)) {
+        group.lastActivityAt = row.lastActivityAt;
+      }
+    });
+
+    const history = [...groups.values()].sort((a, b) => b.completed - a.completed || a.name.localeCompare(b.name, 'es'));
+    const totalAudits = history.reduce((sum, item) => sum + item.total, 0);
+    const totalCompleted = history.reduce((sum, item) => sum + item.completed, 0);
+    const timedAudits = history.reduce((sum, item) => sum + item.timed, 0);
+    const totalDuration = history.reduce((sum, item) => sum + item.duration, 0);
+    const averageDuration = timedAudits > 0 ? Math.round(totalDuration / timedAudits) : 0;
+
+    const setText = (id, value) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value;
+    };
+    setText('history-stat-validators', history.length);
+    setText('history-stat-total', totalAudits);
+    setText('history-stat-completed', totalCompleted);
+    setText('history-stat-average', `${averageDuration}s`);
+    setText('history-range-badge', dateFrom && dateTo ? `${dateFrom} → ${dateTo}` : 'Consulta histórica');
+
+    if (!history.length) {
+      container.innerHTML = `
+        <div class="history-empty-state">
+          <span>🔎</span>
+          <p>No se encontraron auditorías para los filtros seleccionados.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    }[char]));
+    const formatActivity = value => value
+      ? new Date(value).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
+      : 'Sin actividad';
+
+    container.innerHTML = `
+      <table class="validator-history-table">
+        <thead>
+          <tr>
+            <th>Validador</th>
+            <th>Jornadas</th>
+            <th>Asignadas</th>
+            <th>Gestionadas</th>
+            <th>Pendientes</th>
+            <th>Avance</th>
+            <th>Tiempo prom.</th>
+            <th>Última gestión</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${history.map(item => {
+            const progress = item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0;
+            const average = item.timed > 0 ? Math.round(item.duration / item.timed) : 0;
+            const dailyRows = [...item.rows].sort((a, b) => b.operationDate.localeCompare(a.operationDate));
+            const daysDetail = dailyRows.map(day => {
+              const label = day.module === 'blocking' ? 'Bloqueantes' : 'Smart';
+              return `<span>${escapeHtml(day.operationDate)} · ${label}: ${day.completedAudits}/${day.totalAudits} gestionadas</span>`;
+            }).join('');
+            return `
+              <tr>
+                <td class="history-validator-cell">
+                  <strong>${escapeHtml(item.name)}</strong>
+                  <code>${escapeHtml(item.code)}</code>
+                </td>
+                <td>
+                  <details class="history-days-details">
+                    <summary>${item.days.size} día${item.days.size !== 1 ? 's' : ''}</summary>
+                    <div class="history-days-list">${daysDetail}</div>
+                  </details>
+                </td>
+                <td>${item.total}</td>
+                <td><strong class="text-success">${item.completed}</strong></td>
+                <td>${item.pending + item.inProgress}</td>
+                <td class="history-progress-cell">
+                  <strong>${progress}%</strong>
+                  <div class="history-progress-track"><div class="history-progress-fill" style="width:${progress}%"></div></div>
+                </td>
+                <td>${average}s</td>
+                <td>${escapeHtml(formatActivity(item.lastActivityAt))}</td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
   }
 
   // ==========================================

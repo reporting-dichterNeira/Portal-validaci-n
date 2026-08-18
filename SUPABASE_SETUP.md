@@ -10,8 +10,10 @@ La aplicación usa Supabase para que supervisores y validadores trabajen desde e
 - `validators`: catálogo y códigos únicos de validadores.
 - `validator_sessions`: vincula de forma privada una sesión anónima con el código ingresado.
 - `audits`: conserva la auditoría importada, su asignación, estado y resultados.
+- `upload_batches`: registra cada Excel como una jornada independiente; una base nueva archiva la anterior sin borrarla.
 - RLS: el administrador gestiona catálogos y cuentas; cada supervisor sólo ve su estudio/país; cada validador sólo ve sus auditorías.
 - `save_audit_progress`: RPC limitada para que un validador sólo cambie el progreso de una auditoría que tiene asignada.
+- `get_validator_history`: genera en PostgreSQL el resumen por fecha y validador, sin enviar al navegador los JSON completos.
 - Realtime: los cambios en `audits` actualizan el avance en los demás equipos sin recargar.
 
 ## Configuración del proyecto
@@ -42,8 +44,18 @@ La aplicación usa Supabase para que supervisores y validadores trabajen desde e
 2. El administrador crea cada supervisor, su contraseña temporal y la asignación de estudio/país. La función `manage-supervisors` conserva la clave privilegiada exclusivamente en el servidor.
 3. El supervisor inicia sesión con su usuario y contraseña; sólo recibe el alcance asignado.
 4. Carga el Excel y ejecuta la repartición. La carga se guarda en lotes en Supabase.
-5. El validador ingresa su código único desde otro equipo.
-6. Sólo recibe sus auditorías. Al abrir, guardar o completar una auditoría, el avance se persiste.
-7. El panel del supervisor recibe el cambio por Realtime y recalcula el avance del validador.
+5. Cada carga diaria crea un lote nuevo. El lote anterior deja de aparecer en la operación activa, pero permanece en el histórico.
+6. El validador ingresa su código único desde otro equipo.
+7. Sólo recibe las auditorías del lote activo. Al abrir, guardar o completar una auditoría, el avance se persiste.
+8. El panel del supervisor recibe el cambio por Realtime y recalcula el avance del validador.
+9. En Reportes > Histórico semanal por validador se consulta cualquier rango de hasta 366 días.
+
+## Uso eficiente del plan gratuito
+
+- No se crea una fila de bitácora por cada clic: se conserva una fila por auditoría y jornada.
+- Los reportes históricos se agregan en la base de datos y devuelven sólo totales diarios por validador.
+- La aplicación consulta únicamente el lote activo durante la operación normal.
+- Realtime escucha cambios de progreso y una sola activación de lote, evitando refrescos por cada fila histórica.
+- Las jornadas y los validadores se archivan o desactivan; no se duplican resultados en tablas auxiliares.
 
 Los códigos iniciales se generan durante la migración y se muestran al supervisor en la tabla de validadores. Los nuevos códigos contienen ocho caracteres aleatorios además del prefijo `VAL-`.

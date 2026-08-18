@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
-import { SUPABASE_CONFIG } from './supabase-config.js?v=23.2';
+import { SUPABASE_CONFIG } from './supabase-config.js?v=24.0';
 
 const CONFIGURED = Boolean(
   SUPABASE_CONFIG.url &&
@@ -45,6 +45,8 @@ function mapAudit(row) {
     startedAt: row.started_at,
     completedAt: row.completed_at,
     durationSeconds: row.duration_seconds,
+    _rowId: row.id || null,
+    _batchId: row.batch_id || null,
     _module: row.module,
     _studyId: row.study_id || null,
     _countryId: row.country_id || null,
@@ -52,7 +54,7 @@ function mapAudit(row) {
   };
 }
 
-function auditToRow(audit, module, scope) {
+function auditToRow(audit, module, scope, batchId = null) {
   const payload = { ...audit };
   delete payload.validationResults;
   delete payload.validationStatus;
@@ -62,10 +64,13 @@ function auditToRow(audit, module, scope) {
   delete payload.durationSeconds;
   delete payload.fechaValidacion;
   delete payload._module;
+  delete payload._rowId;
+  delete payload._batchId;
   delete payload._updatedAt;
 
   return {
     module,
+    batch_id: batchId || audit._batchId || null,
     external_id: String(audit.id).trim(),
     study: scope?.study?.name || audit.estudio || audit.modelo || audit.canal || 'Sin estudio',
     study_id: scope?.study?.id || audit._studyId || null,
@@ -215,12 +220,23 @@ export class SupabaseBackend {
 
   async loadState() {
     this.ensureConfigured();
-    const [validatorsResult, auditsResult] = await Promise.all([
+    const [validatorsResult, batchesResult] = await Promise.all([
       this.client.from('validators').select('id, code, name, email, study, study_id, country_id').eq('is_active', true).order('name'),
-      this.client.from('audits').select('*').order('created_at', { ascending: true })
+      this.client.from('upload_batches').select('id').eq('status', 'active')
     ]);
 
     if (validatorsResult.error) throw validatorsResult.error;
+    if (batchesResult.error) throw batchesResult.error;
+
+    const activeBatchIds = (batchesResult.data || []).map(batch => batch.id);
+    const auditsResult = activeBatchIds.length
+      ? await this.client
+          .from('audits')
+          .select('*')
+          .in('batch_id', activeBatchIds)
+          .order('created_at', { ascending: true })
+      : { data: [], error: null };
+
     if (auditsResult.error) throw auditsResult.error;
 
     const smartAudits = [];
@@ -255,15 +271,54 @@ export class SupabaseBackend {
     if (error) throw error;
   }
 
-  async upsertAudits(audits, module) {
+  async upsertAudits(audits, module, batchId = null) {
     this.ensureConfigured();
     if (!audits?.length) return;
-    const rows = audits.map(audit => auditToRow(audit, module, this.currentScope));
+    const rows = audits
+      .map(audit => auditToRow(audit, module, this.currentScope, batchId))
+      .filter(row => row.batch_id);
+    if (!rows.length) return;
     for (let i = 0; i < rows.length; i += 500) {
       const { error } = await this.client
         .from('audits')
-        .upsert(rows.slice(i, i + 500), { onConflict: 'module,external_id' });
+        .upsert(rows.slice(i, i + 500), { onConflict: 'batch_id,external_id' });
       if (error) throw error;
+    }
+  }
+
+  async importDailyBatch({ audits, module, operationDate, fileName, validators }) {
+    this.ensureConfigured();
+    await this.upsertValidators(validators || []);
+
+    const { data: created, error: createError } = await this.client.rpc('create_upload_batch', {
+      p_module: module,
+      p_operation_date: cleanDate(operationDate),
+      p_source_filename: String(fileName || ''),
+      p_row_count: audits?.length || 0
+    });
+    if (createError) throw createError;
+
+    const batch = Array.isArray(created) ? created[0] : created;
+    if (!batch?.id) throw new Error('Supabase no devolvió el lote de importación.');
+
+    try {
+      (audits || []).forEach(audit => {
+        audit._batchId = batch.id;
+      });
+      await this.upsertAudits(audits, module, batch.id);
+
+      const { data: activated, error: activateError } = await this.client.rpc('activate_upload_batch', {
+        p_batch_id: batch.id
+      });
+      if (activateError) throw activateError;
+      return Array.isArray(activated) ? activated[0] : activated;
+    } catch (error) {
+      await this.client
+        .from('upload_batches')
+        .update({ status: 'failed' })
+        .eq('id', batch.id)
+        .eq('status', 'draft');
+      throw error;
     }
   }
 
@@ -277,31 +332,64 @@ export class SupabaseBackend {
 
   async saveAuditProgress(audit, module) {
     this.ensureConfigured();
-    const { error } = await this.client.rpc('save_audit_progress', {
-      p_module: module,
-      p_external_id: String(audit.id),
+    const progress = {
       p_status: audit.validationStatus || 'pendiente',
       p_validation_results: audit.validationResults || {},
       p_started_at: parseDate(audit.startedAt),
       p_completed_at: parseDate(audit.completedAt),
       p_duration_seconds: Number.isFinite(audit.durationSeconds) ? audit.durationSeconds : null,
       p_validation_date: cleanDate(audit.fechaValidacion)
-    });
+    };
+    const request = audit._rowId
+      ? this.client.rpc('save_audit_progress_v2', { p_audit_id: audit._rowId, ...progress })
+      : this.client.rpc('save_audit_progress', {
+          p_module: module,
+          p_external_id: String(audit.id),
+          ...progress
+        });
+    const { error } = await request;
     if (error) throw error;
   }
 
   async deleteValidator(id) {
     this.ensureConfigured();
-    const { error } = await this.client.from('validators').delete().eq('id', id);
+    const { error } = await this.client.from('validators').update({ is_active: false }).eq('id', id);
     if (error) throw error;
   }
 
   async deleteAudits(module, study = null) {
     this.ensureConfigured();
-    let query = this.client.from('audits').delete().eq('module', module);
-    if (study) query = query.eq('study', study);
-    const { error } = await query;
+    const { error } = await this.client.rpc('archive_active_batches', {
+      p_module: module
+    });
     if (error) throw error;
+  }
+
+  async loadValidatorHistory({ dateFrom, dateTo, module = null, validatorId = null }) {
+    this.ensureConfigured();
+    const { data, error } = await this.client.rpc('get_validator_history', {
+      p_date_from: cleanDate(dateFrom),
+      p_date_to: cleanDate(dateTo),
+      p_module: module || null,
+      p_validator_id: validatorId || null
+    });
+    if (error) throw error;
+    return (data || []).map(row => ({
+      validatorId: row.validator_id,
+      validatorCode: row.validator_code,
+      validatorName: row.validator_name,
+      operationDate: row.operation_date,
+      module: row.module,
+      totalAudits: Number(row.total_audits || 0),
+      completedAudits: Number(row.completed_audits || 0),
+      inProgressAudits: Number(row.in_progress_audits || 0),
+      pendingAudits: Number(row.pending_audits || 0),
+      timedAudits: Number(row.timed_audits || 0),
+      totalDurationSeconds: Number(row.total_duration_seconds || 0),
+      averageDurationSeconds: Number(row.average_duration_seconds || 0),
+      firstActivityAt: row.first_activity_at,
+      lastActivityAt: row.last_activity_at
+    }));
   }
 
   async loadAdministration() {
@@ -369,6 +457,12 @@ export class SupabaseBackend {
         event: '*',
         schema: 'public',
         table: 'audits'
+      }, payload => onChange(payload))
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'upload_batches',
+        filter: 'status=eq.active'
       }, payload => onChange(payload))
       .subscribe();
   }
