@@ -84,16 +84,35 @@ export class ValidatorUI {
     });
   }
 
-  loginWithCode(code) {
+  async loginWithCode(code) {
     if (!code) {
       this.app.showToast('Por favor ingresa un código de validador.', 'warning');
       return;
     }
 
-    const validator = this.app.validators.find(v => v.code.toUpperCase() === code.toUpperCase());
-    if (!validator) {
-      this.app.showToast(`Código "${code}" no encontrado. Verifica en la pestaña de Administrador.`, 'error');
+    let validator;
+    try {
+      if (this.btnValidatorLogin) this.btnValidatorLogin.disabled = true;
+      validator = this.app.backend.configured
+        ? await this.app.backend.signInValidator(code)
+        : this.app.validators.find(v => v.code.toUpperCase() === code.toUpperCase());
+
+      if (!validator) {
+        throw new Error(`Código "${code}" no encontrado.`);
+      }
+
+      this.currentValidator = validator;
+      if (this.app.backend.configured) {
+        await this.app.refreshFromBackend();
+        this.app.startRealtimeSync();
+        validator = this.app.validators.find(v => v.id === validator.id) || validator;
+      }
+    } catch (error) {
+      this.currentValidator = null;
+      this.app.showToast(error.message || 'No fue posible iniciar sesión.', 'error');
       return;
+    } finally {
+      if (this.btnValidatorLogin) this.btnValidatorLogin.disabled = false;
     }
 
     this.currentValidator = validator;
@@ -120,7 +139,14 @@ export class ValidatorUI {
     this.app.showToast(`Bienvenido(a), ${validator.name}`, 'success');
   }
 
-  logout() {
+  async logout() {
+    if (this.app.backend.configured) {
+      try {
+        await this.app.backend.signOut();
+      } catch (error) {
+        console.error('Error al cerrar la sesión del validador:', error);
+      }
+    }
     this.currentValidator = null;
     this.currentAuditId = null;
     this.validatorCodeInput.value = '';
@@ -270,10 +296,15 @@ export class ValidatorUI {
 
   selectAudit(id) {
     this.currentAuditId = id;
-    const audit = this.app.audits.find(a => a.id === id);
+    const source = this.currentModule === 'blocking'
+      ? (this.app.blockingAudits || [])
+      : (this.app.smartAudits || []);
+    const audit = source.find(a => String(a.id) === String(id));
 
     if (audit && !audit.startedAt && audit.validationStatus !== 'completada') {
       audit.startedAt = new Date().toISOString();
+      audit.validationStatus = 'en_progreso';
+      this.app.syncStateAcrossTabs();
     }
 
     // Actualizar clase seleccionada en la lista
@@ -589,7 +620,7 @@ export class ValidatorUI {
     btnDraft?.addEventListener('click', () => {
       this.collectFormData(audit);
       audit.validationStatus = 'en_progreso';
-      this.app.saveState();
+      this.app.syncStateAcrossTabs();
       this.updateProgressHeader();
       this.renderAuditList();
       this.app.showToast('Borrador guardado correctamente.', 'info');
