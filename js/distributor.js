@@ -5,7 +5,7 @@
 
 export class Distributor {
   /**
-   * Genera un código único alfanumérico legible para un validador (ej. VAL-7B42)
+   * Genera un código único alfanumérico legible para un validador (ej. VAL-7B42K9MX)
    */
   static generateValidatorCode(existingCodes = []) {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -14,7 +14,7 @@ export class Distributor {
 
     while (!isUnique) {
       let randPart = '';
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 8; i++) {
         randPart += chars.charAt(Math.floor(Math.random() * chars.length));
       }
       code = `VAL-${randPart}`;

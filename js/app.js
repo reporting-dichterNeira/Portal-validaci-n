@@ -7,6 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=21.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=21.0';
+import { SupabaseBackend } from './supabase-backend.js?v=23.3';
 
 class ValidaFlowApp {
   constructor() {
@@ -18,12 +19,20 @@ class ValidaFlowApp {
     this.headers = [];
     this.kpiColumns = [];
     this.storageKey = 'VALIDAFLOW_STATE_V1';
+    this.backend = new SupabaseBackend();
+    this.remoteWriteQueue = Promise.resolve();
+    this.remoteRefreshTimer = null;
 
     // Estado de Navegación y Vistas Previas
-    this.currentView = 'landing'; // 'landing' | 'validator' | 'supervisor-hub' | 'supervisor-workspace'
+    this.currentView = 'landing'; // landing | validator | admin | supervisor-hub | supervisor-workspace
     this.currentModule = 'smart'; // 'smart' (Validación Smart) | 'blocking' (Alertas Bloqueantes)
     this.currentProject = 'Chile'; // 'Chile' | 'Tradicional' | 'Moderno' | 'Lindley'
     this.currentTab = 'admin';
+    this.currentRole = null;
+    this.currentProfile = null;
+    this.currentScope = null;
+    this.pendingStaffRole = 'supervisor';
+    this.adminData = { countries: [], studies: [], supervisors: [], assignments: [] };
 
     // Sub-Pestaña activa en Métricas & Reportes: 'operational' | 'executive'
     this.reportsSubtab = 'operational';
@@ -46,13 +55,15 @@ class ValidaFlowApp {
     this.distributionMode = 'audits';
 
     // Estado de Autenticación del Supervisor
-    this.isSupervisor = sessionStorage.getItem('VALIDAFLOW_SUPERVISOR_AUTH') === 'true';
+    this.isSupervisor = this.backend.configured
+      ? false
+      : sessionStorage.getItem('VALIDAFLOW_SUPERVISOR_AUTH') === 'true';
 
     // BroadcastChannel para sincronización multi-pestaña
     this.channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('validaflow_sync') : null;
 
     this.initTheme();
-    this.init();
+    this.ready = this.init();
   }
 
   initTheme() {
@@ -85,7 +96,7 @@ class ValidaFlowApp {
     this.applyTheme(nextTheme, true);
   }
 
-  init() {
+  async init() {
     this.loadState();
     this.initLandingAndHub();
     this.initSupervisorAuth();
@@ -98,6 +109,29 @@ class ValidaFlowApp {
     this.initDailyReportsModule();
     this.validatorUI = new ValidatorUI(this);
     this.validatorUI.populateQuickSelect(this.validators);
+
+    if (this.backend.configured) {
+      try {
+        const context = await this.backend.getSessionContext();
+        this.currentRole = context.role;
+        this.currentProfile = context.profile || null;
+        this.currentScope = context.scope || null;
+        this.isSupervisor = context.role === 'supervisor';
+        if (this.currentScope?.study?.name) {
+          this.currentProject = this.currentScope.study.name;
+          this.selectedStudies = [this.currentProject];
+        }
+        if (context.role === 'validator' && context.validator) {
+          this.validatorUI.currentValidator = context.validator;
+        }
+        if (context.role) {
+          await this.refreshFromBackend();
+          this.startRealtimeSync();
+        }
+      } catch (error) {
+        console.error('No fue posible restaurar la sesión de Supabase:', error);
+      }
+    }
 
     // Siempre iniciar en la pantalla principal de 2 botones al abrir la aplicación
     this.showView('landing');
@@ -124,64 +158,26 @@ class ValidaFlowApp {
     const cardValidator = document.getElementById('choice-btn-validator');
     const btnEnterSupervisor = document.getElementById('btn-enter-supervisor-portal');
     const cardSupervisor = document.getElementById('choice-btn-supervisor');
+    const btnEnterAdmin = document.getElementById('btn-enter-admin-portal');
+    const cardAdmin = document.getElementById('choice-btn-admin');
     const modalLogin = document.getElementById('modal-supervisor-login');
 
     const goToValidator = () => {
       this.showView('validator');
     };
 
-    btnEnterValidator?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      goToValidator();
-    });
-    cardValidator?.addEventListener('click', goToValidator);
-
     const goToSupervisor = () => {
       if (this.isSupervisor) {
         this.showView('supervisor-hub');
       } else {
-        modalLogin?.classList.remove('hidden');
-        document.getElementById('sup-login-user')?.focus();
+        this.openStaffLogin('supervisor');
       }
     };
 
-    btnEnterSupervisor?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      goToSupervisor();
-    });
-    cardSupervisor?.addEventListener('click', goToSupervisor);
+    const goToAdmin = () => this.handleAdminPortalClick();
 
     // Botón para regresar al landing desde el portal de validador
-    document.getElementById('btn-back-to-landing-from-val')?.addEventListener('click', () => {
-      this.showView('landing');
-    });
-
-    // Botón para regresar al landing desde el Hub de supervisión
-    document.getElementById('btn-back-to-landing-from-hub')?.addEventListener('click', () => {
-      this.showView('landing');
-    });
-
-    // 2. Selección de Módulos en el Hub de Supervisión
-    const cardSmart = document.getElementById('module-card-smart');
-    const cardBlocking = document.getElementById('module-card-blocking');
-
-    cardSmart?.addEventListener('click', () => {
-      this.enterSupervisorModule('smart');
-    });
-
-    cardBlocking?.addEventListener('click', () => {
-      this.enterSupervisorModule('blocking');
-    });
-
-    // Botón Volver al Hub desde el Espacio de Trabajo del Supervisor
-    document.getElementById('btn-back-to-hub')?.addEventListener('click', () => {
-      this.showView('supervisor-hub');
-    });
-
-    // Botón Cerrar Sesión desde el Hub
-    document.getElementById('btn-logout-from-hub')?.addEventListener('click', () => {
-      this.logoutSupervisor();
-    });
+    // Los botones de navegación usan sus manejadores declarativos en index.html.
   }
 
   enterSupervisorModule(moduleKey) {
@@ -279,6 +275,7 @@ class ValidaFlowApp {
     const validatorView = document.getElementById('public-validator-view');
     const hubView = document.getElementById('view-supervisor-hub');
     const workspaceView = document.getElementById('private-supervisor-view');
+    const adminView = document.getElementById('view-administrator');
     const navTabs = document.getElementById('supervisor-nav-tabs');
     const modeBadge = document.getElementById('header-mode-badge');
     const btnAuthText = document.getElementById('supervisor-btn-text');
@@ -288,6 +285,7 @@ class ValidaFlowApp {
     validatorView?.classList.add('hidden');
     hubView?.classList.add('hidden');
     workspaceView?.classList.add('hidden');
+    adminView?.classList.add('hidden');
     navTabs?.classList.add('hidden');
 
     if (viewName === 'landing') {
@@ -297,7 +295,20 @@ class ValidaFlowApp {
         modeBadge.style.background = 'var(--dn-blue-light)';
         modeBadge.style.color = 'var(--dn-navy)';
       }
-      if (btnAuthText) btnAuthText.textContent = this.isSupervisor ? 'Menú Supervisor 🛡️' : 'Acceso Supervisor';
+      if (btnAuthText) {
+        btnAuthText.textContent = this.currentRole === 'admin'
+          ? 'Panel Administrador ⚙️'
+          : (this.isSupervisor ? 'Menú Supervisor 🛡️' : 'Acceso Supervisor');
+      }
+    } else if (viewName === 'administrator') {
+      adminView?.classList.remove('hidden');
+      if (modeBadge) {
+        modeBadge.textContent = 'Administrador';
+        modeBadge.style.background = 'var(--dn-navy)';
+        modeBadge.style.color = '#FFFFFF';
+      }
+      if (btnAuthText) btnAuthText.textContent = 'Cerrar Sesión 🚪';
+      this.loadAdministratorPanel();
     } else if (viewName === 'validator') {
       validatorView?.classList.remove('hidden');
       if (this.validatorUI) {
@@ -365,14 +376,39 @@ class ValidaFlowApp {
     if (this.isSupervisor) {
       this.showView('supervisor-hub');
     } else {
-      const modal = document.getElementById('modal-supervisor-login');
-      modal?.classList.remove('hidden');
-      document.getElementById('sup-login-user')?.focus();
+      this.openStaffLogin('supervisor');
     }
   }
 
+  handleAdminPortalClick() {
+    if (this.currentRole === 'admin') {
+      this.showView('administrator');
+    } else {
+      this.openStaffLogin('admin');
+    }
+  }
+
+  openStaffLogin(role = 'supervisor') {
+    this.pendingStaffRole = role;
+    const isAdmin = role === 'admin';
+    const title = document.getElementById('staff-login-title');
+    const description = document.getElementById('staff-login-description');
+    const label = document.getElementById('staff-login-user-label');
+    if (title) title.textContent = isAdmin ? 'Acceso de Administrador' : 'Acceso de Supervisión';
+    if (description) description.textContent = isAdmin
+      ? 'Ingresa las credenciales administrativas para gestionar supervisores, estudios y países.'
+      : 'Ingresa tus credenciales para acceder al estudio y país que tienes asignados.';
+    if (label) label.textContent = isAdmin ? 'Usuario administrador' : 'Usuario supervisor';
+    const modal = document.getElementById('modal-supervisor-login');
+    modal?.classList.remove('hidden');
+    document.getElementById('sup-login-user')?.focus();
+  }
+
   handleSupervisorAuthButtonClick() {
-    if (this.isSupervisor) {
+    if (this.currentRole === 'admin') {
+      if (this.currentView === 'administrator') this.logoutSupervisor();
+      else this.showView('administrator');
+    } else if (this.isSupervisor) {
       if (this.currentView === 'supervisor-workspace') {
         this.showView('supervisor-hub');
       } else if (this.currentView === 'supervisor-hub') {
@@ -381,24 +417,47 @@ class ValidaFlowApp {
         this.showView('supervisor-hub');
       }
     } else {
-      const modal = document.getElementById('modal-supervisor-login');
-      modal?.classList.remove('hidden');
-      document.getElementById('sup-login-user')?.focus();
+      this.openStaffLogin('supervisor');
     }
   }
 
-  submitSupervisorLogin() {
+  async submitSupervisorLogin() {
     const userInput = document.getElementById('sup-login-user');
     const passInput = document.getElementById('sup-login-pass');
     const modalLogin = document.getElementById('modal-supervisor-login');
-    const u = userInput?.value.trim().toLowerCase() || 'admin';
-    const p = passInput?.value.trim() || 'admin123';
+    const email = userInput?.value.trim().toLowerCase() || '';
+    const password = passInput?.value || '';
 
-    this.isSupervisor = true;
-    sessionStorage.setItem('VALIDAFLOW_SUPERVISOR_AUTH', 'true');
-    modalLogin?.classList.add('hidden');
-    this.showView('supervisor-hub');
-    this.showToast('Sesión de Supervisor iniciada.', 'success');
+    if (!email || !password) {
+      this.showToast('Ingresa el usuario y la contraseña.', 'warning');
+      return;
+    }
+
+    try {
+      if (this.backend.configured) {
+        const result = await this.backend.signInStaff(email, password, this.pendingStaffRole);
+        this.currentRole = result.profile.role;
+        this.currentProfile = result.profile;
+        this.currentScope = result.scope;
+        if (result.profile.role === 'supervisor') {
+          this.currentProject = result.scope.study.name;
+          this.selectedStudies = [this.currentProject];
+          await this.refreshFromBackend();
+          this.startRealtimeSync();
+        }
+      } else {
+        throw new Error('Supabase aún no está configurado para este portal.');
+      }
+
+      this.isSupervisor = this.currentRole === 'supervisor';
+      modalLogin?.classList.add('hidden');
+      this.showView(this.currentRole === 'admin' ? 'administrator' : 'supervisor-hub');
+      this.showToast(`Sesión de ${this.currentRole === 'admin' ? 'Administrador' : 'Supervisor'} iniciada.`, 'success');
+    } catch (error) {
+      this.isSupervisor = false;
+      this.currentRole = null;
+      this.showToast(error.message || 'No fue posible iniciar sesión.', 'error');
+    }
   }
 
   initSupervisorAuth() {
@@ -410,10 +469,6 @@ class ValidaFlowApp {
     const userInput = document.getElementById('sup-login-user');
     const passInput = document.getElementById('sup-login-pass');
 
-    btnSupervisorAuth?.addEventListener('click', () => {
-      this.handleSupervisorAuthButtonClick();
-    });
-
     const closeModal = () => modalLogin?.classList.add('hidden');
     btnCloseLogin?.addEventListener('click', closeModal);
     btnCancelLogin?.addEventListener('click', closeModal);
@@ -422,21 +477,33 @@ class ValidaFlowApp {
       this.submitSupervisorLogin();
     };
 
-    btnSubmitLogin?.addEventListener('click', handleLogin);
     passInput?.addEventListener('keyup', (e) => {
       if (e.key === 'Enter') handleLogin();
     });
   }
 
-  logoutSupervisor() {
+  async logoutSupervisor() {
+    const roleLabel = this.currentRole === 'admin' ? 'Administración' : 'Supervisión';
+    if (this.backend.configured) {
+      try {
+        await this.backend.signOut();
+      } catch (error) {
+        console.error('Error al cerrar sesión:', error);
+      }
+    }
     this.isSupervisor = false;
+    this.currentRole = null;
+    this.currentProfile = null;
+    this.currentScope = null;
     sessionStorage.removeItem('VALIDAFLOW_SUPERVISOR_AUTH');
     this.showView('landing');
-    this.showToast('Has salido de Supervisión. Regresando a la pantalla principal.', 'info');
+    this.showToast(`Has salido de ${roleLabel}. Regresando a la pantalla principal.`, 'info');
   }
 
   updateRoleView() {
-    if (this.isSupervisor) {
+    if (this.currentRole === 'admin') {
+      this.showView('administrator');
+    } else if (this.isSupervisor) {
       this.showView('supervisor-hub');
     } else {
       this.showView('landing');
@@ -554,9 +621,200 @@ class ValidaFlowApp {
 
   syncStateAcrossTabs() {
     this.saveState();
+    this.queueRemoteSync();
     if (this.channel) {
       this.channel.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
     }
+  }
+
+  async loadAdministratorPanel() {
+    if (this.currentRole !== 'admin') return;
+    try {
+      this.adminData = await this.backend.loadAdministration();
+      this.renderAdministratorPanel();
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible cargar la administración.', 'error');
+    }
+  }
+
+  renderAdministratorPanel() {
+    const { countries, studies, supervisors, assignments } = this.adminData;
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[char]);
+    const setText = (id, value) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value;
+    };
+    setText('admin-count-supervisors', supervisors.length);
+    setText('admin-count-studies', studies.length);
+    setText('admin-count-countries', countries.length);
+
+    const studySelect = document.getElementById('admin-supervisor-study');
+    const countrySelect = document.getElementById('admin-supervisor-country');
+    if (studySelect) studySelect.innerHTML = '<option value="">Selecciona un estudio</option>' +
+      studies.filter(item => item.is_active).map(item => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
+    if (countrySelect) countrySelect.innerHTML = '<option value="">Selecciona un país</option>' +
+      countries.filter(item => item.is_active).map(item => `<option value="${item.id}">${escapeHtml(item.code)} · ${escapeHtml(item.name)}</option>`).join('');
+
+    const studyById = new Map(studies.map(item => [item.id, item]));
+    const countryById = new Map(countries.map(item => [item.id, item]));
+    const assignmentBySupervisor = new Map(assignments.map(item => [item.supervisor_id, item]));
+    const tbody = document.getElementById('admin-supervisors-tbody');
+    if (tbody) {
+      tbody.innerHTML = supervisors.length ? supervisors.map(supervisor => {
+        const assignment = assignmentBySupervisor.get(supervisor.id);
+        const study = assignment ? studyById.get(assignment.study_id) : null;
+        const country = assignment ? countryById.get(assignment.country_id) : null;
+        return `<tr>
+          <td><strong>${escapeHtml(supervisor.display_name)}</strong></td>
+          <td><code>${escapeHtml(supervisor.username || '—')}</code></td>
+          <td>${escapeHtml(study?.name || 'Sin asignar')}</td>
+          <td>${country ? `${escapeHtml(country.code)} · ${escapeHtml(country.name)}` : 'Sin asignar'}</td>
+          <td><span class="badge ${supervisor.is_active ? 'badge-success' : 'badge-warning'}">${supervisor.is_active ? 'Activo' : 'Inactivo'}</span></td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="5" class="text-center text-muted">Aún no hay supervisores creados.</td></tr>';
+    }
+  }
+
+  generateTemporaryPassword() {
+    const bytes = crypto.getRandomValues(new Uint8Array(12));
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    let password = 'Vf!';
+    bytes.forEach(byte => { password += alphabet[byte % alphabet.length]; });
+    const input = document.getElementById('admin-supervisor-password');
+    if (input) input.value = password;
+  }
+
+  async createAdminCountry() {
+    const code = document.getElementById('admin-country-code')?.value || '';
+    const name = document.getElementById('admin-country-name')?.value || '';
+    if (!code.trim() || !name.trim()) {
+      this.showToast('Completa el código y nombre del país.', 'warning');
+      return;
+    }
+    try {
+      await this.backend.createCountry({ code, name });
+      document.getElementById('admin-country-code').value = '';
+      document.getElementById('admin-country-name').value = '';
+      await this.loadAdministratorPanel();
+      this.showToast('País creado correctamente.', 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible crear el país.', 'error');
+    }
+  }
+
+  async createAdminStudy() {
+    const name = document.getElementById('admin-study-name')?.value || '';
+    const description = document.getElementById('admin-study-description')?.value || '';
+    if (!name.trim()) {
+      this.showToast('Ingresa el nombre del estudio.', 'warning');
+      return;
+    }
+    try {
+      await this.backend.createStudy({ name, description });
+      document.getElementById('admin-study-name').value = '';
+      document.getElementById('admin-study-description').value = '';
+      await this.loadAdministratorPanel();
+      this.showToast('Estudio creado correctamente.', 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible crear el estudio.', 'error');
+    }
+  }
+
+  async createAdminSupervisor() {
+    const username = document.getElementById('admin-supervisor-username')?.value.trim().toLowerCase() || '';
+    const displayName = document.getElementById('admin-supervisor-name')?.value.trim() || '';
+    const password = document.getElementById('admin-supervisor-password')?.value || '';
+    const studyId = document.getElementById('admin-supervisor-study')?.value || '';
+    const countryId = document.getElementById('admin-supervisor-country')?.value || '';
+    if (!username || !displayName || password.length < 12 || !studyId || !countryId) {
+      this.showToast('Completa todos los datos. La contraseña debe tener al menos 12 caracteres.', 'warning');
+      return;
+    }
+    try {
+      await this.backend.createSupervisor({ username, displayName, password, studyId, countryId });
+      ['admin-supervisor-username', 'admin-supervisor-name', 'admin-supervisor-password'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.value = '';
+      });
+      await this.loadAdministratorPanel();
+      this.showToast(`Supervisor ${username} creado y asignado correctamente.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible crear el supervisor.', 'error');
+    }
+  }
+
+  queueRemoteSync() {
+    if (!this.backend.configured) return;
+    this.remoteWriteQueue = this.remoteWriteQueue
+      .then(() => this.persistRemoteState())
+      .catch(error => {
+        console.error('Error sincronizando con Supabase:', error);
+        this.showToast('No se pudo sincronizar con Supabase. Revisa tu conexión.', 'error');
+      });
+  }
+
+  async persistRemoteState() {
+    if (!this.backend.configured) return;
+
+    if (this.isSupervisor) {
+      await this.backend.saveSupervisorState(
+        this.validators,
+        this.smartAudits || [],
+        this.blockingAudits || []
+      );
+      return;
+    }
+
+    const validatorUI = this.validatorUI;
+    if (!validatorUI?.currentValidator || !validatorUI.currentAuditId) return;
+    const module = validatorUI.currentModule || 'smart';
+    const source = module === 'blocking' ? this.blockingAudits : this.smartAudits;
+    const audit = (source || []).find(a => String(a.id) === String(validatorUI.currentAuditId));
+    if (audit) await this.backend.saveAuditProgress(audit, module);
+  }
+
+  async refreshFromBackend() {
+    if (!this.backend.configured) return;
+    const state = await this.backend.loadState();
+    this.validators = state.validators || [];
+    this.smartAudits = state.smartAudits || [];
+    this.blockingAudits = state.blockingAudits || [];
+    this.audits = this.currentModule === 'blocking' ? this.blockingAudits : this.smartAudits;
+    this.saveState();
+
+    this.validatorUI?.populateQuickSelect(this.validators);
+    this.renderAdminView();
+    this.renderReportsView();
+    this.renderQueriesView();
+    this.renderAlertsView();
+    this.renderDailyReportsView();
+    this.populateLookupQuickTags();
+
+    if (this.validatorUI?.currentValidator) {
+      const freshValidator = this.validators.find(v => v.id === this.validatorUI.currentValidator.id);
+      if (freshValidator) this.validatorUI.currentValidator = freshValidator;
+      this.validatorUI.updateProgressHeader();
+      this.validatorUI.renderAuditList();
+      if (this.validatorUI.currentAuditId) {
+        const source = this.validatorUI.currentModule === 'blocking' ? this.blockingAudits : this.smartAudits;
+        const current = source.find(a => String(a.id) === String(this.validatorUI.currentAuditId));
+        if (current) this.validatorUI.renderAuditDetail(current);
+      }
+    }
+  }
+
+  startRealtimeSync() {
+    if (!this.backend.configured) return;
+    this.backend.subscribe(() => {
+      clearTimeout(this.remoteRefreshTimer);
+      this.remoteRefreshTimer = setTimeout(() => {
+        this.refreshFromBackend().catch(error => {
+          console.error('Error actualizando datos en vivo:', error);
+        });
+      }, 200);
+    });
   }
 
   listenCrossTabEvents() {
@@ -1341,19 +1599,23 @@ class ValidaFlowApp {
 
     if (fnEl) fnEl.textContent = fileName;
     if (countEl) countEl.textContent = `${auditCount} auditorías detectadas listas para importar`;
-    if (inputEl) inputEl.value = defaultStudy;
+    const assignedStudy = this.currentScope?.study?.name || defaultStudy;
+    if (inputEl) {
+      inputEl.value = assignedStudy;
+      inputEl.readOnly = Boolean(this.currentScope?.study);
+    }
 
     const todayStr = new Date().toISOString().split('T')[0];
     if (dateEl) {
       dateEl.value = detectedDate || todayStr;
     }
 
-    window.selectModalStudyOption?.(defaultStudy);
+    window.selectModalStudyOption?.(assignedStudy);
     modal?.classList.remove('hidden');
   }
 
   confirmStudyUpload(selectedStudy) {
-    const studyName = selectedStudy || document.getElementById('study-custom-input')?.value.trim() || this.currentProject || 'Chile';
+    const studyName = this.currentScope?.study?.name || selectedStudy || document.getElementById('study-custom-input')?.value.trim() || this.currentProject || 'Chile';
     const opDate = document.getElementById('study-operation-date')?.value || new Date().toISOString().split('T')[0];
     const modal = document.getElementById('modal-select-study');
     modal?.classList.add('hidden');
@@ -1375,9 +1637,12 @@ class ValidaFlowApp {
     result.audits.forEach(audit => {
       audit.estudio = studyName;
       audit.fecha = opDate;
+      audit._studyId = this.currentScope?.study?.id || audit._studyId || null;
+      audit._countryId = this.currentScope?.country?.id || audit._countryId || null;
       if (!audit.modelo || audit.modelo === 'Tradicional' || audit.modelo === 'TRADICIONAL') audit.modelo = studyName;
       if (!audit.canal) audit.canal = studyName;
-      if (studyName === 'Chile') audit.pais = 'Chile';
+      if (this.currentScope?.country?.name) audit.pais = this.currentScope.country.name;
+      else if (studyName === 'Chile') audit.pais = 'Chile';
     });
 
     this.currentProject = studyName;
@@ -1426,7 +1691,7 @@ class ValidaFlowApp {
     this.headers = result.headers;
     this.kpiColumns = result.kpiColumns;
 
-    this.saveState();
+    this.syncStateAcrossTabs();
     this.renderAdminView();
     this.renderAlertsView();
     this.renderReportsView();
@@ -1479,6 +1744,10 @@ class ValidaFlowApp {
   // GESTIÓN DE ARCHIVOS, ESTUDIOS Y DEDUPLICACIÓN
   // ==========================================
   openReassignStudyModal() {
+    if (this.currentScope?.study) {
+      this.showToast('El estudio del supervisor lo define el Administrador y no puede cambiarse desde este panel.', 'warning');
+      return;
+    }
     const projectAudits = this.getAuditsForCurrentProject();
     if (projectAudits.length === 0) {
       this.showToast(`No hay auditorías cargadas en el estudio ${this.currentProject} para mover.`, 'warning');
@@ -1519,6 +1788,11 @@ class ValidaFlowApp {
   }
 
   executeReassignStudy() {
+    if (this.currentScope?.study) {
+      document.getElementById('modal-reassign-study')?.classList.add('hidden');
+      this.showToast('No tienes permisos para cambiar el estudio asignado.', 'error');
+      return;
+    }
     const targetStudy = document.getElementById('reassign-target-study-input')?.value || 'Tradicional';
     const modal = document.getElementById('modal-reassign-study');
     modal?.classList.add('hidden');
@@ -1577,7 +1851,7 @@ class ValidaFlowApp {
     this.showToast(`¡${countMoved} auditorías movidas exitosamente de ${prevStudy} a ${targetStudy}!`, 'success');
   }
 
-  clearCurrentStudyAudits() {
+  async clearCurrentStudyAudits() {
     const projectAudits = this.getAuditsForCurrentProject();
     if (projectAudits.length === 0) {
       this.showToast(`No hay auditorías cargadas en el estudio ${this.currentProject} para eliminar.`, 'info');
@@ -1590,6 +1864,14 @@ class ValidaFlowApp {
     }
 
     const deletedStudy = this.currentProject;
+    if (this.backend.configured && this.isSupervisor) {
+      try {
+        await this.backend.deleteAudits(this.currentModule, deletedStudy);
+      } catch (error) {
+        this.showToast(error.message || 'No fue posible eliminar las auditorías en Supabase.', 'error');
+        return;
+      }
+    }
     this.audits = this.audits.filter(a => this.getStudyForAudit(a).toUpperCase() !== deletedStudy.toUpperCase());
     if (this.currentModule === 'blocking') {
       this.blockingAudits = this.audits;
@@ -1608,7 +1890,7 @@ class ValidaFlowApp {
     this.showToast(`Auditorías de ${deletedStudy} eliminadas correctamente. Ahora puedes cargar el archivo correcto.`, 'success');
   }
 
-  clearAllDatabase() {
+  async clearAllDatabase() {
     if (this.audits.length === 0) {
       this.showToast('La base de datos ya está vacía.', 'info');
       return;
@@ -1619,6 +1901,14 @@ class ValidaFlowApp {
       return;
     }
 
+    if (this.backend.configured && this.isSupervisor) {
+      try {
+        await this.backend.deleteAudits(this.currentModule);
+      } catch (error) {
+        this.showToast(error.message || 'No fue posible vaciar el módulo en Supabase.', 'error');
+        return;
+      }
+    }
     this.audits = [];
     if (this.currentModule === 'blocking') {
       this.blockingAudits = [];
@@ -1908,7 +2198,7 @@ class ValidaFlowApp {
       const name = nameInput?.value.trim();
       const email = emailInput?.value.trim();
       const code = codeInput?.value.trim().toUpperCase() || Distributor.generateValidatorCode(this.validators.map(v => v.code));
-      const estudio = studySelect?.value || this.currentProject || 'Chile';
+      const estudio = this.currentScope?.study?.name || this.currentProject || 'Chile';
 
       if (!name) {
         this.showToast('El nombre del validador es obligatorio.', 'warning');
@@ -1925,10 +2215,13 @@ class ValidaFlowApp {
         code,
         name,
         email,
-        estudio
+        estudio,
+        studyId: this.currentScope?.study?.id || null,
+        countryId: this.currentScope?.country?.id || null
       };
 
       this.validators.push(newValidator);
+      this.saveState();
       this.syncStateAcrossTabs();
       this.renderAdminView();
       this.renderAlertsView();
@@ -1953,17 +2246,26 @@ class ValidaFlowApp {
     }
     if (studySelect) {
       studySelect.value = this.currentProject || 'Chile';
+      studySelect.disabled = Boolean(this.currentScope?.study);
     }
 
     modal?.classList.remove('hidden');
     document.getElementById('modal-val-name')?.focus();
   }
 
-  deleteValidator(id) {
+  async deleteValidator(id) {
     const val = this.validators.find(v => v.id === id);
     if (!val) return;
 
     if (confirm(`¿Estás seguro de eliminar al validador "${val.name}"? Las auditorías asignadas quedarán sin asignar.`)) {
+      if (this.backend.configured && this.isSupervisor) {
+        try {
+          await this.backend.deleteValidator(id);
+        } catch (error) {
+          this.showToast(error.message || 'No fue posible eliminar el validador en Supabase.', 'error');
+          return;
+        }
+      }
       this.validators = this.validators.filter(v => v.id !== id);
       this.audits.forEach(a => {
         if (a.assignedValidatorId === id) {
@@ -3779,8 +4081,9 @@ class ValidaFlowApp {
       this.audits = this.blockingAudits;
     }
     this.saveState();
-    this.renderBlockingMatrixView();
-    this.renderBlockingReportsView();
+    this.renderAdminView();
+    this.renderReportsView();
+    this.renderAlertsView();
     if (notify) {
       this.showToast(`Se cargaron ${this.blockingAudits.length} auditorías para Alertas Bloqueantes.`, 'success');
     }

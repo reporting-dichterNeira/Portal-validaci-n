@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/styles.css?v=23.1" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -50,7 +50,7 @@
           modeBadge.style.background = 'var(--dn-blue-light)';
           modeBadge.style.color = 'var(--dn-navy)';
         }
-        if (btnAuthText) btnAuthText.textContent = sessionStorage.getItem('VALIDAFLOW_SUPERVISOR_AUTH') === 'true' ? 'Menú Supervisor 🛡️' : 'Acceso Supervisor';
+        if (btnAuthText) btnAuthText.textContent = window.app?.isSupervisor ? 'Menú Supervisor 🛡️' : 'Acceso Supervisor';
       } else if (viewName === 'validator') {
         if (validatorView) validatorView.classList.remove('hidden');
         if (modeBadge) {
@@ -337,7 +337,7 @@
           Plataforma corporativa para la asignación equitativa de auditorías, resolución de alertas de KPIs en campo, monitoreo de tiempos y reportería consolidada.
         </p>
 
-        <!-- 2 Botones de acceso principales -->
+        <!-- Accesos por rol -->
         <div class="landing-portal-grid">
           <!-- Opción 1: Validador -->
           <div class="portal-choice-card" id="choice-btn-validator" onclick="window.app ? window.app.showView('validator') : (document.getElementById('view-landing').classList.add('hidden'), document.getElementById('public-validator-view').classList.remove('hidden'))">
@@ -376,6 +376,26 @@
             </div>
             <button class="btn btn-navy btn-glow btn-block" id="btn-enter-supervisor-portal" onclick="event.stopPropagation(); window.app ? window.app.handleSupervisorPortalClick() : document.getElementById('modal-supervisor-login').classList.remove('hidden')">
               Acceso Supervisor 🔒
+            </button>
+          </div>
+
+          <!-- Opción 3: Administrador -->
+          <div class="portal-choice-card portal-card-admin" id="choice-btn-admin" onclick="window.app?.handleAdminPortalClick()">
+            <div class="portal-card-icon-wrap icon-purple">
+              <span class="portal-icon">⚙️</span>
+            </div>
+            <div class="portal-card-tag">Acceso Restringido</div>
+            <h2 class="portal-card-title">Administrador</h2>
+            <p class="portal-card-desc">
+              Gestiona las cuentas de supervisión y define el estudio y país que corresponde a cada supervisor.
+            </p>
+            <div class="portal-card-features">
+              <div class="feat-item">✓ Creación segura de supervisores</div>
+              <div class="feat-item">✓ Catálogo de estudios y países</div>
+              <div class="feat-item">✓ Asignación de alcance por supervisor</div>
+            </div>
+            <button class="btn btn-navy btn-glow btn-block" id="btn-enter-admin-portal" onclick="event.stopPropagation(); window.app?.handleAdminPortalClick()">
+              Acceso Administrador ⚙️
             </button>
           </div>
         </div>
@@ -422,12 +442,7 @@
           </button>
         </div>
 
-        <div class="quick-login-box">
-          <label for="validator-quick-select">O selecciona un validador de prueba:</label>
-          <select id="validator-quick-select" class="form-select">
-            <!-- Opciones cargadas dinámicamente -->
-          </select>
-        </div>
+        <select id="validator-quick-select" class="form-select hidden" aria-hidden="true" tabindex="-1"></select>
       </div>
 
       <!-- 1.2 Espacio de Trabajo del Validador (Master-Detail) -->
@@ -516,7 +531,79 @@
     </div>
 
     <!-- ======================================================== -->
-    <!-- 2. VISTA DE SUPERVISIÓN: MENÚ PREVIO (2 MÓDULOS)         -->
+    <!-- 2. PANEL DEL ADMINISTRADOR                               -->
+    <!-- ======================================================== -->
+    <div id="view-administrator" class="hidden">
+      <div class="supervisor-hub-container admin-console">
+        <div class="hub-header-row">
+          <div>
+            <div class="corporate-badge">dichter & neira • Administración de ValidaFlow</div>
+            <h1 class="hub-title">Administrador</h1>
+            <p class="hub-subtitle">Crea supervisores y controla el estudio y país que cada uno puede gestionar.</p>
+          </div>
+          <div class="hub-user-pill">
+            <span class="hub-user-avatar">⚙️</span>
+            <div class="hub-user-meta">
+              <span class="hub-user-role">Sesión administrativa</span>
+              <strong class="hub-user-name">Equipo de Reporting</strong>
+            </div>
+            <button class="btn btn-outline btn-sm" onclick="window.app?.logoutSupervisor()">Cerrar Sesión 🚪</button>
+          </div>
+        </div>
+
+        <div class="stats-grid admin-stats-grid">
+          <div class="stat-card"><div class="stat-icon-wrapper icon-blue">🛡️</div><div class="stat-details"><span class="stat-label">Supervisores</span><span class="stat-value" id="admin-count-supervisors">0</span></div></div>
+          <div class="stat-card"><div class="stat-icon-wrapper icon-purple">📚</div><div class="stat-details"><span class="stat-label">Estudios</span><span class="stat-value" id="admin-count-studies">0</span></div></div>
+          <div class="stat-card"><div class="stat-icon-wrapper icon-cyan">🌎</div><div class="stat-details"><span class="stat-label">Países</span><span class="stat-value" id="admin-count-countries">0</span></div></div>
+        </div>
+
+        <div class="admin-setup-grid">
+          <section class="glass-panel admin-setup-card">
+            <div class="section-header"><div><h2>1. Crear país</h2><p>Registra los países disponibles para las asignaciones.</p></div></div>
+            <div class="admin-form-grid compact">
+              <div class="form-group"><label for="admin-country-code">Código</label><input id="admin-country-code" class="form-control" maxlength="5" placeholder="CO" /></div>
+              <div class="form-group"><label for="admin-country-name">País</label><input id="admin-country-name" class="form-control" placeholder="Colombia" /></div>
+            </div>
+            <button class="btn btn-primary" onclick="window.app?.createAdminCountry()">Crear país</button>
+          </section>
+
+          <section class="glass-panel admin-setup-card">
+            <div class="section-header"><div><h2>2. Crear estudio</h2><p>Define los estudios que podrán operar los supervisores.</p></div></div>
+            <div class="form-group"><label for="admin-study-name">Nombre del estudio</label><input id="admin-study-name" class="form-control" placeholder="Ej. Tracking Tradicional" /></div>
+            <div class="form-group"><label for="admin-study-description">Descripción</label><input id="admin-study-description" class="form-control" placeholder="Descripción opcional" /></div>
+            <button class="btn btn-primary" onclick="window.app?.createAdminStudy()">Crear estudio</button>
+          </section>
+        </div>
+
+        <section class="glass-panel admin-setup-card admin-supervisor-card">
+          <div class="section-header"><div><h2>3. Crear supervisor y asignar alcance</h2><p>El usuario tendrá acceso únicamente al estudio y país seleccionados.</p></div></div>
+          <div class="admin-form-grid">
+            <div class="form-group"><label for="admin-supervisor-name">Nombre</label><input id="admin-supervisor-name" class="form-control" placeholder="Nombre completo" /></div>
+            <div class="form-group"><label for="admin-supervisor-username">Usuario</label><input id="admin-supervisor-username" class="form-control" placeholder="supervisor.colombia" autocomplete="off" /></div>
+            <div class="form-group">
+              <label for="admin-supervisor-password">Contraseña temporal</label>
+              <div class="admin-password-row"><input type="text" id="admin-supervisor-password" class="form-control" autocomplete="new-password" /><button class="btn btn-outline" type="button" onclick="window.app?.generateTemporaryPassword()">Generar</button></div>
+            </div>
+            <div class="form-group"><label for="admin-supervisor-study">Estudio</label><select id="admin-supervisor-study" class="form-select"><option value="">Selecciona un estudio</option></select></div>
+            <div class="form-group"><label for="admin-supervisor-country">País</label><select id="admin-supervisor-country" class="form-select"><option value="">Selecciona un país</option></select></div>
+          </div>
+          <button class="btn btn-navy btn-glow" onclick="window.app?.createAdminSupervisor()">Crear y asignar supervisor</button>
+        </section>
+
+        <section class="glass-panel admin-setup-card">
+          <div class="section-header"><div><h2>Supervisores registrados</h2><p>Resumen de usuarios y alcance asignado.</p></div></div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead><tr><th>Nombre</th><th>Usuario</th><th>Estudio</th><th>País</th><th>Estado</th></tr></thead>
+              <tbody id="admin-supervisors-tbody"><tr><td colspan="5" class="text-center text-muted">Cargando...</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- 3. VISTA DE SUPERVISIÓN: MENÚ PREVIO (2 MÓDULOS)         -->
     <!-- ======================================================== -->
     <div id="view-supervisor-hub" class="hidden">
       <div class="supervisor-hub-container">
@@ -1408,27 +1495,22 @@
       <div class="modal-header">
         <div>
           <span class="corporate-badge-sm">dichter & neira</span>
-          <h3>Acceso de Supervisión</h3>
+          <h3 id="staff-login-title">Acceso de Supervisión</h3>
         </div>
         <button class="btn-close-modal" id="btn-close-sup-login" onclick="document.getElementById('modal-supervisor-login').classList.add('hidden')">✕</button>
       </div>
 
       <div class="modal-body">
-        <p class="modal-desc">Ingresa tus credenciales de supervisor para acceder al panel de carga, repartición, alertas y reportes.</p>
+        <p class="modal-desc" id="staff-login-description">Ingresa tus credenciales para acceder al panel correspondiente.</p>
 
         <div class="form-group">
-          <label for="sup-login-user">Usuario / Correo de Supervisor</label>
-          <input type="text" id="sup-login-user" class="form-control" placeholder="supervisor@dichter-neira.com" value="admin" />
+          <label for="sup-login-user" id="staff-login-user-label">Usuario supervisor</label>
+          <input type="text" id="sup-login-user" class="form-control" placeholder="usuario" autocomplete="username" />
         </div>
 
         <div class="form-group">
           <label for="sup-login-pass">Contraseña</label>
-          <input type="password" id="sup-login-pass" class="form-control" placeholder="••••••••" value="admin123" />
-        </div>
-
-        <div class="credentials-hint-box">
-          <span class="hint-title">💡 Credenciales de Supervisor:</span>
-          <span>Usuario: <strong>admin</strong> | Contraseña: <strong>admin123</strong></span>
+          <input type="password" id="sup-login-pass" class="form-control" placeholder="••••••••" autocomplete="current-password" />
         </div>
       </div>
 
@@ -2202,6 +2284,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=21.0"></script>
+  <script type="module" src="js/app.js?v=23.3"></script>
 </body>
 </html>
