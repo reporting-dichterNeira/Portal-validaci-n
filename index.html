@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=25.0" />
+  <link rel="stylesheet" href="css/styles.css?v=26.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -576,17 +576,30 @@
             <div class="form-group">
               <label for="admin-supervisor-password">Contraseña temporal</label>
               <div class="admin-password-row"><input type="text" id="admin-supervisor-password" class="form-control" autocomplete="new-password" /><button class="btn btn-outline" type="button" onclick="window.app?.generateTemporaryPassword()">Generar</button></div>
+              <small class="form-help">Mínimo 12 caracteres con mayúscula, minúscula, número y símbolo.</small>
             </div>
           </div>
           <button class="btn btn-navy btn-glow" onclick="window.app?.createAdminSupervisor()">Crear y asignar supervisor</button>
+          <div class="admin-credential-result hidden" id="admin-credential-result" role="status" aria-live="polite">
+            <div>
+              <span class="admin-credential-label" id="admin-credential-title">Credenciales listas para copiar</span>
+              <strong id="admin-credential-username">—</strong>
+              <p>Esta contraseña solo se muestra aquí. Guárdala antes de ocultarla.</p>
+            </div>
+            <input type="text" class="form-control" id="admin-credential-password" readonly aria-label="Contraseña temporal generada" />
+            <div class="admin-credential-actions">
+              <button class="btn btn-primary btn-sm" type="button" onclick="window.app?.copyAdminCredential()">📋 Copiar usuario y contraseña</button>
+              <button class="btn btn-ghost btn-sm" type="button" onclick="window.app?.hideAdminCredential()">Ocultar</button>
+            </div>
+          </div>
         </section>
 
         <section class="glass-panel admin-setup-card">
           <div class="section-header"><div><h2>Supervisores registrados</h2><p>Resumen de usuarios y alcance asignado.</p></div></div>
           <div class="table-responsive">
             <table class="data-table">
-              <thead><tr><th>Nombre</th><th>Usuario</th><th>Estudio</th><th>Estado</th></tr></thead>
-              <tbody id="admin-supervisors-tbody"><tr><td colspan="4" class="text-center text-muted">Cargando...</td></tr></tbody>
+              <thead><tr><th>Nombre</th><th>Usuario</th><th>Estudio</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody id="admin-supervisors-tbody"><tr><td colspan="5" class="text-center text-muted">Cargando...</td></tr></tbody>
             </table>
           </div>
         </section>
@@ -2352,6 +2365,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=25.0"></script>
+  <script type="module" src="js/app.js?v=26.0"></script>
 </body>
 </html>

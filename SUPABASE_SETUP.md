@@ -43,9 +43,12 @@ La aplicación usa Supabase para que supervisores y validadores trabajen desde e
 
 1. El administrador selecciona uno de los cuatro estudios disponibles.
 2. El administrador crea cada supervisor, su contraseña temporal y la asignación de estudio. La función `manage-supervisors` conserva la clave privilegiada exclusivamente en el servidor y agrega el alcance técnico interno.
+   - La contraseña se muestra una sola vez para copiarla; Supabase no permite consultar contraseñas existentes.
+   - El administrador puede generar una nueva contraseña o eliminar la cuenta. Al eliminarla, el histórico de auditorías permanece y el acceso se revoca.
 3. El supervisor inicia sesión con su usuario y contraseña; sólo recibe el alcance asignado.
 4. Carga el Excel y ejecuta la repartición. La carga se guarda en lotes en Supabase.
 5. Cada carga diaria crea un lote nuevo. El lote anterior deja de aparecer en la operación activa, pero permanece en el histórico.
+   - Durante la importación, los ID de auditoría repetidos dentro del mismo Excel se consolidan antes de insertar el lote. Esto evita conflictos de actualización mientras el lote todavía está en borrador y protegido por RLS.
 6. El validador ingresa su código único desde otro equipo.
 7. Sólo recibe las auditorías del lote activo. Al abrir, guardar o completar una auditoría, el avance se persiste.
 8. El panel del supervisor recibe el cambio por Realtime y recalcula el avance del validador.

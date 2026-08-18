@@ -1117,14 +1117,64 @@ a {
   min-width: 0;
 }
 
+.form-help {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
 .admin-supervisor-card {
   border-left: 4px solid var(--dn-blue);
+}
+
+.admin-supervisor-actions,
+.admin-credential-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.admin-credential-result {
+  display: grid;
+  grid-template-columns: minmax(210px, 1fr) minmax(220px, 0.8fr) auto;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--dn-blue) 40%, var(--border-color));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--dn-blue) 7%, var(--surface-color));
+}
+
+.admin-credential-result.hidden {
+  display: none;
+}
+
+.admin-credential-label {
+  display: block;
+  color: var(--dn-blue);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.admin-credential-result p {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
 }
 
 @media (max-width: 1100px) {
   .landing-portal-grid,
   .admin-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .admin-credential-result {
+    grid-template-columns: 1fr;
   }
 }
 

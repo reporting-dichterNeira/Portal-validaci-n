@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=21.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=21.0';
-import { SupabaseBackend } from './supabase-backend.js?v=25.0';
+import { SupabaseBackend } from './supabase-backend.js?v=26.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
 
@@ -674,18 +674,73 @@ class ValidaFlowApp {
           <td><code>${escapeHtml(supervisor.username || '—')}</code></td>
           <td>${escapeHtml(study?.name || 'Sin asignar')}</td>
           <td><span class="badge ${supervisor.is_active ? 'badge-success' : 'badge-warning'}">${supervisor.is_active ? 'Activo' : 'Inactivo'}</span></td>
+          <td><div class="admin-supervisor-actions">
+            <button class="btn btn-outline btn-sm btn-admin-reset-password" type="button" data-supervisor-id="${supervisor.id}">🔑 Nueva contraseña</button>
+            <button class="btn btn-ghost btn-sm text-danger btn-admin-delete-supervisor" type="button" data-supervisor-id="${supervisor.id}">🗑️ Eliminar</button>
+          </div></td>
         </tr>`;
-      }).join('') : '<tr><td colspan="4" class="text-center text-muted">Aún no hay supervisores creados.</td></tr>';
+      }).join('') : '<tr><td colspan="5" class="text-center text-muted">Aún no hay supervisores creados.</td></tr>';
+      tbody.querySelectorAll('.btn-admin-reset-password').forEach(button => {
+        button.addEventListener('click', () => this.resetAdminSupervisorPassword(button.dataset.supervisorId));
+      });
+      tbody.querySelectorAll('.btn-admin-delete-supervisor').forEach(button => {
+        button.addEventListener('click', () => this.deleteAdminSupervisor(button.dataset.supervisorId));
+      });
     }
   }
 
-  generateTemporaryPassword() {
+  createStrongPassword() {
     const bytes = crypto.getRandomValues(new Uint8Array(12));
     const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-    let password = 'Vf!';
+    let password = 'Vf!7';
     bytes.forEach(byte => { password += alphabet[byte % alphabet.length]; });
+    return password;
+  }
+
+  generateTemporaryPassword() {
     const input = document.getElementById('admin-supervisor-password');
-    if (input) input.value = password;
+    if (input) input.value = this.createStrongPassword();
+  }
+
+  isStrongSupervisorPassword(password) {
+    return password.length >= 12
+      && /[a-z]/.test(password)
+      && /[A-Z]/.test(password)
+      && /[0-9]/.test(password)
+      && /[^A-Za-z0-9]/.test(password);
+  }
+
+  showAdminCredential(username, password, title = 'Credenciales listas para copiar') {
+    const result = document.getElementById('admin-credential-result');
+    const titleElement = document.getElementById('admin-credential-title');
+    const usernameElement = document.getElementById('admin-credential-username');
+    const passwordInput = document.getElementById('admin-credential-password');
+    if (titleElement) titleElement.textContent = title;
+    if (usernameElement) usernameElement.textContent = username;
+    if (passwordInput) passwordInput.value = password;
+    result?.classList.remove('hidden');
+    result?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  hideAdminCredential() {
+    const result = document.getElementById('admin-credential-result');
+    const passwordInput = document.getElementById('admin-credential-password');
+    if (passwordInput) passwordInput.value = '';
+    result?.classList.add('hidden');
+  }
+
+  async copyAdminCredential() {
+    const username = document.getElementById('admin-credential-username')?.textContent || '';
+    const password = document.getElementById('admin-credential-password')?.value || '';
+    if (!username || !password) return;
+    try {
+      await navigator.clipboard.writeText(`Usuario: ${username}\nContraseña: ${password}`);
+      this.showToast('Usuario y contraseña copiados.', 'success');
+    } catch {
+      const input = document.getElementById('admin-credential-password');
+      input?.select();
+      this.showToast('Seleccionamos la contraseña para que puedas copiarla.', 'warning');
+    }
   }
 
   async createAdminSupervisor() {
@@ -693,8 +748,20 @@ class ValidaFlowApp {
     const displayName = document.getElementById('admin-supervisor-name')?.value.trim() || '';
     const password = document.getElementById('admin-supervisor-password')?.value || '';
     const studyId = document.getElementById('admin-study-catalog')?.value || '';
-    if (!username || !displayName || password.length < 12 || !studyId) {
-      this.showToast('Completa todos los datos. La contraseña debe tener al menos 12 caracteres.', 'warning');
+    if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) {
+      this.showToast('El usuario debe tener entre 3 y 32 caracteres: letras minúsculas, números, punto, guion o guion bajo.', 'warning');
+      return;
+    }
+    if (displayName.length < 3) {
+      this.showToast('El nombre debe tener al menos 3 caracteres.', 'warning');
+      return;
+    }
+    if (!studyId) {
+      this.showToast('Selecciona el estudio que tendrá el supervisor.', 'warning');
+      return;
+    }
+    if (!this.isStrongSupervisorPassword(password)) {
+      this.showToast('La contraseña necesita mínimo 12 caracteres, mayúscula, minúscula, número y símbolo. Puedes usar “Generar”.', 'warning');
       return;
     }
     try {
@@ -704,9 +771,45 @@ class ValidaFlowApp {
         if (element) element.value = '';
       });
       await this.loadAdministratorPanel();
+      this.showAdminCredential(username, password, 'Supervisor creado · guarda estas credenciales');
       this.showToast(`Supervisor ${username} creado y asignado correctamente.`, 'success');
     } catch (error) {
-      this.showToast(error.message || 'No fue posible crear el supervisor.', 'error');
+      const message = String(error.message || '');
+      const friendlyMessage = message === 'USERNAME_ALREADY_EXISTS' || /already.*registered|already.*exists/i.test(message)
+        ? 'Ese nombre de usuario ya existe. Prueba con uno diferente.'
+        : message === 'WEAK_PASSWORD'
+          ? 'La contraseña necesita mínimo 12 caracteres, mayúscula, minúscula, número y símbolo.'
+          : message || 'No fue posible crear el supervisor.';
+      this.showToast(friendlyMessage, 'error');
+    }
+  }
+
+  async resetAdminSupervisorPassword(supervisorId) {
+    const supervisor = this.adminData.supervisors.find(item => item.id === supervisorId);
+    if (!supervisor) return;
+    if (!confirm(`¿Generar una nueva contraseña para ${supervisor.display_name}? La contraseña anterior dejará de funcionar.`)) return;
+    const password = this.createStrongPassword();
+    try {
+      await this.backend.resetSupervisorPassword({ supervisorId, password });
+      this.showAdminCredential(supervisor.username, password, 'Contraseña actualizada · cópiala ahora');
+      this.showToast(`Nueva contraseña generada para ${supervisor.username}.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible cambiar la contraseña.', 'error');
+    }
+  }
+
+  async deleteAdminSupervisor(supervisorId) {
+    const supervisor = this.adminData.supervisors.find(item => item.id === supervisorId);
+    if (!supervisor) return;
+    const confirmed = confirm(`¿Eliminar al supervisor “${supervisor.display_name}” (${supervisor.username})? Perderá el acceso de inmediato. El histórico de auditorías se conservará.`);
+    if (!confirmed) return;
+    try {
+      await this.backend.deleteSupervisor({ supervisorId });
+      this.hideAdminCredential();
+      await this.loadAdministratorPanel();
+      this.showToast(`Supervisor ${supervisor.username} eliminado.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible eliminar el supervisor.', 'error');
     }
   }
 
