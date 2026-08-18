@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=23.1" />
+  <link rel="stylesheet" href="css/styles.css?v=24.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -804,11 +804,11 @@
               <button class="btn btn-outline btn-sm" id="btn-reassign-study" onclick="window.openReassignStudyModal()" title="Si te equivocaste de estudio al subir el archivo, muévelo de inmediato al estudio correcto">
                 <span class="btn-icon">🔄</span> Mover a Otro Estudio
               </button>
-              <button class="btn btn-outline btn-sm text-danger" id="btn-clear-study" onclick="window.clearCurrentStudyAudits()" title="Elimina las auditorías de este estudio para subir una nueva base">
-                <span class="btn-icon">🗑️</span> Borrar Datos de este Estudio
+              <button class="btn btn-outline btn-sm text-danger" id="btn-clear-study" onclick="window.clearCurrentStudyAudits()" title="Archiva la jornada activa sin borrar su historial">
+                <span class="btn-icon">📦</span> Archivar Jornada Activa
               </button>
-              <button class="btn btn-ghost btn-sm text-muted" id="btn-clear-all" onclick="window.clearAllDatabase()" title="Vaciar toda la base de datos (todos los estudios)">
-                🧹 Resetear Todo
+              <button class="btn btn-ghost btn-sm text-muted" id="btn-clear-all" onclick="window.clearAllDatabase()" title="Archiva la operación activa del módulo sin eliminar el histórico">
+                🗄️ Archivar Módulo
               </button>
             </div>
           </div>
@@ -1177,12 +1177,89 @@
             </div>
           </div>
 
+          <!-- Consulta histórica agregada: una fila por validador y jornada -->
+          <div class="glass-panel validator-history-panel" style="margin-top: 1.75rem;">
+            <div class="panel-header validator-history-header">
+              <div>
+                <h3><span class="header-icon">🧭</span> Histórico semanal por validador</h3>
+                <p class="panel-desc">Consulta jornadas anteriores aunque ya se haya cargado una base nueva. El resumen se calcula en Supabase sin descargar el detalle completo.</p>
+              </div>
+              <span class="badge badge-info" id="history-range-badge">Sin consulta</span>
+            </div>
+
+            <div class="validator-history-filters">
+              <label class="history-filter-field">
+                <span>Desde</span>
+                <input type="date" id="history-date-from">
+              </label>
+              <label class="history-filter-field">
+                <span>Hasta</span>
+                <input type="date" id="history-date-to">
+              </label>
+              <label class="history-filter-field">
+                <span>Validador</span>
+                <select id="history-validator-filter">
+                  <option value="">Todos los validadores</option>
+                </select>
+              </label>
+              <label class="history-filter-field">
+                <span>Módulo</span>
+                <select id="history-module-filter">
+                  <option value="">Todos los módulos</option>
+                  <option value="smart">Validación Smart</option>
+                  <option value="blocking">Alertas Bloqueantes</option>
+                </select>
+              </label>
+              <button class="btn btn-primary btn-glow" id="btn-load-validator-history" type="button">
+                Consultar histórico
+              </button>
+            </div>
+
+            <div class="stats-grid stats-grid-4 history-stats-grid">
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-blue">👥</div>
+                <div class="stat-details">
+                  <span class="stat-label">Validadores</span>
+                  <span class="stat-value" id="history-stat-validators">0</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-cyan">📑</div>
+                <div class="stat-details">
+                  <span class="stat-label">Asignadas</span>
+                  <span class="stat-value" id="history-stat-total">0</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-emerald">✅</div>
+                <div class="stat-details">
+                  <span class="stat-label">Gestionadas</span>
+                  <span class="stat-value text-success" id="history-stat-completed">0</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-orange">⏱️</div>
+                <div class="stat-details">
+                  <span class="stat-label">Tiempo promedio</span>
+                  <span class="stat-value text-warning" id="history-stat-average">0s</span>
+                </div>
+              </div>
+            </div>
+
+            <div id="validator-history-results" class="validator-history-results">
+              <div class="history-empty-state">
+                <span>📅</span>
+                <p>Selecciona el rango de fechas y pulsa <strong>Consultar histórico</strong>.</p>
+              </div>
+            </div>
+          </div>
+
           <!-- Panel de Desglose y Descarga Día por Día -->
           <div class="glass-panel daily-breakdown-panel" style="margin-top: 1.75rem;">
             <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
               <div>
-                <h3><span class="header-icon">🗓️</span> Historial y Descargas por Fecha (Día x Día)</h3>
-                <p class="panel-desc">Consulta el avance registrado en cada fecha y descarga el reporte individual de cualquier día en específico.</p>
+                <h3><span class="header-icon">🗓️</span> Detalle de la jornada activa</h3>
+                <p class="panel-desc">Consulta y descarga el detalle operativo de la base que está activa actualmente.</p>
               </div>
               <div class="header-right">
                 <span class="badge badge-info" id="daily-stat-days-badge">0 días registrados</span>
@@ -2284,6 +2361,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=23.3"></script>
+  <script type="module" src="js/app.js?v=24.0"></script>
 </body>
 </html>
