@@ -304,7 +304,7 @@ export class ValidatorUI {
     if (audit && !audit.startedAt && audit.validationStatus !== 'completada') {
       audit.startedAt = new Date().toISOString();
       audit.validationStatus = 'en_progreso';
-      this.app.syncStateAcrossTabs();
+      this.app.syncStateAcrossTabs({ audit, module: this.currentModule });
     }
 
     // Actualizar clase seleccionada en la lista
@@ -617,13 +617,30 @@ export class ValidatorUI {
 
     // Guardar borrador
     const btnDraft = document.getElementById('btn-save-draft');
-    btnDraft?.addEventListener('click', () => {
+    btnDraft?.addEventListener('click', async () => {
       this.collectFormData(audit);
       audit.validationStatus = 'en_progreso';
-      this.app.syncStateAcrossTabs();
-      this.updateProgressHeader();
-      this.renderAuditList();
-      this.app.showToast('Borrador guardado correctamente.', 'info');
+      const originalLabel = btnDraft.innerHTML;
+      btnDraft.disabled = true;
+      btnDraft.textContent = 'Guardando...';
+      try {
+        await this.app.syncStateAcrossTabs(
+          { audit, module: this.currentModule },
+          { suppressErrorToast: true }
+        );
+        this.mergeAuditIntoAppState(audit);
+        this.updateProgressHeader();
+        this.renderAuditList();
+        this.app.showToast('Borrador guardado correctamente.', 'info');
+      } catch (error) {
+        console.error('No fue posible guardar el borrador:', error);
+        this.app.showToast(error?.message || 'No se pudo guardar el borrador en Supabase.', 'error');
+      } finally {
+        if (btnDraft.isConnected) {
+          btnDraft.disabled = false;
+          btnDraft.innerHTML = originalLabel;
+        }
+      }
     });
 
     // Botones de completar y siguiente
@@ -679,7 +696,16 @@ export class ValidatorUI {
     });
   }
 
-  completeAndAdvance(audit, kpisToReview) {
+  mergeAuditIntoAppState(audit) {
+    const source = this.currentModule === 'blocking'
+      ? (this.app.blockingAudits || [])
+      : (this.app.smartAudits || []);
+    const current = source.find(item => String(item.id) === String(audit.id));
+    if (current && current !== audit) Object.assign(current, audit);
+    this.app.saveState();
+  }
+
+  async completeAndAdvance(audit, kpisToReview) {
     this.collectFormData(audit);
 
     // Validar que todos los KPIs requeridos hayan sido evaluados
@@ -714,6 +740,13 @@ export class ValidatorUI {
       return;
     }
 
+    const previousProgress = {
+      validationStatus: audit.validationStatus,
+      completedAt: audit.completedAt,
+      fechaValidacion: audit.fechaValidacion,
+      fecha: audit.fecha,
+      durationSeconds: audit.durationSeconds
+    };
     const now = new Date();
     const dateOnly = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     audit.fechaValidacion = dateOnly;
@@ -729,20 +762,56 @@ export class ValidatorUI {
     if (hasDoubts) {
       // Si tiene dudas pendientes para el supervisor, queda en progreso y se notifica
       audit.validationStatus = 'en_progreso';
-      this.app.saveState();
-      this.app.syncStateAcrossTabs();
-      this.updateProgressHeader();
-      this.renderAuditList();
-      this.app.showToast(`❓ Consulta guardada para el supervisor en la Auditoría #${audit.id}. Pasando al siguiente caso...`, 'info');
+      audit.completedAt = null;
     } else {
       // Si todos los KPIs fueron resueltos, queda completada
       audit.validationStatus = 'completada';
       audit.completedAt = now.toISOString();
+    }
+
+    const completeButtons = [
+      document.getElementById('btn-complete-next'),
+      document.getElementById('btn-complete-next-bottom')
+    ].filter(Boolean);
+    const originalLabels = completeButtons.map(button => button.innerHTML);
+    completeButtons.forEach(button => {
+      button.disabled = true;
+      button.textContent = 'Guardando en Supabase...';
+    });
+
+    try {
+      // Do not navigate until Supabase confirms that this exact audit was saved.
+      await this.app.syncStateAcrossTabs(
+        { audit, module: this.currentModule },
+        { suppressErrorToast: true }
+      );
+    } catch (error) {
+      Object.assign(audit, previousProgress);
       this.app.saveState();
-      this.app.syncStateAcrossTabs();
       this.updateProgressHeader();
       this.renderAuditList();
-      this.app.showToast(`¡Auditoría #${audit.id} completada exitosamente!`, 'success');
+      const message = error?.message || 'No se pudo guardar la auditoría en Supabase.';
+      if (errorMsgBox) {
+        errorMsgBox.innerHTML = `<span class="text-danger">⚠️ ${message} Intenta nuevamente.</span>`;
+      }
+      console.error('No fue posible completar la auditoría:', error);
+      this.app.showToast(`${message} La auditoría no se marcó como completada.`, 'error');
+      completeButtons.forEach((button, index) => {
+        if (button.isConnected) {
+          button.disabled = false;
+          button.innerHTML = originalLabels[index];
+        }
+      });
+      return;
+    }
+
+    this.mergeAuditIntoAppState(audit);
+    this.updateProgressHeader();
+    this.renderAuditList();
+    if (hasDoubts) {
+      this.app.showToast(`❓ Consulta guardada para el supervisor en la Auditoría #${audit.id}. Pasando al siguiente caso...`, 'info');
+    } else {
+      this.app.showToast(`¡Auditoría #${audit.id} guardada y completada exitosamente!`, 'success');
     }
 
     // Avanzar a la siguiente auditoría pendiente

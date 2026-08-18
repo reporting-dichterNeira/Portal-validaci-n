@@ -6,7 +6,7 @@
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, seedSampleValidations } from './sample-data.js?v=21.0';
 import { ExcelParser } from './excel-parser.js?v=21.0';
 import { Distributor } from './distributor.js?v=21.0';
-import { ValidatorUI } from './validator-ui.js?v=21.0';
+import { ValidatorUI } from './validator-ui.js?v=29.0';
 import { SupabaseBackend } from './supabase-backend.js?v=28.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -628,12 +628,13 @@ class ValidaFlowApp {
     }
   }
 
-  syncStateAcrossTabs() {
+  syncStateAcrossTabs(syncTarget = null, options = {}) {
     this.saveState();
-    this.queueRemoteSync();
+    const remoteSync = this.queueRemoteSync(syncTarget, options);
     if (this.channel) {
       this.channel.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
     }
+    return remoteSync;
   }
 
   async loadAdministratorPanel() {
@@ -826,17 +827,36 @@ class ValidaFlowApp {
     }
   }
 
-  queueRemoteSync() {
-    if (!this.backend.configured) return;
-    this.remoteWriteQueue = this.remoteWriteQueue
-      .then(() => this.persistRemoteState())
-      .catch(error => {
-        console.error('Error sincronizando con Supabase:', error);
+  queueRemoteSync(syncTarget = null, { suppressErrorToast = false } = {}) {
+    if (!this.backend.configured) return Promise.resolve();
+
+    // Capture the exact audit at the time the action is queued. The validator can
+    // move to the next audit before Supabase finishes the previous request.
+    const capturedTarget = syncTarget?.audit
+      ? {
+          module: syncTarget.module || 'smart',
+          audit: typeof structuredClone === 'function'
+            ? structuredClone(syncTarget.audit)
+            : JSON.parse(JSON.stringify(syncTarget.audit))
+        }
+      : null;
+
+    const operation = this.remoteWriteQueue
+      .then(() => this.persistRemoteState(capturedTarget));
+
+    // Keep the shared queue usable after an error while returning the original
+    // operation so critical actions can wait for and handle the failure.
+    this.remoteWriteQueue = operation.catch(error => {
+      console.error('Error sincronizando con Supabase:', error);
+      if (!suppressErrorToast) {
         this.showToast('No se pudo sincronizar con Supabase. Revisa tu conexión.', 'error');
-      });
+      }
+    });
+
+    return operation;
   }
 
-  async persistRemoteState() {
+  async persistRemoteState(syncTarget = null) {
     if (!this.backend.configured) return;
 
     if (this.isSupervisor) {
@@ -849,10 +869,12 @@ class ValidaFlowApp {
     }
 
     const validatorUI = this.validatorUI;
-    if (!validatorUI?.currentValidator || !validatorUI.currentAuditId) return;
-    const module = validatorUI.currentModule || 'smart';
+    if (!validatorUI?.currentValidator) return;
+    const module = syncTarget?.module || validatorUI.currentModule || 'smart';
     const source = module === 'blocking' ? this.blockingAudits : this.smartAudits;
-    const audit = (source || []).find(a => String(a.id) === String(validatorUI.currentAuditId));
+    const audit = syncTarget?.audit || (validatorUI.currentAuditId
+      ? (source || []).find(a => String(a.id) === String(validatorUI.currentAuditId))
+      : null);
     if (audit) await this.backend.saveAuditProgress(audit, module);
   }
 
