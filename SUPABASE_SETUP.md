@@ -5,13 +5,14 @@ La aplicación usa Supabase para que supervisores y validadores trabajen desde e
 ## Arquitectura
 
 - `profiles`: define las cuentas administrativas y de supervisión.
-- `countries` y `studies`: catálogos creados desde el panel Administrador.
-- `supervisor_assignments`: asigna un único estudio/país a cada supervisor.
+- `studies`: catálogo fijo con Tradicional, Moderno, Chile y Lindley.
+- `countries`: conserva un único alcance técnico interno (`GLB`) que no se muestra en el portal.
+- `supervisor_assignments`: asigna un único estudio a cada supervisor y utiliza internamente el alcance `GLB` para mantener las políticas RLS existentes.
 - `validators`: catálogo y códigos únicos de validadores.
 - `validator_sessions`: vincula de forma privada una sesión anónima con el código ingresado.
 - `audits`: conserva la auditoría importada, su asignación, estado y resultados.
 - `upload_batches`: registra cada Excel como una jornada independiente; una base nueva archiva la anterior sin borrarla.
-- RLS: el administrador gestiona catálogos y cuentas; cada supervisor sólo ve su estudio/país; cada validador sólo ve sus auditorías.
+- RLS: el administrador gestiona cuentas; cada supervisor sólo ve su estudio; cada validador sólo ve sus auditorías.
 - `save_audit_progress`: RPC limitada para que un validador sólo cambie el progreso de una auditoría que tiene asignada.
 - `get_validator_history`: genera en PostgreSQL el resumen por fecha y validador, sin enviar al navegador los JSON completos.
 - Realtime: los cambios en `audits` actualizan el avance en los demás equipos sin recargar.
@@ -40,8 +41,8 @@ La aplicación usa Supabase para que supervisores y validadores trabajen desde e
 
 ## Flujo operativo
 
-1. El administrador crea países y estudios.
-2. El administrador crea cada supervisor, su contraseña temporal y la asignación de estudio/país. La función `manage-supervisors` conserva la clave privilegiada exclusivamente en el servidor.
+1. El administrador selecciona uno de los cuatro estudios disponibles.
+2. El administrador crea cada supervisor, su contraseña temporal y la asignación de estudio. La función `manage-supervisors` conserva la clave privilegiada exclusivamente en el servidor y agrega el alcance técnico interno.
 3. El supervisor inicia sesión con su usuario y contraseña; sólo recibe el alcance asignado.
 4. Carga el Excel y ejecuta la repartición. La carga se guarda en lotes en Supabase.
 5. Cada carga diaria crea un lote nuevo. El lote anterior deja de aparecer en la operación activa, pero permanece en el histórico.

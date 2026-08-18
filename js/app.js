@@ -7,7 +7,9 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=21.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=21.0';
-import { SupabaseBackend } from './supabase-backend.js?v=24.0';
+import { SupabaseBackend } from './supabase-backend.js?v=25.0';
+
+const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
 
 class ValidaFlowApp {
   constructor() {
@@ -641,7 +643,7 @@ class ValidaFlowApp {
   }
 
   renderAdministratorPanel() {
-    const { countries, studies, supervisors, assignments } = this.adminData;
+    const { studies, supervisors, assignments } = this.adminData;
     const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
     })[char]);
@@ -650,33 +652,30 @@ class ValidaFlowApp {
       if (element) element.textContent = value;
     };
     setText('admin-count-supervisors', supervisors.length);
-    setText('admin-count-studies', studies.length);
-    setText('admin-count-countries', countries.length);
+    setText('admin-count-studies', ADMIN_STUDY_NAMES.length);
 
-    const studySelect = document.getElementById('admin-supervisor-study');
-    const countrySelect = document.getElementById('admin-supervisor-country');
+    const studySelect = document.getElementById('admin-study-catalog');
+    const studyByName = new Map(studies.map(item => [String(item.name).toLowerCase(), item]));
+    const allowedStudies = ADMIN_STUDY_NAMES
+      .map(name => studyByName.get(name.toLowerCase()))
+      .filter(item => item?.is_active);
     if (studySelect) studySelect.innerHTML = '<option value="">Selecciona un estudio</option>' +
-      studies.filter(item => item.is_active).map(item => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
-    if (countrySelect) countrySelect.innerHTML = '<option value="">Selecciona un país</option>' +
-      countries.filter(item => item.is_active).map(item => `<option value="${item.id}">${escapeHtml(item.code)} · ${escapeHtml(item.name)}</option>`).join('');
+      allowedStudies.map(item => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
 
     const studyById = new Map(studies.map(item => [item.id, item]));
-    const countryById = new Map(countries.map(item => [item.id, item]));
     const assignmentBySupervisor = new Map(assignments.map(item => [item.supervisor_id, item]));
     const tbody = document.getElementById('admin-supervisors-tbody');
     if (tbody) {
       tbody.innerHTML = supervisors.length ? supervisors.map(supervisor => {
         const assignment = assignmentBySupervisor.get(supervisor.id);
         const study = assignment ? studyById.get(assignment.study_id) : null;
-        const country = assignment ? countryById.get(assignment.country_id) : null;
         return `<tr>
           <td><strong>${escapeHtml(supervisor.display_name)}</strong></td>
           <td><code>${escapeHtml(supervisor.username || '—')}</code></td>
           <td>${escapeHtml(study?.name || 'Sin asignar')}</td>
-          <td>${country ? `${escapeHtml(country.code)} · ${escapeHtml(country.name)}` : 'Sin asignar'}</td>
           <td><span class="badge ${supervisor.is_active ? 'badge-success' : 'badge-warning'}">${supervisor.is_active ? 'Activo' : 'Inactivo'}</span></td>
         </tr>`;
-      }).join('') : '<tr><td colspan="5" class="text-center text-muted">Aún no hay supervisores creados.</td></tr>';
+      }).join('') : '<tr><td colspan="4" class="text-center text-muted">Aún no hay supervisores creados.</td></tr>';
     }
   }
 
@@ -689,54 +688,17 @@ class ValidaFlowApp {
     if (input) input.value = password;
   }
 
-  async createAdminCountry() {
-    const code = document.getElementById('admin-country-code')?.value || '';
-    const name = document.getElementById('admin-country-name')?.value || '';
-    if (!code.trim() || !name.trim()) {
-      this.showToast('Completa el código y nombre del país.', 'warning');
-      return;
-    }
-    try {
-      await this.backend.createCountry({ code, name });
-      document.getElementById('admin-country-code').value = '';
-      document.getElementById('admin-country-name').value = '';
-      await this.loadAdministratorPanel();
-      this.showToast('País creado correctamente.', 'success');
-    } catch (error) {
-      this.showToast(error.message || 'No fue posible crear el país.', 'error');
-    }
-  }
-
-  async createAdminStudy() {
-    const name = document.getElementById('admin-study-name')?.value || '';
-    const description = document.getElementById('admin-study-description')?.value || '';
-    if (!name.trim()) {
-      this.showToast('Ingresa el nombre del estudio.', 'warning');
-      return;
-    }
-    try {
-      await this.backend.createStudy({ name, description });
-      document.getElementById('admin-study-name').value = '';
-      document.getElementById('admin-study-description').value = '';
-      await this.loadAdministratorPanel();
-      this.showToast('Estudio creado correctamente.', 'success');
-    } catch (error) {
-      this.showToast(error.message || 'No fue posible crear el estudio.', 'error');
-    }
-  }
-
   async createAdminSupervisor() {
     const username = document.getElementById('admin-supervisor-username')?.value.trim().toLowerCase() || '';
     const displayName = document.getElementById('admin-supervisor-name')?.value.trim() || '';
     const password = document.getElementById('admin-supervisor-password')?.value || '';
-    const studyId = document.getElementById('admin-supervisor-study')?.value || '';
-    const countryId = document.getElementById('admin-supervisor-country')?.value || '';
-    if (!username || !displayName || password.length < 12 || !studyId || !countryId) {
+    const studyId = document.getElementById('admin-study-catalog')?.value || '';
+    if (!username || !displayName || password.length < 12 || !studyId) {
       this.showToast('Completa todos los datos. La contraseña debe tener al menos 12 caracteres.', 'warning');
       return;
     }
     try {
-      await this.backend.createSupervisor({ username, displayName, password, studyId, countryId });
+      await this.backend.createSupervisor({ username, displayName, password, studyId });
       ['admin-supervisor-username', 'admin-supervisor-name', 'admin-supervisor-password'].forEach(id => {
         const element = document.getElementById(id);
         if (element) element.value = '';
@@ -1645,7 +1607,9 @@ class ValidaFlowApp {
       audit._countryId = this.currentScope?.country?.id || audit._countryId || null;
       if (!audit.modelo || audit.modelo === 'Tradicional' || audit.modelo === 'TRADICIONAL') audit.modelo = studyName;
       if (!audit.canal) audit.canal = studyName;
-      if (this.currentScope?.country?.name) audit.pais = this.currentScope.country.name;
+      if (this.currentScope?.country?.code !== 'GLB' && this.currentScope?.country?.name) {
+        audit.pais = this.currentScope.country.name;
+      }
       else if (studyName === 'Chile') audit.pais = 'Chile';
     });
 

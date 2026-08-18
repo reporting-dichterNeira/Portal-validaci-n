@@ -7,6 +7,9 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+const allowedStudyNames = new Set(['tradicional', 'moderno', 'chile', 'lindley']);
+const internalCountryCode = 'GLB';
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -55,7 +58,6 @@ Deno.serve(async (req) => {
   const displayName = String(body.displayName ?? '').trim();
   const password = String(body.password ?? '');
   const studyId = String(body.studyId ?? '').trim();
-  const countryId = String(body.countryId ?? '').trim();
 
   if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) {
     return json({ error: 'INVALID_USERNAME' }, 400);
@@ -65,8 +67,19 @@ Deno.serve(async (req) => {
     && /[A-Z]/.test(password)
     && /[0-9]/.test(password)
     && /[^A-Za-z0-9]/.test(password);
-  if (displayName.length < 3 || !strongPassword || !studyId || !countryId) {
+  if (displayName.length < 3 || !strongPassword || !studyId) {
     return json({ error: 'INVALID_SUPERVISOR_DATA' }, 400);
+  }
+
+  const [{ data: study, error: studyError }, { data: internalCountry, error: countryError }] = await Promise.all([
+    adminClient.from('studies').select('id, name').eq('id', studyId).eq('is_active', true).maybeSingle(),
+    adminClient.from('countries').select('id').eq('code', internalCountryCode).eq('is_active', true).maybeSingle(),
+  ]);
+  if (studyError || !study || !allowedStudyNames.has(String(study.name).toLowerCase())) {
+    return json({ error: 'INVALID_STUDY' }, 400);
+  }
+  if (countryError || !internalCountry) {
+    return json({ error: 'INTERNAL_SCOPE_NOT_CONFIGURED' }, 500);
   }
 
   const email = `${username}@portal-validacion.local`;
@@ -98,7 +111,7 @@ Deno.serve(async (req) => {
   const { error: assignmentError } = await adminClient.from('supervisor_assignments').insert({
     supervisor_id: userId,
     study_id: studyId,
-    country_id: countryId,
+    country_id: internalCountry.id,
     created_by: userData.user.id,
   });
 
@@ -109,6 +122,6 @@ Deno.serve(async (req) => {
   }
 
   return json({
-    supervisor: { id: userId, username, displayName, studyId, countryId },
+    supervisor: { id: userId, username, displayName, studyId },
   }, 201);
 });

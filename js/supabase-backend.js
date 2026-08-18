@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
-import { SUPABASE_CONFIG } from './supabase-config.js?v=24.0';
+import { SUPABASE_CONFIG } from './supabase-config.js?v=25.0';
 
 const CONFIGURED = Boolean(
   SUPABASE_CONFIG.url &&
@@ -394,46 +394,24 @@ export class SupabaseBackend {
 
   async loadAdministration() {
     this.ensureConfigured();
-    const [countries, studies, profiles, assignments] = await Promise.all([
-      this.client.from('countries').select('id, code, name, is_active').order('name'),
+    const [studies, profiles, assignments] = await Promise.all([
       this.client.from('studies').select('id, name, description, is_active').order('name'),
       this.client.from('profiles').select('id, username, display_name, role, is_active').eq('role', 'supervisor').order('display_name'),
       this.client.from('supervisor_assignments').select('id, supervisor_id, study_id, country_id').order('created_at')
     ]);
-    const failed = [countries, studies, profiles, assignments].find(result => result.error);
+    const failed = [studies, profiles, assignments].find(result => result.error);
     if (failed?.error) throw failed.error;
     return {
-      countries: countries.data || [],
       studies: studies.data || [],
       supervisors: profiles.data || [],
       assignments: assignments.data || []
     };
   }
 
-  async createCountry({ code, name }) {
-    this.ensureConfigured();
-    const { data, error } = await this.client.from('countries').insert({
-      code: String(code || '').trim().toUpperCase(),
-      name: String(name || '').trim()
-    }).select('id, code, name, is_active').single();
-    if (error) throw error;
-    return data;
-  }
-
-  async createStudy({ name, description = '' }) {
-    this.ensureConfigured();
-    const { data, error } = await this.client.from('studies').insert({
-      name: String(name || '').trim(),
-      description: String(description || '').trim()
-    }).select('id, name, description, is_active').single();
-    if (error) throw error;
-    return data;
-  }
-
-  async createSupervisor({ username, displayName, password, studyId, countryId }) {
+  async createSupervisor({ username, displayName, password, studyId }) {
     this.ensureConfigured();
     const { data, error } = await this.client.functions.invoke('manage-supervisors', {
-      body: { username, displayName, password, studyId, countryId }
+      body: { username, displayName, password, studyId }
     });
     if (error) {
       let detail = error.message;
