@@ -6206,6 +6206,37 @@ body.dark-theme {
   }
 }
 
+.admin-danger-zone {
+  border-color: rgba(220, 53, 69, 0.35);
+}
+
+.admin-danger-zone .form-help {
+  display: block;
+  margin-top: 0.65rem;
+}
+
+.carryover-summary-list {
+  display: grid;
+  gap: 0.55rem;
+  margin: 1rem 0;
+}
+
+.carryover-summary-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-surface-elevated);
+}
+
+.carryover-summary-item strong {
+  color: var(--dn-blue);
+  white-space: nowrap;
+}
+
 /* A supervisor has one fixed operational module assigned by Administration. */
 .supervisor-assigned-module-message {
   display: inline-flex;

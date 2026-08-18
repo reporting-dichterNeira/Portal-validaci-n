@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=28.0" />
+  <link rel="stylesheet" href="css/styles.css?v=30.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -597,6 +597,17 @@
               <tbody id="admin-supervisors-tbody"><tr><td colspan="6" class="text-center text-muted">Cargando...</td></tr></tbody>
             </table>
           </div>
+        </section>
+
+        <section class="glass-panel admin-setup-card admin-danger-zone">
+          <div class="section-header">
+            <div>
+              <h2>🧹 Limpieza de datos de prueba</h2>
+              <p>Elimina permanentemente auditorías y jornadas. Conserva usuarios, validadores, supervisores y estudios.</p>
+            </div>
+          </div>
+          <button class="btn btn-outline text-danger" id="btn-admin-purge-test-data" type="button" onclick="window.app?.purgeTestAuditData()">🧹 Eliminar datos de prueba</button>
+          <small class="form-help">Requiere dos confirmaciones y solo está disponible para el administrador.</small>
         </section>
       </div>
     </div>
@@ -1686,6 +1697,27 @@
     </div>
   </div>
 
+  <!-- MODAL: RESUMEN DE PENDIENTES ARRASTRADOS -->
+  <div class="modal-overlay hidden" id="modal-carryover-summary">
+    <div class="modal-card modal-card-md">
+      <div class="modal-header">
+        <div>
+          <span class="corporate-badge-sm">dichter & neira • Continuidad de jornada</span>
+          <h3>↪ Pendientes asignados automáticamente</h3>
+        </div>
+        <button class="btn-close-modal" type="button" onclick="document.getElementById('modal-carryover-summary').classList.add('hidden')">✕</button>
+      </div>
+      <div class="modal-body">
+        <p id="carryover-summary-total" class="modal-desc"></p>
+        <div id="carryover-summary-list" class="carryover-summary-list"></div>
+        <p class="form-help">Cada pendiente conserva el mismo validador y aparece identificado como “Día anterior”.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" type="button" onclick="document.getElementById('modal-carryover-summary').classList.add('hidden')">Entendido</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ======================================================== -->
   <!-- MODAL: REASIGNAR / MOVER AUDITORÍAS A OTRO ESTUDIO       -->
   <!-- ======================================================== -->
@@ -2333,6 +2365,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=29.0"></script>
+  <script type="module" src="js/app.js?v=30.0"></script>
 </body>
 </html>

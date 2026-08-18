@@ -419,6 +419,15 @@ export class SupabaseBackend {
     }));
   }
 
+  async purgeAllAuditData() {
+    this.ensureConfigured();
+    const { data, error } = await this.client.rpc('purge_all_audit_data', {
+      p_confirmation: 'ELIMINAR PRUEBAS'
+    });
+    if (error) throw error;
+    return data || { audits_deleted: 0, batches_deleted: 0 };
+  }
+
   async loadAuditHistory({ module = null, pageSize = 500, onProgress = null } = {}) {
     this.ensureConfigured();
     const safePageSize = Math.min(Math.max(Number(pageSize) || 500, 100), 1000);

@@ -265,13 +265,16 @@ export class ValidatorUI {
       const statusBadge = isCompleted 
         ? `<span class="badge badge-success">✓ Completada</span>`
         : `<span class="badge badge-warning">⚡ Pendiente</span>`;
+      const carryoverBadge = audit._carriedOver
+        ? `<span class="badge badge-info" title="Pendiente desde ${audit._carriedFromDate || 'la jornada anterior'}">↪ Día anterior</span>`
+        : '';
 
       return `
         <div class="audit-card-item ${isSelected ? 'selected' : ''} ${isCompleted ? 'is-completed' : ''}" 
              data-id="${audit.id}">
           <div class="audit-card-top">
             <span class="audit-id-badge">#${audit.id}</span>
-            ${statusBadge}
+            <span>${carryoverBadge} ${statusBadge}</span>
           </div>
           <div class="audit-card-meta">
             <div class="meta-row"><span class="meta-label">PDV:</span> <strong>${audit.idPDV || 'N/A'}</strong></div>

@@ -6,8 +6,8 @@
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, seedSampleValidations } from './sample-data.js?v=21.0';
 import { ExcelParser } from './excel-parser.js?v=21.0';
 import { Distributor } from './distributor.js?v=21.0';
-import { ValidatorUI } from './validator-ui.js?v=29.0';
-import { SupabaseBackend } from './supabase-backend.js?v=28.0';
+import { ValidatorUI } from './validator-ui.js?v=30.0';
+import { SupabaseBackend } from './supabase-backend.js?v=30.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
 const SUPERVISOR_MODULES = {
@@ -854,6 +854,52 @@ class ValidaFlowApp {
     });
 
     return operation;
+  }
+
+  async purgeTestAuditData() {
+    if (this.currentRole !== 'admin') {
+      this.showToast('Esta acción requiere una sesión administrativa.', 'error');
+      return;
+    }
+
+    const confirmed = confirm(
+      '¿Eliminar permanentemente TODAS las auditorías y jornadas cargadas?\n\n' +
+      'Esta opción está pensada para terminar las pruebas. Los usuarios, validadores, supervisores y estudios se conservarán.'
+    );
+    if (!confirmed) return;
+
+    const phrase = prompt('Para confirmar, escribe exactamente: ELIMINAR PRUEBAS');
+    if (phrase !== 'ELIMINAR PRUEBAS') {
+      this.showToast('La frase no coincide. No se eliminó ningún registro.', 'warning');
+      return;
+    }
+
+    const button = document.getElementById('btn-admin-purge-test-data');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Eliminando datos de prueba...';
+    }
+
+    try {
+      const result = await this.backend.purgeAllAuditData();
+      this.audits = [];
+      this.smartAudits = [];
+      this.blockingAudits = [];
+      this.auditHistoryByModule = { smart: null, blocking: null };
+      this.validatorHistoryRows = [];
+      this.validatorHistoryLoaded = false;
+      this.saveState();
+      const auditsDeleted = Number(result?.audits_deleted || 0);
+      const batchesDeleted = Number(result?.batches_deleted || 0);
+      this.showToast(`Limpieza terminada: ${auditsDeleted} auditorías y ${batchesDeleted} jornadas eliminadas.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible eliminar los datos de prueba.', 'error');
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.innerHTML = '🧹 Eliminar datos de prueba';
+      }
+    }
   }
 
   async persistRemoteState(syncTarget = null) {
@@ -1935,7 +1981,7 @@ class ValidaFlowApp {
 
     if (this.backend.configured && this.isSupervisor) {
       try {
-        await this.backend.importDailyBatch({
+        const activatedBatch = await this.backend.importDailyBatch({
           audits: result.audits,
           module: this.currentModule,
           operationDate: opDate,
@@ -1946,7 +1992,10 @@ class ValidaFlowApp {
         this.validatorHistoryLoaded = false;
         this.pendingUpload = null;
         await this.refreshFromBackend();
-        this.showToast(`¡${result.audits.length} auditorías guardadas como una nueva jornada para ${studyName} (${opDate})!`, 'success');
+        const carriedCount = Number(activatedBatch?.carried_over_count || 0);
+        const finalCount = Number(activatedBatch?.row_count || result.audits.length);
+        this.showToast(`¡Nueva jornada guardada con ${finalCount} auditorías para ${studyName} (${opDate})!`, 'success');
+        this.showCarryoverSummary(activatedBatch);
       } catch (error) {
         console.error('Error importando la jornada en Supabase:', error);
         this.showToast(error.message || 'No fue posible guardar la nueva jornada en Supabase.', 'error');
@@ -1997,6 +2046,32 @@ class ValidaFlowApp {
     this.populateLookupQuickTags();
     this.showToast(`¡${result.audits.length} auditorías acumuladas para ${studyName} (Jornada: ${opDate})!`, 'success');
     this.pendingUpload = null;
+  }
+
+  showCarryoverSummary(batch) {
+    const carriedCount = Number(batch?.carried_over_count || 0);
+    if (!carriedCount) return;
+
+    const modal = document.getElementById('modal-carryover-summary');
+    const total = document.getElementById('carryover-summary-total');
+    const list = document.getElementById('carryover-summary-list');
+    const summary = Array.isArray(batch?.carryover_summary) ? batch.carryover_summary : [];
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[char]);
+
+    if (total) {
+      total.textContent = `${carriedCount} auditoría${carriedCount === 1 ? '' : 's'} pendiente${carriedCount === 1 ? '' : 's'} del día anterior ${carriedCount === 1 ? 'se sumó' : 'se sumaron'} a la nueva jornada.`;
+    }
+    if (list) {
+      list.innerHTML = summary.map(item => `
+        <div class="carryover-summary-item">
+          <span>👤 ${escapeHtml(item.validator_name || 'Sin asignar')}</span>
+          <strong>+${Number(item.count || 0)} auditorías</strong>
+        </div>
+      `).join('');
+    }
+    modal?.classList.remove('hidden');
   }
 
   loadSampleData(notify = true) {
