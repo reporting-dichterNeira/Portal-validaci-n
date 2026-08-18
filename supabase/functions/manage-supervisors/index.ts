@@ -9,6 +9,15 @@ const corsHeaders = {
 
 const allowedStudyNames = new Set(['tradicional', 'moderno', 'chile', 'lindley']);
 const internalCountryCode = 'GLB';
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isStrongPassword(password: string) {
+  return password.length >= 12
+    && /[a-z]/.test(password)
+    && /[A-Z]/.test(password)
+    && /[0-9]/.test(password)
+    && /[^A-Za-z0-9]/.test(password);
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -54,22 +63,46 @@ Deno.serve(async (req) => {
     return json({ error: 'INVALID_JSON' }, 400);
   }
 
+  const action = String(body.action ?? 'create');
+  const supervisorId = String(body.supervisorId ?? '').trim();
+  const password = String(body.password ?? '');
+
+  if (action === 'reset_password' || action === 'delete') {
+    if (!uuidPattern.test(supervisorId)) return json({ error: 'INVALID_SUPERVISOR_ID' }, 400);
+
+    const { data: supervisor, error: supervisorError } = await adminClient
+      .from('profiles')
+      .select('id, username, display_name, role')
+      .eq('id', supervisorId)
+      .eq('role', 'supervisor')
+      .maybeSingle();
+    if (supervisorError) return json({ error: 'SUPERVISOR_LOOKUP_FAILED', detail: supervisorError.message }, 500);
+    if (!supervisor) return json({ error: 'SUPERVISOR_NOT_FOUND' }, 404);
+
+    if (action === 'reset_password') {
+      if (!isStrongPassword(password)) return json({ error: 'WEAK_PASSWORD' }, 400);
+      const { error: updateError } = await adminClient.auth.admin.updateUserById(supervisorId, { password });
+      if (updateError) return json({ error: 'PASSWORD_UPDATE_FAILED', detail: updateError.message }, 409);
+      return json({ supervisor: { id: supervisor.id, username: supervisor.username } });
+    }
+
+    const { error: deleteError } = await adminClient.auth.admin.deleteUser(supervisorId);
+    if (deleteError) return json({ error: 'DELETE_SUPERVISOR_FAILED', detail: deleteError.message }, 409);
+    return json({ deleted: true, supervisor: { id: supervisor.id, username: supervisor.username } });
+  }
+
+  if (action !== 'create') return json({ error: 'INVALID_ACTION' }, 400);
+
   const username = String(body.username ?? '').trim().toLowerCase();
   const displayName = String(body.displayName ?? '').trim();
-  const password = String(body.password ?? '');
   const studyId = String(body.studyId ?? '').trim();
 
   if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) {
     return json({ error: 'INVALID_USERNAME' }, 400);
   }
-  const strongPassword = password.length >= 12
-    && /[a-z]/.test(password)
-    && /[A-Z]/.test(password)
-    && /[0-9]/.test(password)
-    && /[^A-Za-z0-9]/.test(password);
-  if (displayName.length < 3 || !strongPassword || !studyId) {
-    return json({ error: 'INVALID_SUPERVISOR_DATA' }, 400);
-  }
+  if (displayName.length < 3) return json({ error: 'INVALID_DISPLAY_NAME' }, 400);
+  if (!isStrongPassword(password)) return json({ error: 'WEAK_PASSWORD' }, 400);
+  if (!studyId) return json({ error: 'STUDY_REQUIRED' }, 400);
 
   const [{ data: study, error: studyError }, { data: internalCountry, error: countryError }] = await Promise.all([
     adminClient.from('studies').select('id, name').eq('id', studyId).eq('is_active', true).maybeSingle(),
@@ -91,7 +124,8 @@ Deno.serve(async (req) => {
   });
 
   if (createError || !created.user) {
-    return json({ error: 'CREATE_AUTH_USER_FAILED', detail: createError?.message }, 409);
+    const alreadyExists = /already.*registered|already.*exists/i.test(createError?.message || '');
+    return json({ error: alreadyExists ? 'USERNAME_ALREADY_EXISTS' : 'CREATE_AUTH_USER_FAILED', detail: createError?.message }, 409);
   }
 
   const userId = created.user.id;

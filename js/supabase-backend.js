@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
-import { SUPABASE_CONFIG } from './supabase-config.js?v=25.0';
+import { SUPABASE_CONFIG } from './supabase-config.js?v=26.0';
 
 const CONFIGURED = Boolean(
   SUPABASE_CONFIG.url &&
@@ -274,15 +274,29 @@ export class SupabaseBackend {
   async upsertAudits(audits, module, batchId = null) {
     this.ensureConfigured();
     if (!audits?.length) return;
-    const rows = audits
+    let rows = audits
       .map(audit => auditToRow(audit, module, this.currentScope, batchId))
       .filter(row => row.batch_id);
     if (!rows.length) return;
+
+    // A daily batch is always new. Deduplicate repeated Excel IDs before the
+    // insert so Postgres never takes the ON CONFLICT update path while the
+    // batch is still a draft and intentionally hidden by the SELECT policy.
+    if (batchId) {
+      rows = [...new Map(rows.map(row => [row.external_id, row])).values()];
+    }
+
     for (let i = 0; i < rows.length; i += 500) {
-      const { error } = await this.client
-        .from('audits')
-        .upsert(rows.slice(i, i + 500), { onConflict: 'batch_id,external_id' });
-      if (error) throw error;
+      const chunk = rows.slice(i, i + 500);
+      const result = batchId
+        ? await this.client.from('audits').insert(chunk)
+        : await this.client.from('audits').upsert(chunk, { onConflict: 'batch_id,external_id' });
+      if (result.error) {
+        const isAuditRlsError = /row-level security policy.*audits|audits.*row-level security policy/i.test(result.error.message || '');
+        throw new Error(isAuditRlsError
+          ? 'Supabase rechazó el alcance de la carga. Cierra sesión, vuelve a ingresar y confirma que el estudio asignado sea el correcto.'
+          : result.error.message);
+      }
     }
   }
 
@@ -409,9 +423,21 @@ export class SupabaseBackend {
   }
 
   async createSupervisor({ username, displayName, password, studyId }) {
+    return this.manageSupervisor({ action: 'create', username, displayName, password, studyId });
+  }
+
+  async resetSupervisorPassword({ supervisorId, password }) {
+    return this.manageSupervisor({ action: 'reset_password', supervisorId, password });
+  }
+
+  async deleteSupervisor({ supervisorId }) {
+    return this.manageSupervisor({ action: 'delete', supervisorId });
+  }
+
+  async manageSupervisor(body) {
     this.ensureConfigured();
     const { data, error } = await this.client.functions.invoke('manage-supervisors', {
-      body: { username, displayName, password, studyId }
+      body
     });
     if (error) {
       let detail = error.message;
@@ -424,7 +450,7 @@ export class SupabaseBackend {
       throw new Error(detail);
     }
     if (data?.error) throw new Error(data.detail || data.error);
-    return data.supervisor;
+    return data.supervisor || data;
   }
 
   subscribe(onChange) {
