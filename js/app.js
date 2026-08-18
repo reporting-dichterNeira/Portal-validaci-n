@@ -1,0 +1,3859 @@
+/**
+ * Controlador Principal de la Aplicación ValidaFlow - dichter & neira
+ * Incluye Motor de Control de Calidad y Detección de Anomalías
+ */
+
+import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, seedSampleValidations } from './sample-data.js?v=21.0';
+import { ExcelParser } from './excel-parser.js?v=21.0';
+import { Distributor } from './distributor.js?v=21.0';
+import { ValidatorUI } from './validator-ui.js?v=21.0';
+
+class ValidaFlowApp {
+  constructor() {
+    this.audits = [];
+    this.smartAudits = [];
+    this.blockingAudits = [];
+    this.validators = [];
+    this.tipificaciones = [...DEFAULT_TIPIFICACIONES];
+    this.headers = [];
+    this.kpiColumns = [];
+    this.storageKey = 'VALIDAFLOW_STATE_V1';
+
+    // Estado de Navegación y Vistas Previas
+    this.currentView = 'landing'; // 'landing' | 'validator' | 'supervisor-hub' | 'supervisor-workspace'
+    this.currentModule = 'smart'; // 'smart' (Validación Smart) | 'blocking' (Alertas Bloqueantes)
+    this.currentProject = 'Chile'; // 'Chile' | 'Tradicional' | 'Moderno' | 'Lindley'
+    this.currentTab = 'admin';
+
+    // Sub-Pestaña activa en Métricas & Reportes: 'operational' | 'executive'
+    this.reportsSubtab = 'operational';
+
+    // Filtro multi-estudio activo en Métricas (ej: ['ALL'] o ['Tradicional', 'Stills'])
+    this.selectedStudies = ['ALL'];
+
+    // Filtro activo en el feed de anomalías
+    this.alertsFilter = 'all';
+
+    // Filtro activo en consultas / dudas de validadores
+    this.queryFilter = 'all'; // 'all' | 'pending' | 'resolved'
+    this.queryStudyFilter = 'ALL';
+    this.pendingQueryToResolve = null; // { auditId, kpiName }
+
+    // Filtro activo en Alertas Bloqueantes
+    this.blockingFilter = 'all'; // 'all' | 'alert' | 'ok'
+
+    // Criterio activo de repartición: 'audits' (por auditorías) | 'kpis' (por KPIs a revisar)
+    this.distributionMode = 'audits';
+
+    // Estado de Autenticación del Supervisor
+    this.isSupervisor = sessionStorage.getItem('VALIDAFLOW_SUPERVISOR_AUTH') === 'true';
+
+    // BroadcastChannel para sincronización multi-pestaña
+    this.channel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('validaflow_sync') : null;
+
+    this.initTheme();
+    this.init();
+  }
+
+  initTheme() {
+    const savedTheme = localStorage.getItem('valida_theme') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    this.applyTheme(savedTheme, false);
+  }
+
+  applyTheme(theme, showFeedback = true) {
+    this.currentTheme = theme;
+    document.documentElement.setAttribute('data-theme', theme);
+    document.body.classList.toggle('dark-theme', theme === 'dark');
+
+    const iconEl = document.getElementById('theme-icon');
+    const labelEl = document.getElementById('theme-label');
+    const btnEl = document.getElementById('btn-theme-toggle');
+
+    if (iconEl) iconEl.textContent = theme === 'dark' ? '☀️' : '🌙';
+    if (labelEl) labelEl.textContent = theme === 'dark' ? 'Claro' : 'Oscuro';
+    if (btnEl) btnEl.title = theme === 'dark' ? 'Cambiar a Modo Claro ☀️' : 'Cambiar a Modo Oscuro 🌙';
+
+    localStorage.setItem('valida_theme', theme);
+
+    if (showFeedback) {
+      this.showToast(`Modo ${theme === 'dark' ? 'Oscuro 🌙' : 'Claro ☀️'} activado`, 'info');
+    }
+  }
+
+  toggleTheme() {
+    const nextTheme = this.currentTheme === 'dark' ? 'light' : 'dark';
+    this.applyTheme(nextTheme, true);
+  }
+
+  init() {
+    this.loadState();
+    this.initLandingAndHub();
+    this.initSupervisorAuth();
+    this.initUI();
+    this.initLookupModule();
+    this.initQueriesModule();
+    this.initAlertsModule();
+    this.initReportsSubtabs();
+    this.initStudyFilter();
+    this.initDailyReportsModule();
+    this.validatorUI = new ValidatorUI(this);
+    this.validatorUI.populateQuickSelect(this.validators);
+
+    // Siempre iniciar en la pantalla principal de 2 botones al abrir la aplicación
+    this.showView('landing');
+
+    this.renderAdminView();
+    this.renderReportsView();
+    this.renderQueriesView();
+    this.renderAlertsView();
+    this.renderDailyReportsView();
+    this.listenCrossTabEvents();
+  }
+
+  // ==========================================
+  // MENÚS PREVIOS: LANDING Y HUB DE SUPERVISIÓN
+  // ==========================================
+  initLandingAndHub() {
+    // 0. Clic en el logo del encabezado regresa a la pantalla de inicio
+    document.querySelector('.header-brand')?.addEventListener('click', () => {
+      this.showView('landing');
+    });
+
+    // 1. Botones de la Pantalla Inicial (Landing)
+    const btnEnterValidator = document.getElementById('btn-enter-validator-portal');
+    const cardValidator = document.getElementById('choice-btn-validator');
+    const btnEnterSupervisor = document.getElementById('btn-enter-supervisor-portal');
+    const cardSupervisor = document.getElementById('choice-btn-supervisor');
+    const modalLogin = document.getElementById('modal-supervisor-login');
+
+    const goToValidator = () => {
+      this.showView('validator');
+    };
+
+    btnEnterValidator?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      goToValidator();
+    });
+    cardValidator?.addEventListener('click', goToValidator);
+
+    const goToSupervisor = () => {
+      if (this.isSupervisor) {
+        this.showView('supervisor-hub');
+      } else {
+        modalLogin?.classList.remove('hidden');
+        document.getElementById('sup-login-user')?.focus();
+      }
+    };
+
+    btnEnterSupervisor?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      goToSupervisor();
+    });
+    cardSupervisor?.addEventListener('click', goToSupervisor);
+
+    // Botón para regresar al landing desde el portal de validador
+    document.getElementById('btn-back-to-landing-from-val')?.addEventListener('click', () => {
+      this.showView('landing');
+    });
+
+    // Botón para regresar al landing desde el Hub de supervisión
+    document.getElementById('btn-back-to-landing-from-hub')?.addEventListener('click', () => {
+      this.showView('landing');
+    });
+
+    // 2. Selección de Módulos en el Hub de Supervisión
+    const cardSmart = document.getElementById('module-card-smart');
+    const cardBlocking = document.getElementById('module-card-blocking');
+
+    cardSmart?.addEventListener('click', () => {
+      this.enterSupervisorModule('smart');
+    });
+
+    cardBlocking?.addEventListener('click', () => {
+      this.enterSupervisorModule('blocking');
+    });
+
+    // Botón Volver al Hub desde el Espacio de Trabajo del Supervisor
+    document.getElementById('btn-back-to-hub')?.addEventListener('click', () => {
+      this.showView('supervisor-hub');
+    });
+
+    // Botón Cerrar Sesión desde el Hub
+    document.getElementById('btn-logout-from-hub')?.addEventListener('click', () => {
+      this.logoutSupervisor();
+    });
+  }
+
+  enterSupervisorModule(moduleKey) {
+    this.currentModule = moduleKey;
+
+    if (moduleKey === 'blocking') {
+      this.audits = this.blockingAudits || [];
+    } else {
+      this.audits = this.smartAudits || [];
+    }
+
+    this.showView('supervisor-workspace');
+    this.renderAdminView();
+    this.renderReportsView();
+    this.renderQueriesView();
+    this.renderAlertsView();
+    this.renderDailyReportsView();
+    this.populateLookupQuickTags();
+
+    const moduleLabel = moduleKey === 'smart' ? 'Validación Smart 🧠⚡' : 'Alertas Bloqueantes 🚫🚨';
+    this.showToast(`Has ingresado a: ${moduleLabel}`, 'info');
+  }
+
+  switchSupervisorTab(tabId) {
+    this.currentTab = tabId;
+
+    // Actualizar botones de navegación
+    document.querySelectorAll('#supervisor-nav-tabs .nav-tab-btn').forEach(btn => {
+      if (btn.dataset.tab === tabId) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    // Actualizar paneles de contenido
+    document.querySelectorAll('#private-supervisor-view .tab-content-pane').forEach(pane => {
+      pane.classList.remove('active');
+    });
+
+    const targetPane = document.getElementById(`tab-${tabId}`);
+    if (targetPane) {
+      targetPane.classList.add('active');
+    }
+
+    // Renderizar la vista correspondiente
+    if (tabId === 'admin') {
+      this.renderAdminView();
+    } else if (tabId === 'reports') {
+      this.renderReportsView();
+      this.renderDailyReportsView();
+    } else if (tabId === 'queries') {
+      this.renderQueriesView();
+    } else if (tabId === 'alerts') {
+      this.renderAlertsView();
+    } else if (tabId === 'lookup') {
+      this.populateLookupQuickTags();
+      document.getElementById('lookup-search-input')?.focus();
+    }
+  }
+
+  selectModule(moduleKey) {
+    this.currentModule = moduleKey;
+    const cardSmart = document.getElementById('module-card-smart');
+    const cardBlocking = document.getElementById('module-card-blocking');
+
+    if (moduleKey === 'smart') {
+      cardSmart?.classList.add('active-module');
+      cardBlocking?.classList.remove('active-module');
+    } else {
+      cardBlocking?.classList.add('active-module');
+      cardSmart?.classList.remove('active-module');
+    }
+  }
+
+  enterProject(projectName) {
+    this.currentProject = projectName;
+    this.selectedStudies = [projectName];
+    this.showView('supervisor-workspace');
+
+    this.renderAdminView();
+    this.renderReportsView();
+    this.renderAlertsView();
+    this.renderDailyReportsView();
+    this.populateLookupQuickTags();
+
+    const moduleLabel = this.currentModule === 'smart' ? 'Validación Smart 🧠⚡' : 'Alertas Bloqueantes 🚫🚨';
+    this.showToast(`Ingresando a: ${moduleLabel} > ${projectName}`, 'info');
+  }
+
+  showView(viewName) {
+    this.currentView = viewName;
+
+    const landingView = document.getElementById('view-landing');
+    const validatorView = document.getElementById('public-validator-view');
+    const hubView = document.getElementById('view-supervisor-hub');
+    const workspaceView = document.getElementById('private-supervisor-view');
+    const navTabs = document.getElementById('supervisor-nav-tabs');
+    const modeBadge = document.getElementById('header-mode-badge');
+    const btnAuthText = document.getElementById('supervisor-btn-text');
+
+    // Ocultar todas las vistas principales
+    landingView?.classList.add('hidden');
+    validatorView?.classList.add('hidden');
+    hubView?.classList.add('hidden');
+    workspaceView?.classList.add('hidden');
+    navTabs?.classList.add('hidden');
+
+    if (viewName === 'landing') {
+      landingView?.classList.remove('hidden');
+      if (modeBadge) {
+        modeBadge.textContent = 'Inicio';
+        modeBadge.style.background = 'var(--dn-blue-light)';
+        modeBadge.style.color = 'var(--dn-navy)';
+      }
+      if (btnAuthText) btnAuthText.textContent = this.isSupervisor ? 'Menú Supervisor 🛡️' : 'Acceso Supervisor';
+    } else if (viewName === 'validator') {
+      validatorView?.classList.remove('hidden');
+      if (this.validatorUI) {
+        if (!this.validatorUI.currentValidator) {
+          document.getElementById('validator-login-section')?.classList.remove('hidden');
+          document.getElementById('validator-portal-section')?.classList.add('hidden');
+        } else {
+          this.validatorUI.updateProgressHeader();
+          this.validatorUI.renderAuditList();
+        }
+      }
+      if (modeBadge) {
+        modeBadge.textContent = 'Validador';
+        modeBadge.style.background = 'var(--dn-cyan-light)';
+        modeBadge.style.color = 'var(--dn-navy)';
+      }
+      if (btnAuthText) btnAuthText.textContent = 'Acceso Supervisor';
+    } else if (viewName === 'supervisor-hub') {
+      hubView?.classList.remove('hidden');
+      if (modeBadge) {
+        modeBadge.textContent = 'Supervisor Hub';
+        modeBadge.style.background = 'var(--dn-blue)';
+        modeBadge.style.color = '#FFFFFF';
+      }
+      if (btnAuthText) btnAuthText.textContent = 'Cerrar Sesión 🚪';
+      this.selectModule(this.currentModule);
+    } else if (viewName === 'supervisor-workspace') {
+      workspaceView?.classList.remove('hidden');
+      navTabs?.classList.remove('hidden');
+
+      if (modeBadge) {
+        modeBadge.textContent = `${this.currentProject} • ${this.currentModule === 'smart' ? 'Smart' : 'Bloqueantes'}`;
+        modeBadge.style.background = this.currentModule === 'smart' ? 'var(--dn-blue)' : 'var(--dn-magenta)';
+        modeBadge.style.color = '#FFFFFF';
+      }
+      if (btnAuthText) btnAuthText.textContent = 'Cerrar Sesión 🚪';
+
+      // Actualizar breadcrumbs en la barra de contexto
+      const modEl = document.getElementById('context-module-name');
+      const projEl = document.getElementById('context-project-name');
+      if (modEl) modEl.textContent = this.currentModule === 'smart' ? 'Validación Smart 🧠⚡' : 'Alertas Bloqueantes 🚫🚨';
+      if (projEl) projEl.textContent = this.currentProject;
+
+      // Actualizar pills de selector de módulo en la barra
+      const pillSmart = document.getElementById('pill-module-smart');
+      const pillBlocking = document.getElementById('pill-module-blocking');
+      if (this.currentModule === 'blocking') {
+        pillBlocking?.classList.add('active');
+        pillSmart?.classList.remove('active');
+      } else {
+        pillSmart?.classList.add('active');
+        pillBlocking?.classList.remove('active');
+      }
+
+      // Asegurar que la pestaña activa esté visible
+      const targetTab = this.currentTab || 'admin';
+      this.switchSupervisorTab(targetTab);
+    }
+  }
+
+  // ==========================================
+  // AUTENTICACIÓN Y ROLES (SUPERVISOR VS VALIDADOR)
+  // ==========================================
+  handleSupervisorPortalClick() {
+    if (this.isSupervisor) {
+      this.showView('supervisor-hub');
+    } else {
+      const modal = document.getElementById('modal-supervisor-login');
+      modal?.classList.remove('hidden');
+      document.getElementById('sup-login-user')?.focus();
+    }
+  }
+
+  handleSupervisorAuthButtonClick() {
+    if (this.isSupervisor) {
+      if (this.currentView === 'supervisor-workspace') {
+        this.showView('supervisor-hub');
+      } else if (this.currentView === 'supervisor-hub') {
+        this.logoutSupervisor();
+      } else {
+        this.showView('supervisor-hub');
+      }
+    } else {
+      const modal = document.getElementById('modal-supervisor-login');
+      modal?.classList.remove('hidden');
+      document.getElementById('sup-login-user')?.focus();
+    }
+  }
+
+  submitSupervisorLogin() {
+    const userInput = document.getElementById('sup-login-user');
+    const passInput = document.getElementById('sup-login-pass');
+    const modalLogin = document.getElementById('modal-supervisor-login');
+    const u = userInput?.value.trim().toLowerCase() || 'admin';
+    const p = passInput?.value.trim() || 'admin123';
+
+    this.isSupervisor = true;
+    sessionStorage.setItem('VALIDAFLOW_SUPERVISOR_AUTH', 'true');
+    modalLogin?.classList.add('hidden');
+    this.showView('supervisor-hub');
+    this.showToast('Sesión de Supervisor iniciada.', 'success');
+  }
+
+  initSupervisorAuth() {
+    const btnSupervisorAuth = document.getElementById('btn-supervisor-auth');
+    const modalLogin = document.getElementById('modal-supervisor-login');
+    const btnCloseLogin = document.getElementById('btn-close-sup-login');
+    const btnCancelLogin = document.getElementById('btn-cancel-sup-login');
+    const btnSubmitLogin = document.getElementById('btn-submit-sup-login');
+    const userInput = document.getElementById('sup-login-user');
+    const passInput = document.getElementById('sup-login-pass');
+
+    btnSupervisorAuth?.addEventListener('click', () => {
+      this.handleSupervisorAuthButtonClick();
+    });
+
+    const closeModal = () => modalLogin?.classList.add('hidden');
+    btnCloseLogin?.addEventListener('click', closeModal);
+    btnCancelLogin?.addEventListener('click', closeModal);
+
+    const handleLogin = () => {
+      this.submitSupervisorLogin();
+    };
+
+    btnSubmitLogin?.addEventListener('click', handleLogin);
+    passInput?.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') handleLogin();
+    });
+  }
+
+  logoutSupervisor() {
+    this.isSupervisor = false;
+    sessionStorage.removeItem('VALIDAFLOW_SUPERVISOR_AUTH');
+    this.showView('landing');
+    this.showToast('Has salido de Supervisión. Regresando a la pantalla principal.', 'info');
+  }
+
+  updateRoleView() {
+    if (this.isSupervisor) {
+      this.showView('supervisor-hub');
+    } else {
+      this.showView('landing');
+    }
+  }
+
+  // ==========================================
+  // PERSISTENCIA Y SINCRONIZACIÓN
+  // ==========================================
+  getAuditOperationDate(audit) {
+    if (!audit) return 'Sin_Fecha';
+    // Si la auditoría fue validada, la fecha guardada es la fecha en que se validó (sin hora)
+    if (audit.fechaValidacion) {
+      return ExcelParser.cleanDateOnly(audit.fechaValidacion);
+    }
+    if (audit.completedAt) {
+      const d = new Date(audit.completedAt);
+      if (!isNaN(d.getTime())) {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      }
+    }
+    // Si no ha sido validada, usar la fecha de captura/subida limpia (sin hora)
+    if (audit.fecha) {
+      return ExcelParser.cleanDateOnly(audit.fecha);
+    }
+    return new Date().toISOString().split('T')[0];
+  }
+
+  loadState() {
+    try {
+      const saved = localStorage.getItem(this.storageKey);
+      if (saved) {
+        const data = JSON.parse(saved);
+        this.smartAudits = data.smartAudits || (data.currentModule !== 'blocking' ? data.audits : []) || [];
+        this.blockingAudits = data.blockingAudits || (data.currentModule === 'blocking' ? data.audits : []) || [];
+
+        if (this.smartAudits && Array.isArray(this.smartAudits)) {
+          this.smartAudits.forEach(a => {
+            if (a.fecha) a.fecha = ExcelParser.cleanDateOnly(a.fecha);
+            if (a.fechaValidacion) a.fechaValidacion = ExcelParser.cleanDateOnly(a.fechaValidacion);
+          });
+        }
+        if (this.blockingAudits && Array.isArray(this.blockingAudits)) {
+          this.blockingAudits.forEach(a => {
+            if (a.fecha) a.fecha = ExcelParser.cleanDateOnly(a.fecha);
+            if (a.fechaValidacion) a.fechaValidacion = ExcelParser.cleanDateOnly(a.fechaValidacion);
+          });
+        }
+
+        if (data.validators && data.validators.length >= 8 && data.validators[0].estudio) {
+          this.validators = data.validators;
+        } else {
+          this.validators = [...DEFAULT_VALIDATORS];
+        }
+        this.tipificaciones = data.tipificaciones || DEFAULT_TIPIFICACIONES;
+        this.headers = data.headers || [];
+        this.kpiColumns = data.kpiColumns || [];
+        this.currentModule = data.currentModule || 'smart';
+        this.currentProject = data.currentProject || 'Chile';
+      } else {
+        this.validators = [...DEFAULT_VALIDATORS];
+        this.tipificaciones = [...DEFAULT_TIPIFICACIONES];
+        this.loadSampleData(false);
+        this.loadBlockingSampleData(false);
+      }
+
+      // Inicializar smartAudits si está vacío
+      if (!this.smartAudits || this.smartAudits.length === 0) {
+        const parsedSmart = ExcelParser.parseCSV(SAMPLE_CSV_DATA);
+        parsedSmart.audits.forEach(a => { a.estudio = 'Chile'; });
+        this.smartAudits = Distributor.distributeEqually(parsedSmart.audits, this.validators);
+        this.smartAudits = seedSampleValidations(this.smartAudits);
+      }
+
+      // Inicializar blockingAudits si está vacío
+      if (!this.blockingAudits || this.blockingAudits.length === 0) {
+        const parsedBlk = ExcelParser.parseCSV(BLOCKING_ALERTS_SAMPLE_CSV);
+        parsedBlk.audits.forEach(a => { a.estudio = 'Chile'; });
+        this.blockingAudits = Distributor.distributeEqually(parsedBlk.audits, this.validators);
+        this.blockingAudits = seedSampleValidations(this.blockingAudits);
+      }
+
+      this.audits = this.currentModule === 'blocking' ? this.blockingAudits : this.smartAudits;
+    } catch (e) {
+      console.error('Error al cargar estado:', e);
+      this.validators = [...DEFAULT_VALIDATORS];
+    }
+  }
+
+  saveState() {
+    try {
+      if (this.currentModule === 'blocking') {
+        this.blockingAudits = this.audits;
+      } else {
+        this.smartAudits = this.audits;
+      }
+
+      const payload = {
+        smartAudits: this.smartAudits,
+        blockingAudits: this.blockingAudits,
+        audits: this.audits,
+        validators: this.validators,
+        tipificaciones: this.tipificaciones,
+        headers: this.headers,
+        kpiColumns: this.kpiColumns,
+        currentModule: this.currentModule,
+        currentProject: this.currentProject,
+        updatedAt: new Date().toISOString()
+      };
+      localStorage.setItem(this.storageKey, JSON.stringify(payload));
+    } catch (e) {
+      console.error('Error guardando estado:', e);
+    }
+  }
+
+  syncStateAcrossTabs() {
+    this.saveState();
+    if (this.channel) {
+      this.channel.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
+    }
+  }
+
+  listenCrossTabEvents() {
+    if (this.channel) {
+      this.channel.onmessage = (event) => {
+        if (event.data && event.data.type === 'STATE_UPDATED') {
+          this.loadState();
+          this.renderAdminView();
+          this.renderReportsView();
+          this.renderAlertsView();
+          this.populateLookupQuickTags();
+          if (this.validatorUI.currentValidator) {
+            this.validatorUI.updateProgressHeader();
+            this.validatorUI.renderAuditList();
+            if (this.validatorUI.currentAuditId) {
+              const current = this.audits.find(a => a.id === this.validatorUI.currentAuditId);
+              if (current) this.validatorUI.renderAuditDetail(current);
+            }
+          }
+        }
+      };
+    }
+
+    window.addEventListener('storage', (e) => {
+      if (e.key === this.storageKey) {
+        this.loadState();
+        this.renderAdminView();
+        this.renderReportsView();
+        this.renderAlertsView();
+      }
+    });
+  }
+
+  // ==========================================
+  // INICIALIZACIÓN DE LA INTERFAZ
+  // ==========================================
+  initUI() {
+    const tabBtns = document.querySelectorAll('#supervisor-nav-tabs .nav-tab-btn');
+    const tabPanes = document.querySelectorAll('#private-supervisor-view .tab-content-pane');
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const targetTab = btn.dataset.tab;
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabPanes.forEach(p => p.classList.remove('active'));
+
+        btn.classList.add('active');
+        document.getElementById(`tab-${targetTab}`)?.classList.add('active');
+
+        if (targetTab === 'reports') {
+          this.renderReportsView();
+        } else if (targetTab === 'admin') {
+          this.renderAdminView();
+        } else if (targetTab === 'lookup') {
+          this.populateLookupQuickTags();
+          document.getElementById('lookup-search-input')?.focus();
+        } else if (targetTab === 'queries') {
+          this.renderQueriesView();
+        } else if (targetTab === 'alerts') {
+          this.renderAlertsView();
+        }
+      });
+    });
+
+    const dropzone = document.getElementById('excel-dropzone');
+    const fileInput = document.getElementById('excel-file-input');
+
+    dropzone?.addEventListener('click', () => fileInput?.click());
+
+    dropzone?.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('drag-over');
+    });
+
+    dropzone?.addEventListener('dragleave', () => {
+      dropzone.classList.remove('drag-over');
+    });
+
+    dropzone?.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('drag-over');
+      if (e.dataTransfer.files.length > 0) {
+        this.handleFileUpload(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileInput?.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        this.handleFileUpload(e.target.files[0]);
+      }
+    });
+
+    document.getElementById('btn-load-sample')?.addEventListener('click', () => {
+      this.loadSampleData(true);
+    });
+
+    document.getElementById('btn-distribute-audits')?.addEventListener('click', () => {
+      this.executeDistribution();
+    });
+
+    document.getElementById('btn-add-validator')?.addEventListener('click', () => {
+      this.openAddValidatorModal();
+    });
+
+    document.getElementById('btn-export-excel')?.addEventListener('click', () => {
+      ExcelParser.exportResultsToExcel(this.audits, this.validators);
+    });
+
+    document.getElementById('btn-refresh-alerts')?.addEventListener('click', () => {
+      this.renderAlertsView();
+      this.showToast('Auditorías reanalizadas. Detección de anomalías actualizada.', 'success');
+    });
+
+    this.initValidatorModal();
+  }
+
+  // ==========================================
+  // MOTOR DE CONTROL DE CALIDAD Y ALERTAS DE ANOMALÍAS (¡NUEVO!)
+  // ==========================================
+  initAlertsModule() {
+    this.thresholdMinSec = 25;
+    this.thresholdWarnSec = 45;
+
+    const filterBtns = document.querySelectorAll('.alert-filter-btn');
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        this.alertsFilter = btn.dataset.filter || 'all';
+        this.renderAlertsView();
+      });
+    });
+
+    const btnApplyThreshold = document.getElementById('btn-apply-threshold');
+    const inputMin = document.getElementById('threshold-min-sec');
+    const inputWarn = document.getElementById('threshold-warn-sec');
+
+    btnApplyThreshold?.addEventListener('click', () => {
+      const minVal = parseInt(inputMin?.value) || 25;
+      const warnVal = parseInt(inputWarn?.value) || 45;
+
+      if (minVal >= warnVal) {
+        this.showToast('El tiempo crítico debe ser menor al tiempo recomendado.', 'warning');
+        return;
+      }
+
+      this.thresholdMinSec = minVal;
+      this.thresholdWarnSec = warnVal;
+      this.renderAlertsView();
+      this.showToast(`Parámetros actualizados: Crítico < ${minVal}s, Advertencia < ${warnVal}s`, 'success');
+    });
+  }
+
+  /**
+   * Analiza todas las auditorías validadas para detectar comportamientos inusuales
+   */
+  analyzeQualityAndAnomalies() {
+    const anomalies = [];
+    const valStats = {};
+    const valMap = new Map(this.validators.map(v => [v.id, v]));
+
+    // Inicializar estadísticas por validador
+    this.validators.forEach(v => {
+      valStats[v.id] = {
+        validator: v,
+        totalCompleted: 0,
+        totalDurationSec: 0,
+        totalKpisReviewed: 0,
+        totalAplica: 0,
+        totalNoAplica: 0,
+        fastAuditsCount: 0, // < 12 segundos
+        tipificacionesCount: {},
+        anomalies: []
+      };
+    });
+
+    // 1. Detección de validaciones ultrarrápidas y consolidación por validador
+    this.audits.forEach(audit => {
+      if (audit.validationStatus === 'completada' && audit.assignedValidatorId) {
+        const stats = valStats[audit.assignedValidatorId];
+        const val = valMap.get(audit.assignedValidatorId);
+        const valName = val ? val.name : 'Validador desconocido';
+
+        if (stats) {
+          stats.totalCompleted++;
+          const duration = audit.durationSeconds || 15;
+          stats.totalDurationSec += duration;
+
+          const kpisReviewed = (audit.kpis || []).filter(k => k.needsReview);
+          stats.totalKpisReviewed += kpisReviewed.length;
+
+          // Contar decisiones
+          Object.values(audit.validationResults || {}).forEach(res => {
+            if (res.status === 'aplica') stats.totalAplica++;
+            if (res.status === 'no_aplica') {
+              stats.totalNoAplica++;
+              if (res.tipificacion) {
+                stats.tipificacionesCount[res.tipificacion] = (stats.tipificacionesCount[res.tipificacion] || 0) + 1;
+              }
+            }
+          });
+
+          // Regla 1: Tiempo de validación por debajo del rango esperado
+          const minSec = this.thresholdMinSec || 25;
+          const warnSec = this.thresholdWarnSec || 45;
+
+          if (duration < minSec) {
+            stats.fastAuditsCount++;
+            anomalies.push({
+              id: `speed-${audit.id}`,
+              type: 'speed',
+              severity: 'critical',
+              title: `⚡ Tiempo de Validación Reducido (< ${minSec}s)`,
+              valName,
+              valCode: val?.code || '',
+              auditId: audit.id,
+              pdvId: audit.idPDV,
+              description: `La auditoría #${audit.id} (${kpisReviewed.length} KPIs a revisar) se completó en <strong>${duration} segundos</strong>, lo cual es inferior al tiempo mínimo estimado (${minSec}s) para una verificación detallada de cada alerta.`,
+              timestamp: audit.completedAt || new Date().toISOString()
+            });
+          } else if (duration < warnSec) {
+            stats.fastAuditsCount++;
+            anomalies.push({
+              id: `speed-${audit.id}`,
+              type: 'speed',
+              severity: 'warning',
+              title: `⏱️ Revisión Acelerada (< ${warnSec}s)`,
+              valName,
+              valCode: val?.code || '',
+              auditId: audit.id,
+              pdvId: audit.idPDV,
+              description: `Registrada en <strong>${duration} segundos</strong>, por debajo del tiempo promedio sugerido (${warnSec}s) para la evaluación de todos los KPIs.`,
+              timestamp: audit.completedAt || new Date().toISOString()
+            });
+          }
+        }
+      }
+    });
+
+    // 2. Detección de tendencias de respuesta por Validador
+    Object.values(valStats).forEach(st => {
+      if (st.totalCompleted >= 2) {
+        const totalResp = st.totalAplica + st.totalNoAplica;
+        if (totalResp > 0) {
+          const aplicaPct = Math.round((st.totalAplica / totalResp) * 100);
+          const noAplicaPct = Math.round((st.totalNoAplica / totalResp) * 100);
+
+          // Regla 2: Tendencia mayor al 85%
+          if (aplicaPct >= 85) {
+            anomalies.push({
+              id: `bias-aplica-${st.validator.id}`,
+              type: 'bias',
+              severity: aplicaPct === 100 ? 'critical' : 'warning',
+              title: `🎯 Tendencia de Respuesta: ${aplicaPct}% Aplica`,
+              valName: st.validator.name,
+              valCode: st.validator.code,
+              auditId: null,
+              pdvId: null,
+              description: `El validador <strong>${st.validator.name}</strong> presenta un <strong>${aplicaPct}%</strong> de decisiones marcadas como <em>"Aplica"</em> (${st.totalAplica} de ${totalResp} KPIs evaluados).`,
+              timestamp: new Date().toISOString()
+            });
+          } else if (noAplicaPct >= 85) {
+            anomalies.push({
+              id: `bias-no-aplica-${st.validator.id}`,
+              type: 'bias',
+              severity: noAplicaPct === 100 ? 'critical' : 'warning',
+              title: `🎯 Tendencia de Respuesta: ${noAplicaPct}% No Aplica`,
+              valName: st.validator.name,
+              valCode: st.validator.code,
+              auditId: null,
+              pdvId: null,
+              description: `El validador <strong>${st.validator.name}</strong> presenta un <strong>${noAplicaPct}%</strong> de decisiones marcadas como <em>"No Aplica"</em> (${st.totalNoAplica} de ${totalResp} KPIs evaluados).`,
+              timestamp: new Date().toISOString()
+            });
+          }
+
+          // Regla 3: Uso frecuente de la misma tipificación
+          const tipifEntries = Object.entries(st.tipificacionesCount);
+          if (tipifEntries.length > 0 && st.totalNoAplica >= 3) {
+            tipifEntries.forEach(([tipifName, count]) => {
+              const tipifPct = Math.round((count / st.totalNoAplica) * 100);
+              if (tipifPct >= 80) {
+                anomalies.push({
+                  id: `tipif-mono-${st.validator.id}`,
+                  type: 'bias',
+                  severity: 'warning',
+                  title: '📝 Tipificación Frecuente',
+                  valName: st.validator.name,
+                  valCode: st.validator.code,
+                  auditId: null,
+                  pdvId: null,
+                  description: `El <strong>${tipifPct}%</strong> de las alertas marcadas como "No Aplica" por ${st.validator.name} corresponden al motivo <em>"${tipifName}"</em> (${count} veces).`,
+                  timestamp: new Date().toISOString()
+                });
+              }
+            });
+          }
+        }
+      }
+    });
+
+    return { anomalies, valStats };
+  }
+
+  renderAlertsView() {
+    const { anomalies, valStats } = this.analyzeQualityAndAnomalies();
+
+    // Contadores de severidad
+    const criticalCount = anomalies.filter(a => a.severity === 'critical').length;
+    const fastCount = anomalies.filter(a => a.type === 'speed').length;
+    const biasCount = anomalies.filter(a => a.type === 'bias').length;
+
+    // Calcular índice de confiabilidad global
+    const totalCompleted = this.audits.filter(a => a.validationStatus === 'completada').length;
+    let healthIndex = 100;
+    if (totalCompleted > 0) {
+      healthIndex = Math.max(20, Math.round(100 - (criticalCount * 12) - (biasCount * 6)));
+    }
+
+    const critEl = document.getElementById('alert-stat-critical');
+    const fastEl = document.getElementById('alert-stat-fast');
+    const biasEl = document.getElementById('alert-stat-bias');
+    const healthEl = document.getElementById('alert-stat-health');
+    const countBadge = document.getElementById('anomalies-count-badge');
+    const navBadge = document.getElementById('nav-alerts-badge');
+
+    if (critEl) critEl.textContent = criticalCount;
+    if (fastEl) fastEl.textContent = fastCount;
+    if (biasEl) biasEl.textContent = biasCount;
+    if (healthEl) {
+      healthEl.textContent = `${healthIndex}%`;
+      healthEl.className = healthIndex >= 85 ? 'stat-value text-success' : healthIndex >= 60 ? 'stat-value text-warning' : 'stat-value text-magenta';
+    }
+    if (countBadge) countBadge.textContent = `${anomalies.length} hallazgo${anomalies.length !== 1 ? 's' : ''}`;
+
+    // Badge en la pestaña de navegación
+    if (navBadge) {
+      if (anomalies.length > 0) {
+        navBadge.classList.remove('hidden');
+        navBadge.textContent = anomalies.length;
+      } else {
+        navBadge.classList.add('hidden');
+      }
+    }
+
+    // 1. Renderizar Tarjetas de Salud de Validadores
+    const healthContainer = document.getElementById('val-health-list');
+    if (healthContainer) {
+      const statsList = Object.values(valStats);
+
+      if (statsList.length === 0) {
+        healthContainer.innerHTML = `<p class="text-muted">No hay validadores activos para monitorear.</p>`;
+      } else {
+        healthContainer.innerHTML = statsList.map(st => {
+          const avgSec = st.totalCompleted > 0 ? Math.round(st.totalDurationSec / st.totalCompleted) : 0;
+          const totalResp = st.totalAplica + st.totalNoAplica;
+          const aplicaPct = totalResp > 0 ? Math.round((st.totalAplica / totalResp) * 100) : 0;
+
+          // Calcular score individual (0 a 100)
+          let score = 95;
+          const flags = [];
+
+          if (st.fastAuditsCount > 0) {
+            score -= (st.fastAuditsCount * 15);
+            flags.push(`⚡ ${st.fastAuditsCount} auditoría(s) con tiempo ultrarrápido (< 10s)`);
+          }
+
+          if (st.totalCompleted >= 2 && (aplicaPct >= 85 || aplicaPct <= 15)) {
+            score -= 20;
+            flags.push(`🎯 Sesgo marcado en respuestas (${aplicaPct}% Aplica)`);
+          }
+
+          score = Math.max(10, Math.min(100, score));
+
+          const healthClass = score >= 85 ? 'health-good' : score >= 60 ? 'health-warning' : 'health-critical';
+          const badgeClass = score >= 85 ? 'score-good' : score >= 60 ? 'score-warning' : 'score-critical';
+
+          return `
+            <div class="val-health-card ${healthClass}">
+              <div class="val-health-top">
+                <div>
+                  <h4 style="margin:0; font-size:1rem; color:var(--dn-navy);">${st.validator.name}</h4>
+                  <span class="val-code-badge" style="font-size:0.75rem;">${st.validator.code}</span>
+                </div>
+                <span class="val-health-score-badge ${badgeClass}">${score}% Confiabilidad</span>
+              </div>
+
+              <div class="val-health-metrics-grid">
+                <div>
+                  <span class="health-metric-num">${avgSec}s</span>
+                  <span class="health-metric-lbl">Tiempo Promedio</span>
+                </div>
+                <div>
+                  <span class="health-metric-num text-success">${aplicaPct}%</span>
+                  <span class="health-metric-lbl">% Aplica</span>
+                </div>
+                <div>
+                  <span class="health-metric-num">${st.totalCompleted}</span>
+                  <span class="health-metric-lbl">Auditorías</span>
+                </div>
+              </div>
+
+              ${flags.length > 0 ? `
+                <div class="health-flags-list">
+                  ${flags.map(f => `<div class="health-flag-item text-danger">${f}</div>`).join('')}
+                </div>
+              ` : `
+                <div class="health-flag-item text-success">✓ Patrón de validación equilibrado y tiempo adecuado</div>
+              `}
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // 2. Renderizar Feed de Anomalías
+    const anomaliesContainer = document.getElementById('anomalies-list');
+    if (anomaliesContainer) {
+      let filtered = anomalies;
+      if (this.alertsFilter === 'speed') filtered = anomalies.filter(a => a.type === 'speed');
+      if (this.alertsFilter === 'bias') filtered = anomalies.filter(a => a.type === 'bias');
+
+      if (filtered.length === 0) {
+        anomaliesContainer.innerHTML = `
+          <div class="empty-reasons-state">
+            <div style="font-size:2.5rem; margin-bottom:0.5rem;">🎉</div>
+            <p><strong>¡Excelente! No se detectaron anomalías con el filtro seleccionado.</strong></p>
+            <span class="text-muted" style="font-size:0.8rem;">Todas las validaciones mantienen tiempos consistentes y patrones equilibrados.</span>
+          </div>
+        `;
+      } else {
+        anomaliesContainer.innerHTML = filtered.map(item => {
+          const sevClass = item.severity === 'critical' ? 'sev-critical' : item.severity === 'warning' ? 'sev-warning' : 'sev-info';
+          const sevBadge = item.severity === 'critical' 
+            ? `<span class="badge badge-danger">🔴 Crítica</span>` 
+            : `<span class="badge badge-warning">🟡 Advertencia</span>`;
+
+          return `
+            <div class="anomaly-card-item ${sevClass}">
+              <div class="anomaly-header-row">
+                <div class="anomaly-type-title">
+                  <span>${item.title}</span>
+                </div>
+                ${sevBadge}
+              </div>
+
+              <div class="anomaly-body">
+                ${item.description}
+              </div>
+
+              <div class="anomaly-footer-row">
+                <span>Validador: <strong>${item.valName}</strong> (${item.valCode})</span>
+                ${item.auditId ? `
+                  <button class="btn btn-outline btn-sm btn-inspect-anomaly" data-audit-id="${item.auditId}">
+                    Inspeccionar Caso #${item.auditId} 🔎
+                  </button>
+                ` : `
+                  <span class="text-muted">Alerta de Comportamiento Global</span>
+                `}
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Listeners para saltar directamente a la Ficha Técnica de la auditoría
+        anomaliesContainer.querySelectorAll('.btn-inspect-anomaly').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = btn.dataset.auditId;
+            this.inspectAuditFromAlert(id);
+          });
+        });
+      }
+    }
+  }
+
+  inspectAuditFromAlert(auditId) {
+    const lookupTabBtn = document.querySelector('#supervisor-nav-tabs .nav-tab-btn[data-tab="lookup"]');
+    lookupTabBtn?.click();
+
+    const searchInput = document.getElementById('lookup-search-input');
+    if (searchInput) searchInput.value = auditId;
+    document.getElementById('btn-clear-lookup')?.classList.remove('hidden');
+    this.executeLookup(auditId);
+  }
+
+  // ==========================================
+  // HOJA DE BÚSQUEDA DE PDV Y AUDITORÍAS
+  // ==========================================
+  initLookupModule() {
+    const searchInput = document.getElementById('lookup-search-input');
+    const btnSearch = document.getElementById('btn-execute-lookup');
+    const btnClear = document.getElementById('btn-clear-lookup');
+
+    const doSearch = () => {
+      const query = searchInput?.value.trim();
+      this.executeLookup(query);
+    };
+
+    btnSearch?.addEventListener('click', doSearch);
+    searchInput?.addEventListener('keyup', (e) => {
+      if (e.key === 'Enter') doSearch();
+      if (searchInput.value.trim().length > 0) {
+        btnClear?.classList.remove('hidden');
+      } else {
+        btnClear?.classList.add('hidden');
+      }
+    });
+
+    btnClear?.addEventListener('click', () => {
+      if (searchInput) searchInput.value = '';
+      btnClear.classList.add('hidden');
+      this.resetLookupView();
+    });
+
+    this.populateLookupQuickTags();
+  }
+
+  populateLookupQuickTags() {
+    const tagsContainer = document.getElementById('lookup-quick-tags');
+    if (!tagsContainer) return;
+
+    if (this.audits.length === 0) {
+      tagsContainer.innerHTML = '<span class="text-muted">Carga auditorías para ver ejemplos</span>';
+      return;
+    }
+
+    const sampleItems = this.audits.slice(0, 4);
+    tagsContainer.innerHTML = sampleItems.map(a => {
+      return `
+        <button class="quick-tag-btn" data-search="${a.id}">Auditoría #${a.id}</button>
+        ${a.idPDV ? `<button class="quick-tag-btn" data-search="${a.idPDV}">PDV ${a.idPDV}</button>` : ''}
+      `;
+    }).join('');
+
+    tagsContainer.querySelectorAll('.quick-tag-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const query = btn.dataset.search;
+        const searchInput = document.getElementById('lookup-search-input');
+        if (searchInput) searchInput.value = query;
+        document.getElementById('btn-clear-lookup')?.classList.remove('hidden');
+        this.executeLookup(query);
+      });
+    });
+  }
+
+  executeLookup(query) {
+    if (!query) {
+      this.showToast('Ingresa un ID de Auditoría o de PDV para buscar.', 'warning');
+      return;
+    }
+
+    const cleanQ = query.toLowerCase().trim();
+
+    const match = this.audits.find(a => {
+      return (
+        a.id.toLowerCase() === cleanQ ||
+        (a.idPDV && a.idPDV.toLowerCase() === cleanQ) ||
+        a.id.toLowerCase().includes(cleanQ) ||
+        (a.idPDV && a.idPDV.toLowerCase().includes(cleanQ))
+      );
+    });
+
+    const placeholder = document.getElementById('lookup-empty-placeholder');
+    const caseFileContainer = document.getElementById('lookup-case-file');
+
+    if (!match) {
+      if (placeholder) {
+        placeholder.classList.remove('hidden');
+        placeholder.innerHTML = `
+          <div class="lookup-placeholder-icon">❌</div>
+          <h3>No se encontró ninguna auditoría con el criterio: "${query}"</h3>
+          <p>Verifica que el ID de auditoría o de PDV esté escrito correctamente.</p>
+        `;
+      }
+      if (caseFileContainer) caseFileContainer.classList.add('hidden');
+      this.showToast(`No se encontraron registros para "${query}".`, 'warning');
+      return;
+    }
+
+    if (placeholder) placeholder.classList.add('hidden');
+    if (caseFileContainer) {
+      caseFileContainer.classList.remove('hidden');
+      this.renderCaseFile(match, caseFileContainer);
+    }
+  }
+
+  resetLookupView() {
+    const placeholder = document.getElementById('lookup-empty-placeholder');
+    const caseFileContainer = document.getElementById('lookup-case-file');
+
+    if (placeholder) {
+      placeholder.classList.remove('hidden');
+      placeholder.innerHTML = `
+        <div class="lookup-placeholder-icon">🔎</div>
+        <h3>Ingresa un ID de Auditoría o ID de PDV en el buscador</h3>
+        <p>La plataforma consultará toda la base de datos y te presentará la ficha técnica completa con las alertas, tipificaciones y trazabilidad de validación.</p>
+      `;
+    }
+    if (caseFileContainer) caseFileContainer.classList.add('hidden');
+  }
+
+  renderCaseFile(audit, container) {
+    const valMap = new Map(this.validators.map(v => [v.id, v]));
+    const validator = valMap.get(audit.assignedValidatorId);
+
+    const isCompleted = audit.validationStatus === 'completada';
+    const statusBadgeClass = isCompleted ? 'decision-aplica' : audit.validationStatus === 'en_progreso' ? 'decision-no-aplica' : 'decision-pendiente';
+    const statusText = isCompleted ? '✓ VALIDADA Y COMPLETADA' : audit.validationStatus === 'en_progreso' ? 'EN PROCESO' : 'PENDIENTE DE VALIDAR';
+
+    const kpisRows = (audit.kpis || []).map((kpi, index) => {
+      const result = (audit.validationResults || {})[kpi.name] || {};
+      const status = result.status;
+      const tipificacion = result.tipificacion || '—';
+      const observaciones = result.observaciones || '—';
+
+      let decisionBadgeHtml = '';
+      if (status === 'aplica') {
+        decisionBadgeHtml = `<span class="decision-badge decision-aplica">✓ APLICA</span>`;
+      } else if (status === 'no_aplica') {
+        decisionBadgeHtml = `<span class="decision-badge decision-no-aplica">✕ NO APLICA</span>`;
+      } else if (kpi.needsReview) {
+        decisionBadgeHtml = `<span class="decision-badge decision-pendiente">⏳ PENDIENTE</span>`;
+      } else {
+        decisionBadgeHtml = `<span class="text-muted">No requería revisión</span>`;
+      }
+
+      return `
+        <tr>
+          <td><strong>${index + 1}. ${kpi.name}</strong></td>
+          <td><span class="badge ${kpi.needsReview ? 'badge-warning' : 'badge-secondary'}">${kpi.originalValue || (kpi.needsReview ? 'Revisar' : 'OK')}</span></td>
+          <td>${decisionBadgeHtml}</td>
+          <td>${status === 'no_aplica' ? `<span class="tipif-tag">${tipificacion}</span>` : '—'}</td>
+          <td>${observaciones !== '—' ? `<span class="obs-tag">"${observaciones}"</span>` : '—'}</td>
+        </tr>
+      `;
+    }).join('');
+
+    container.innerHTML = `
+      <div class="case-file-card">
+        <div class="case-file-header">
+          <div class="case-title-group">
+            <span class="case-tag">Ficha Técnica de Validación • dichter & neira</span>
+            <h2>Auditoría #${audit.id}</h2>
+            <span class="case-pdv-subtitle">Punto de Venta (PDV): <strong>${audit.idPDV || 'N/A'}</strong></span>
+          </div>
+
+          <div class="case-header-badges">
+            <span class="decision-badge ${statusBadgeClass}">${statusText}</span>
+          </div>
+        </div>
+
+        <div class="case-file-body">
+          <div class="case-summary-grid">
+            <div class="summary-card">
+              <h4>📍 Datos de la Auditoría en Campo</h4>
+              <div class="summary-fields">
+                <div class="field-item">
+                  <span class="field-label">País / Región</span>
+                  <span class="field-value">${audit.pais || 'N/A'}</span>
+                </div>
+                <div class="field-item">
+                  <span class="field-label">Ciudad</span>
+                  <span class="field-value">${audit.ciudad || 'N/A'}</span>
+                </div>
+                <div class="field-item">
+                  <span class="field-label">Canal</span>
+                  <span class="field-value">${audit.canal || 'N/A'}</span>
+                </div>
+                <div class="field-item">
+                  <span class="field-label">Fecha de Captura</span>
+                  <span class="field-value">${audit.fecha || 'N/A'}</span>
+                </div>
+                <div class="field-item">
+                  <span class="field-label">Auditor de Campo</span>
+                  <span class="field-value">${audit.usuario || 'N/A'}</span>
+                </div>
+                <div class="field-item">
+                  <span class="field-label">Estado Inicial</span>
+                  <span class="field-value">${audit.estado || 'Aprobada'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="summary-card">
+              <h4>👤 Información del Validador y Tiempo</h4>
+              <div class="summary-fields">
+                <div class="field-item">
+                  <span class="field-label">Validador Responsable</span>
+                  <span class="field-value">${validator ? validator.name : '<span class="text-muted">Sin Asignar</span>'}</span>
+                </div>
+                <div class="field-item">
+                  <span class="field-label">Código Validador</span>
+                  <span class="field-value">${validator ? `<span class="val-code-badge">${validator.code}</span>` : '—'}</span>
+                </div>
+                <div class="field-item">
+                  <span class="field-label">Tiempo de Revisión</span>
+                  <span class="field-value">${audit.durationSeconds ? `<strong>${audit.durationSeconds} segundos</strong>` : '—'}</span>
+                </div>
+                <div class="field-item">
+                  <span class="field-label">Fecha/Hora de Validación</span>
+                  <span class="field-value">${audit.completedAt ? new Date(audit.completedAt).toLocaleString('es-CO') : '<span class="text-warning">Pendiente</span>'}</span>
+                </div>
+                <div class="field-item" style="grid-column: span 2;">
+                  <span class="field-label">KPIs Asignados a Revisión</span>
+                  <span class="field-value">${(audit.kpis || []).filter(k => k.needsReview).length} KPIs marcados con alerta</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="summary-card">
+            <h4>📋 Detalle de Alertas Marcadas, Aplicación y Tipificación</h4>
+            <div class="case-kpis-table-container">
+              <table class="case-kpi-table">
+                <thead>
+                  <tr>
+                    <th>KPI / Alerta</th>
+                    <th>Alerta Reportada</th>
+                    <th>¿Aplicó? (Decisión)</th>
+                    <th>Tipificación del Rechazo</th>
+                    <th>Observaciones Registradas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${kpisRows}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ==========================================
+  // CARGA Y PARSEO DE ARCHIVOS CON ASIGNACIÓN DE ESTUDIO
+  // ==========================================
+  async handleFileUpload(file) {
+    try {
+      this.showToast(`Leyendo archivo: ${file.name}...`, 'info');
+      let result;
+
+      if (file.name.endsWith('.csv') || file.name.endsWith('.txt')) {
+        const text = await file.text();
+        result = ExcelParser.parseCSV(text);
+      } else {
+        result = await ExcelParser.parseExcelFile(file);
+      }
+
+      if (!result.audits || result.audits.length === 0) {
+        this.showToast('No se encontraron registros de auditoría válidos en el archivo.', 'error');
+        return;
+      }
+
+      // Guardar datos temporalmente a la espera de confirmación de estudio
+      this.pendingUpload = {
+        fileName: file.name,
+        result
+      };
+
+      // Detectar posible estudio por nombre de archivo
+      let defaultStudy = this.currentProject || 'Chile';
+      const fn = file.name.toUpperCase();
+      if (fn.includes('TRADICIONAL')) defaultStudy = 'Tradicional';
+      else if (fn.includes('MODERNO')) defaultStudy = 'Moderno';
+      else if (fn.includes('LINDLEY')) defaultStudy = 'Lindley';
+      else if (fn.includes('CHILE')) defaultStudy = 'Chile';
+
+      this.openSelectStudyModal(file.name, result.audits.length, defaultStudy);
+    } catch (err) {
+      console.error(err);
+      this.showToast('Error al leer el archivo: ' + err.message, 'error');
+    }
+  }
+
+  openSelectStudyModal(fileName, auditCount, defaultStudy = 'Chile', detectedDate = null) {
+    const modal = document.getElementById('modal-select-study');
+    const fnEl = document.getElementById('study-modal-filename');
+    const countEl = document.getElementById('study-modal-rows-count');
+    const inputEl = document.getElementById('study-custom-input');
+    const dateEl = document.getElementById('study-operation-date');
+
+    if (fnEl) fnEl.textContent = fileName;
+    if (countEl) countEl.textContent = `${auditCount} auditorías detectadas listas para importar`;
+    if (inputEl) inputEl.value = defaultStudy;
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    if (dateEl) {
+      dateEl.value = detectedDate || todayStr;
+    }
+
+    window.selectModalStudyOption?.(defaultStudy);
+    modal?.classList.remove('hidden');
+  }
+
+  confirmStudyUpload(selectedStudy) {
+    const studyName = selectedStudy || document.getElementById('study-custom-input')?.value.trim() || this.currentProject || 'Chile';
+    const opDate = document.getElementById('study-operation-date')?.value || new Date().toISOString().split('T')[0];
+    const modal = document.getElementById('modal-select-study');
+    modal?.classList.add('hidden');
+
+    if (!this.pendingUpload || !this.pendingUpload.result) {
+      this.currentProject = studyName;
+      this.selectedStudies = [studyName];
+      const projEl = document.getElementById('context-project-name');
+      if (projEl) projEl.textContent = studyName;
+      this.renderAdminView();
+      this.renderReportsView();
+      this.showToast(`Estudio establecido en: ${studyName}`, 'info');
+      return;
+    }
+
+    const { result } = this.pendingUpload;
+
+    // Etiquetar todas las auditorías del archivo con el estudio seleccionado y la fecha de jornada
+    result.audits.forEach(audit => {
+      audit.estudio = studyName;
+      audit.fecha = opDate;
+      if (!audit.modelo || audit.modelo === 'Tradicional' || audit.modelo === 'TRADICIONAL') audit.modelo = studyName;
+      if (!audit.canal) audit.canal = studyName;
+      if (studyName === 'Chile') audit.pais = 'Chile';
+    });
+
+    this.currentProject = studyName;
+    this.selectedStudies = [studyName];
+    const projEl = document.getElementById('context-project-name');
+    if (projEl) projEl.textContent = studyName;
+
+    // Distribuir entre validadores del estudio con balanceo simultáneo
+    const projectVals = this.getValidatorsForCurrentProject();
+    if (projectVals.length > 0) {
+      result.audits = Distributor.distribute(result.audits, projectVals);
+    }
+
+    // Acumular automáticamente día por día al historial existente (con deduplicación por ID)
+    const existingMap = new Map();
+    this.audits.forEach((a, i) => {
+      existingMap.set(String(a.id), i);
+    });
+
+    result.audits.forEach(newA => {
+      const key = String(newA.id);
+      if (existingMap.has(key)) {
+        const idx = existingMap.get(key);
+        const prev = this.audits[idx];
+        this.audits[idx] = {
+          ...newA,
+          validationStatus: prev.validationStatus || newA.validationStatus,
+          validationResults: prev.validationResults || newA.validationResults,
+          durationSeconds: prev.durationSeconds || newA.durationSeconds,
+          completedAt: prev.completedAt || newA.completedAt,
+          assignedValidatorId: prev.assignedValidatorId || newA.assignedValidatorId
+        };
+      } else {
+        this.audits.push(newA);
+      }
+    });
+
+    // Garantizar que this.audits esté siempre 100% libre de duplicados de id
+    this.audits = ExcelParser.deduplicateById(this.audits);
+    if (this.currentModule === 'blocking') {
+      this.blockingAudits = this.audits;
+    } else {
+      this.smartAudits = this.audits;
+    }
+
+    this.headers = result.headers;
+    this.kpiColumns = result.kpiColumns;
+
+    this.saveState();
+    this.renderAdminView();
+    this.renderAlertsView();
+    this.renderReportsView();
+    this.renderQueriesView();
+    this.populateLookupQuickTags();
+    this.showToast(`¡${result.audits.length} auditorías acumuladas para ${studyName} (Jornada: ${opDate})!`, 'success');
+    this.pendingUpload = null;
+  }
+
+  loadSampleData(notify = true) {
+    const isBlocking = this.currentModule === 'blocking';
+    const csvData = isBlocking ? BLOCKING_ALERTS_SAMPLE_CSV : SAMPLE_CSV_DATA;
+    const result = ExcelParser.parseCSV(csvData);
+
+    const studyName = this.currentProject || 'Chile';
+    result.audits.forEach(audit => {
+      audit.estudio = studyName;
+      if (!audit.modelo) audit.modelo = studyName;
+    });
+
+    let distributed = Distributor.distributeEqually(result.audits, this.validators);
+    distributed = seedSampleValidations(distributed);
+
+    if (isBlocking) {
+      this.blockingAudits = distributed;
+      this.audits = this.blockingAudits;
+    } else {
+      this.smartAudits = distributed;
+      this.audits = this.smartAudits;
+    }
+
+    this.headers = result.headers;
+    this.kpiColumns = result.kpiColumns;
+
+    this.saveState();
+    this.renderAdminView();
+    this.renderAlertsView();
+    this.renderReportsView();
+    this.renderQueriesView();
+    this.populateLookupQuickTags();
+    this.validatorUI?.populateQuickSelect(this.validators);
+
+    if (notify) {
+      const modeName = isBlocking ? 'Alertas Bloqueantes' : 'Validación Smart';
+      this.showToast(`Datos de ejemplo cargados para ${modeName} (${this.audits.length} auditorías) - Estudio: ${studyName}.`, 'success');
+    }
+  }
+
+  // ==========================================
+  // GESTIÓN DE ARCHIVOS, ESTUDIOS Y DEDUPLICACIÓN
+  // ==========================================
+  openReassignStudyModal() {
+    const projectAudits = this.getAuditsForCurrentProject();
+    if (projectAudits.length === 0) {
+      this.showToast(`No hay auditorías cargadas en el estudio ${this.currentProject} para mover.`, 'warning');
+      return;
+    }
+
+    const countEl = document.getElementById('reassign-modal-count');
+    const fromEl = document.getElementById('reassign-modal-from');
+    const inputEl = document.getElementById('reassign-target-study-input');
+    const modal = document.getElementById('modal-reassign-study');
+
+    if (countEl) countEl.textContent = `${projectAudits.length} auditorías`;
+    if (fromEl) fromEl.textContent = this.currentProject;
+
+    // Seleccionar por defecto un estudio diferente al actual
+    const otherStudies = ['Tradicional', 'Moderno', 'Chile', 'Lindley'].filter(s => s.toUpperCase() !== this.currentProject.toUpperCase());
+    const defaultTarget = otherStudies[0] || 'Tradicional';
+    if (inputEl) inputEl.value = defaultTarget;
+
+    document.querySelectorAll('#modal-reassign-study .study-option-card').forEach(card => {
+      const s = card.dataset.reassignStudy;
+      if (s === defaultTarget) card.classList.add('active');
+      else card.classList.remove('active');
+    });
+
+    modal?.classList.remove('hidden');
+  }
+
+  selectReassignStudyOption(targetStudy) {
+    const inputEl = document.getElementById('reassign-target-study-input');
+    if (inputEl) inputEl.value = targetStudy;
+
+    document.querySelectorAll('#modal-reassign-study .study-option-card').forEach(card => {
+      const s = card.dataset.reassignStudy;
+      if (s === targetStudy) card.classList.add('active');
+      else card.classList.remove('active');
+    });
+  }
+
+  executeReassignStudy() {
+    const targetStudy = document.getElementById('reassign-target-study-input')?.value || 'Tradicional';
+    const modal = document.getElementById('modal-reassign-study');
+    modal?.classList.add('hidden');
+
+    if (targetStudy.toUpperCase() === this.currentProject.toUpperCase()) {
+      this.showToast('El estudio de destino es igual al actual.', 'info');
+      return;
+    }
+
+    const prevStudy = this.currentProject;
+    let countMoved = 0;
+
+    // Actualizar las auditorías del estudio previo al nuevo estudio
+    this.audits.forEach(audit => {
+      if (this.getStudyForAudit(audit).toUpperCase() === prevStudy.toUpperCase()) {
+        audit.estudio = targetStudy;
+        audit.canal = targetStudy;
+        audit.modelo = targetStudy;
+        if (targetStudy === 'Chile') audit.pais = 'Chile';
+        countMoved++;
+      }
+    });
+
+    // Cambiar el proyecto activo al nuevo estudio
+    this.currentProject = targetStudy;
+    this.selectedStudies = [targetStudy];
+
+    const projEl = document.getElementById('context-project-name');
+    if (projEl) projEl.textContent = targetStudy;
+
+    // Re-distribuir automáticamente entre los validadores del nuevo estudio
+    const newValidators = this.getValidatorsForCurrentProject();
+    if (newValidators.length > 0) {
+      const projectAudits = this.getAuditsForCurrentProject();
+      const distributed = Distributor.distribute(projectAudits, newValidators, this.distributionMode || 'audits');
+      const distMap = new Map(distributed.map(a => [String(a.id), a]));
+      this.audits = this.audits.map(a => distMap.has(String(a.id)) ? distMap.get(String(a.id)) : a);
+    }
+
+    // Deduplicación estricta de seguridad
+    this.audits = ExcelParser.deduplicateById(this.audits);
+    if (this.currentModule === 'blocking') {
+      this.blockingAudits = this.audits;
+    } else {
+      this.smartAudits = this.audits;
+    }
+
+    this.saveState();
+    this.syncStateAcrossTabs();
+    this.renderAdminView();
+    this.renderAlertsView();
+    this.renderReportsView();
+    this.renderQueriesView();
+    this.populateLookupQuickTags();
+
+    this.showToast(`¡${countMoved} auditorías movidas exitosamente de ${prevStudy} a ${targetStudy}!`, 'success');
+  }
+
+  clearCurrentStudyAudits() {
+    const projectAudits = this.getAuditsForCurrentProject();
+    if (projectAudits.length === 0) {
+      this.showToast(`No hay auditorías cargadas en el estudio ${this.currentProject} para eliminar.`, 'info');
+      return;
+    }
+
+    const confirmMsg = `¿Estás seguro de que deseas eliminar las ${projectAudits.length} auditorías del estudio "${this.currentProject}"?\n\nEsta acción liberará este estudio para que puedas volver a subir el archivo correcto. Los demás estudios no se verán afectados.`;
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+
+    const deletedStudy = this.currentProject;
+    this.audits = this.audits.filter(a => this.getStudyForAudit(a).toUpperCase() !== deletedStudy.toUpperCase());
+    if (this.currentModule === 'blocking') {
+      this.blockingAudits = this.audits;
+    } else {
+      this.smartAudits = this.audits;
+    }
+
+    this.saveState();
+    this.syncStateAcrossTabs();
+    this.renderAdminView();
+    this.renderAlertsView();
+    this.renderReportsView();
+    this.renderQueriesView();
+    this.populateLookupQuickTags();
+
+    this.showToast(`Auditorías de ${deletedStudy} eliminadas correctamente. Ahora puedes cargar el archivo correcto.`, 'success');
+  }
+
+  clearAllDatabase() {
+    if (this.audits.length === 0) {
+      this.showToast('La base de datos ya está vacía.', 'info');
+      return;
+    }
+
+    const confirmMsg = `⚠️ ¿Deseas vaciar TODAS las auditorías de este módulo (${this.audits.length} registros en total)?\n\nEsta acción reseteará este módulo a un estado limpio.`;
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+
+    this.audits = [];
+    if (this.currentModule === 'blocking') {
+      this.blockingAudits = [];
+    } else {
+      this.smartAudits = [];
+    }
+
+    this.saveState();
+    this.syncStateAcrossTabs();
+    this.renderAdminView();
+    this.renderAlertsView();
+    this.renderReportsView();
+    this.renderQueriesView();
+    this.populateLookupQuickTags();
+
+    this.showToast('Base de datos vaciada completamente. Plataforma lista para nuevas cargas.', 'info');
+  }
+
+  // ==========================================
+  // REPARTICIÓN EQUITATIVA Y GESTIÓN POR ESTUDIO
+  // ==========================================
+  getValidatorsForCurrentProject() {
+    const cur = (this.currentProject || 'Chile').toUpperCase();
+    const filtered = this.validators.filter(v => v.estudio && v.estudio.toUpperCase() === cur);
+    return filtered.length > 0 ? filtered : this.validators;
+  }
+
+  getAuditsForCurrentProject() {
+    if (!this.currentProject || this.currentProject === 'ALL') {
+      return this.audits;
+    }
+    const cur = this.currentProject.toUpperCase();
+    return this.audits.filter(a => {
+      const studyOfAudit = this.getStudyForAudit(a);
+      return studyOfAudit.toUpperCase() === cur;
+    });
+  }
+
+  executeDistribution() {
+    try {
+      const projectAudits = this.getAuditsForCurrentProject();
+      if (projectAudits.length === 0) {
+        this.showToast(`No hay auditorías cargadas para el estudio ${this.currentProject}.`, 'warning');
+        return;
+      }
+
+      const projectValidators = this.getValidatorsForCurrentProject();
+
+      if (projectValidators.length === 0) {
+        this.showToast(`Agrega al menos un validador asignado al estudio ${this.currentProject}.`, 'warning');
+        return;
+      }
+
+      // Ejecutar algoritmo de distribución simultánea (balanceo dual de auditorías y KPIs)
+      const distributedProjectAudits = Distributor.distribute(projectAudits, projectValidators);
+      
+      // Actualizar en el array global this.audits
+      const distMap = new Map(distributedProjectAudits.map(a => [String(a.id), a]));
+      this.audits = this.audits.map(a => distMap.has(String(a.id)) ? distMap.get(String(a.id)) : a);
+
+      if (this.currentModule === 'blocking') {
+        this.blockingAudits = this.audits;
+      } else {
+        this.smartAudits = this.audits;
+      }
+
+      this.saveState();
+      this.syncStateAcrossTabs();
+      this.renderAdminView();
+      this.renderAlertsView();
+      this.renderReportsView();
+      this.populateLookupQuickTags();
+
+      const totalKpis = projectAudits.reduce((acc, a) => acc + (a.kpis || []).filter(k => k.needsReview || k.alertaStatus === 'SE ALERTA').length, 0);
+
+      this.showToast(
+        `¡${projectAudits.length} auditorías de ${this.currentProject} (${totalKpis} KPIs a revisar) repartidas con balanceo simultáneo (Auditorías & KPIs) entre ${projectValidators.length} validadores!`,
+        'success'
+      );
+    } catch (e) {
+      console.error(e);
+      this.showToast(e.message || 'Error al repartir auditorías.', 'error');
+    }
+  }
+
+  // ==========================================
+  // RENDERIZADO DE LA VISTA ADMIN
+  // ==========================================
+  renderAdminView() {
+    const totalAuditsEl = document.getElementById('admin-stat-total-audits');
+    const totalKpisEl = document.getElementById('admin-stat-total-kpis-to-review');
+    const totalValidatorsEl = document.getElementById('admin-stat-total-validators');
+    const assignedPercentEl = document.getElementById('admin-stat-assigned-percent');
+    const completedPercentEl = document.getElementById('admin-stat-completed-percent');
+
+    const projectValidators = this.getValidatorsForCurrentProject();
+    const projectAudits = this.getAuditsForCurrentProject();
+    const totalAudits = projectAudits.length;
+    const assignedAudits = projectAudits.filter(a => a.assignedValidatorId).length;
+    const completedAudits = projectAudits.filter(a => a.validationStatus === 'completada').length;
+    const totalKpisToReview = projectAudits.reduce((acc, a) => acc + (a.kpis || []).filter(k => k.needsReview || k.alertaStatus === 'SE ALERTA').length, 0);
+
+    if (totalAuditsEl) totalAuditsEl.textContent = totalAudits;
+    if (totalKpisEl) totalKpisEl.textContent = totalKpisToReview;
+    if (totalValidatorsEl) totalValidatorsEl.textContent = projectValidators.length;
+    if (assignedPercentEl) {
+      assignedPercentEl.textContent = totalAudits > 0 ? `${Math.round((assignedAudits / totalAudits) * 100)}%` : '0%';
+    }
+    if (completedPercentEl) {
+      completedPercentEl.textContent = totalAudits > 0 ? `${Math.round((completedAudits / totalAudits) * 100)}%` : '0%';
+    }
+
+    this.renderValidatorCards();
+    this.renderAuditsPreviewTable();
+  }
+
+  renderValidatorCards() {
+    const container = document.getElementById('admin-validators-grid');
+    if (!container) return;
+
+    const projectValidators = this.getValidatorsForCurrentProject();
+    const projectAudits = this.getAuditsForCurrentProject();
+
+    if (projectValidators.length === 0) {
+      container.innerHTML = `
+        <div class="empty-validators-state">
+          <p>No hay validadores registrados para el estudio <strong>${this.currentProject}</strong>. Haz clic en "+ Agregar Validador" para añadir uno.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const stats = Distributor.getValidatorStats(projectAudits, projectValidators);
+
+    const flagMap = {
+      'Chile': '🇨🇱 Chile',
+      'Tradicional': '🏪 Tradicional',
+      'Moderno': '🏬 Moderno',
+      'Lindley': '🥤 Lindley'
+    };
+
+    container.innerHTML = stats.map(val => {
+      const studyLabel = flagMap[val.estudio] || val.estudio || this.currentProject || 'Chile';
+
+      return `
+        <div class="validator-admin-card" data-id="${val.id}">
+          <div class="val-card-top">
+            <div class="val-code-badge" title="Código único para ingresar">${val.code}</div>
+            <span class="val-study-tag">${studyLabel}</span>
+            <div class="val-actions-mini">
+              <button class="btn-icon btn-copy-code" data-code="${val.code}" title="Copiar Código">📋</button>
+              <button class="btn-icon btn-delete-val text-danger" data-id="${val.id}" title="Eliminar Validador">🗑️</button>
+            </div>
+          </div>
+
+          <div class="val-info">
+            <h4 class="val-name">${val.name}</h4>
+            <span class="val-email">${val.email || 'Sin correo'}</span>
+          </div>
+
+          <div class="val-stats-grid">
+            <div class="val-stat-box">
+              <span class="val-stat-num">${val.totalAssigned}</span>
+              <span class="val-stat-lbl">Auditorías</span>
+            </div>
+            <div class="val-stat-box">
+              <span class="val-stat-num text-magenta">${val.totalAssignedKpis}</span>
+              <span class="val-stat-lbl">KPIs Alerta</span>
+            </div>
+            <div class="val-stat-box">
+              <span class="val-stat-num text-success">${val.completed}</span>
+              <span class="val-stat-lbl">${val.percentProgress}% Avance</span>
+            </div>
+          </div>
+
+          <div class="val-progress-bar-wrap">
+            <div class="val-progress-bar-fill" style="width: ${val.percentProgress}%"></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    container.querySelectorAll('.btn-copy-code').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const code = btn.dataset.code;
+        navigator.clipboard.writeText(code).then(() => {
+          this.showToast(`Código ${code} copiado al portapapeles.`, 'success');
+        });
+      });
+    });
+
+    container.querySelectorAll('.btn-delete-val').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.id;
+        this.deleteValidator(id);
+      });
+    });
+  }
+
+  renderAuditsPreviewTable() {
+    const tableThead = document.getElementById('audits-preview-thead');
+    const tableBody = document.getElementById('audits-preview-tbody');
+    const countBadge = document.getElementById('audits-table-count');
+
+    if (!tableThead || !tableBody) return;
+
+    const projectAudits = this.getAuditsForCurrentProject();
+
+    if (countBadge) countBadge.textContent = `${projectAudits.length} registros (${this.currentProject})`;
+
+    if (projectAudits.length === 0) {
+      tableThead.innerHTML = '';
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="10" class="empty-table-msg">
+            No hay auditorías cargadas para el estudio <strong>${this.currentProject}</strong>. Arrastra un archivo Excel/CSV arriba o selecciona otro estudio.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tableThead.innerHTML = `
+      <tr>
+        <th>#</th>
+        <th>ID Auditoría</th>
+        <th>ID PDV</th>
+        <th>País</th>
+        <th>Ciudad</th>
+        <th>Canal / Modelo</th>
+        <th>Fecha</th>
+        <th>KPIs Asignados</th>
+        <th>Validador Asignado</th>
+        <th>Estado</th>
+      </tr>
+    `;
+
+    const valMap = new Map(this.validators.map(v => [v.id, v]));
+    const previewAudits = projectAudits.slice(0, 50);
+
+    tableBody.innerHTML = previewAudits.map((a, i) => {
+      const val = valMap.get(a.assignedValidatorId);
+      const kpisToReview = (a.kpis || []).filter(k => k.needsReview);
+
+      const statusBadge = a.validationStatus === 'completada' 
+        ? `<span class="badge badge-success">✓ Completada</span>`
+        : a.validationStatus === 'en_progreso'
+        ? `<span class="badge badge-info">En Progreso</span>`
+        : `<span class="badge badge-warning">Pendiente</span>`;
+
+      return `
+        <tr>
+          <td>${i + 1}</td>
+          <td><strong>#${a.id}</strong></td>
+          <td>${a.idPDV || '-'}</td>
+          <td>${a.pais || '-'}</td>
+          <td>${a.ciudad || '-'}</td>
+          <td>${a.modelo ? `${a.canal || ''} (${a.modelo})` : a.canal || '-'}</td>
+          <td><strong>${this.getAuditOperationDate(a)}</strong></td>
+          <td><span class="badge badge-purple">${kpisToReview.length} KPIs</span></td>
+          <td>
+            ${val ? `<span class="val-pill"><strong>${val.code}</strong> - ${val.name}</span>` : '<span class="text-muted">Sin asignar</span>'}
+          </td>
+          <td>${statusBadge}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // ==========================================
+  // GESTIÓN DE VALIDADORES
+  // ==========================================
+  initValidatorModal() {
+    const modal = document.getElementById('modal-add-validator');
+    const closeBtn = document.getElementById('btn-close-val-modal');
+    const saveBtn = document.getElementById('btn-save-val-modal');
+    const nameInput = document.getElementById('modal-val-name');
+    const emailInput = document.getElementById('modal-val-email');
+    const codeInput = document.getElementById('modal-val-code');
+    const studySelect = document.getElementById('modal-val-study');
+
+    closeBtn?.addEventListener('click', () => modal?.classList.add('hidden'));
+
+    saveBtn?.addEventListener('click', () => {
+      const name = nameInput?.value.trim();
+      const email = emailInput?.value.trim();
+      const code = codeInput?.value.trim().toUpperCase() || Distributor.generateValidatorCode(this.validators.map(v => v.code));
+      const estudio = studySelect?.value || this.currentProject || 'Chile';
+
+      if (!name) {
+        this.showToast('El nombre del validador es obligatorio.', 'warning');
+        return;
+      }
+
+      if (this.validators.some(v => v.code === code)) {
+        this.showToast(`El código "${code}" ya está en uso.`, 'warning');
+        return;
+      }
+
+      const newValidator = {
+        id: 'val-' + Date.now(),
+        code,
+        name,
+        email,
+        estudio
+      };
+
+      this.validators.push(newValidator);
+      this.syncStateAcrossTabs();
+      this.renderAdminView();
+      this.renderAlertsView();
+      this.validatorUI?.populateQuickSelect(this.validators);
+
+      modal?.classList.add('hidden');
+      nameInput.value = '';
+      emailInput.value = '';
+      codeInput.value = '';
+
+      this.showToast(`Validador "${name}" agregado al estudio ${estudio} con código ${code}.`, 'success');
+    });
+  }
+
+  openAddValidatorModal() {
+    const modal = document.getElementById('modal-add-validator');
+    const codeInput = document.getElementById('modal-val-code');
+    const studySelect = document.getElementById('modal-val-study');
+
+    if (codeInput) {
+      codeInput.value = Distributor.generateValidatorCode(this.validators.map(v => v.code));
+    }
+    if (studySelect) {
+      studySelect.value = this.currentProject || 'Chile';
+    }
+
+    modal?.classList.remove('hidden');
+    document.getElementById('modal-val-name')?.focus();
+  }
+
+  deleteValidator(id) {
+    const val = this.validators.find(v => v.id === id);
+    if (!val) return;
+
+    if (confirm(`¿Estás seguro de eliminar al validador "${val.name}"? Las auditorías asignadas quedarán sin asignar.`)) {
+      this.validators = this.validators.filter(v => v.id !== id);
+      this.audits.forEach(a => {
+        if (a.assignedValidatorId === id) {
+          a.assignedValidatorId = null;
+        }
+      });
+      this.syncStateAcrossTabs();
+      this.renderAdminView();
+      this.renderAlertsView();
+      this.validatorUI?.populateQuickSelect(this.validators);
+      this.showToast(`Validador ${val.name} eliminado.`, 'info');
+    }
+  }
+
+  // ==========================================
+  // SUB-PESTAÑAS DE MÉTRICAS (OPERACIONALES VS EJECUTIVAS)
+  // ==========================================
+  initReportsSubtabs() {
+    const btnOp = document.getElementById('btn-subtab-operational');
+    const btnExec = document.getElementById('btn-subtab-executive');
+    const viewOp = document.getElementById('metrics-view-operational');
+    const viewExec = document.getElementById('metrics-view-executive');
+    const titleEl = document.getElementById('reports-view-title');
+    const subtitleEl = document.getElementById('reports-view-subtitle');
+
+    btnOp?.addEventListener('click', () => {
+      this.reportsSubtab = 'operational';
+      btnOp.classList.add('active');
+      btnExec?.classList.remove('active');
+      viewOp?.classList.remove('hidden');
+      viewExec?.classList.add('hidden');
+
+      if (titleEl) titleEl.textContent = 'Métricas Operacionales de Supervisión';
+      if (subtitleEl) subtitleEl.textContent = 'Supervisa el avance operativo diario de validación, tiempos por validador y descargas día a día.';
+      this.renderReportsView();
+    });
+
+    btnExec?.addEventListener('click', () => {
+      this.reportsSubtab = 'executive';
+      btnExec.classList.add('active');
+      btnOp?.classList.remove('active');
+      viewExec?.classList.remove('hidden');
+      viewOp?.classList.add('hidden');
+
+      if (titleEl) titleEl.textContent = 'Informe Ejecutivo de Calidad y KPIs (Comité)';
+      if (subtitleEl) subtitleEl.textContent = 'Ranking de variables con alertas, tasa de efectividad de negocio y causas raíz para comités directivos.';
+      this.renderReportsView();
+    });
+  }
+
+  // ==========================================
+  // FILTRO MULTI-ESTUDIO / CANAL / MODELO
+  // ==========================================
+  initStudyFilter() {
+    document.getElementById('btn-filter-select-all')?.addEventListener('click', () => {
+      this.selectedStudies = ['ALL'];
+      this.renderReportsView();
+      this.showToast('Mostrando datos de todos los estudios.', 'info');
+    });
+
+    document.getElementById('btn-filter-select-current')?.addEventListener('click', () => {
+      this.selectedStudies = [this.currentProject];
+      this.renderReportsView();
+      this.showToast(`Filtrando métricas por: ${this.currentProject}`, 'info');
+    });
+  }
+
+  populateStudyPills() {
+    const container = document.getElementById('study-pills-container');
+    if (!container) return;
+
+    // Los 4 Estudios Oficiales
+    const officialStudies = [
+      { key: 'Chile', label: '🇨🇱 Chile' },
+      { key: 'Tradicional', label: '🏪 Tradicional' },
+      { key: 'Moderno', label: '🏬 Moderno' },
+      { key: 'Lindley', label: '🥤 Lindley' }
+    ];
+
+    const isAllSelected = this.selectedStudies.includes('ALL') || this.selectedStudies.length === 0;
+
+    let html = `
+      <div class="study-filter-pill ${isAllSelected ? 'active' : ''}" data-study="ALL">
+        <span>🌐 Todos los Estudios</span>
+        <span class="pill-count-badge">${this.audits.length}</span>
+      </div>
+    `;
+
+    officialStudies.forEach(studyItem => {
+      const matchCount = this.audits.filter(a => this.getStudyForAudit(a) === studyItem.key).length;
+      const isSel = !isAllSelected && this.selectedStudies.some(s => s.toUpperCase() === studyItem.key.toUpperCase());
+
+      html += `
+        <div class="study-filter-pill ${isSel ? 'active' : ''}" data-study="${studyItem.key}">
+          <span>${studyItem.label}</span>
+          <span class="pill-count-badge">${matchCount}</span>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+
+    // Listeners interactivos
+    container.querySelectorAll('.study-filter-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        const study = pill.dataset.study;
+
+        if (study === 'ALL') {
+          this.selectedStudies = ['ALL'];
+        } else {
+          // Si estaba en ALL, deseleccionar ALL y dejar solo el estudio clickeado
+          if (this.selectedStudies.includes('ALL')) {
+            this.selectedStudies = [study];
+          } else {
+            // Si ya estaba seleccionado, quitarlo
+            const idx = this.selectedStudies.findIndex(s => s.toUpperCase() === study.toUpperCase());
+            if (idx !== -1) {
+              this.selectedStudies.splice(idx, 1);
+              if (this.selectedStudies.length === 0) {
+                this.selectedStudies = ['ALL'];
+              }
+            } else {
+              this.selectedStudies.push(study);
+            }
+          }
+        }
+
+        this.renderReportsView();
+      });
+    });
+  }
+
+  getStudyForAudit(audit) {
+    if (audit.estudio) return audit.estudio;
+    const m = (audit.modelo || '').toUpperCase();
+    const c = (audit.canal || '').toUpperCase();
+    const p = (audit.pais || '').toUpperCase();
+
+    if (p === 'CHILE' || m === 'CHILE') return 'Chile';
+    if (m.includes('TRADICIONAL') || c.includes('TRADICIONAL') || m.includes('STILLS') || m.includes('TITÁN')) return 'Tradicional';
+    if (m.includes('MODERNO') || c.includes('MODERNO') || m.includes('MOEDRNO') || c.includes('MOEDRNO')) return 'Moderno';
+    if (m.includes('LINDLEY') || c.includes('LINDLEY') || c.includes('GROCERY')) return 'Lindley';
+    return 'Tradicional';
+  }
+
+  getFilteredAuditsForReports() {
+    if (this.selectedStudies.includes('ALL') || this.selectedStudies.length === 0) {
+      return this.audits;
+    }
+
+    return this.audits.filter(a => {
+      const studyOfAudit = this.getStudyForAudit(a);
+      return this.selectedStudies.some(s => s.toUpperCase() === studyOfAudit.toUpperCase());
+    });
+  }
+
+  // ==========================================
+  // VISTA DE REPORTES Y MÉTRICAS (OPERACIONALES + EJECUTIVAS)
+  // ==========================================
+  renderReportsView() {
+    this.populateStudyPills();
+
+    const filteredAudits = this.getFilteredAuditsForReports();
+    const studyLabel = this.selectedStudies.includes('ALL') 
+      ? 'Todos los Estudios (Consolidado)' 
+      : this.selectedStudies.join(', ');
+
+    // 1. Actualizar etiquetas de contexto de filtro
+    const opCountLabel = document.getElementById('op-filtered-count-label');
+    if (opCountLabel) {
+      opCountLabel.textContent = `Mostrando ${filteredAudits.length} de ${this.audits.length} auditorías [${studyLabel}]`;
+    }
+
+    const execStudyLabel = document.getElementById('exec-study-selected-label');
+    if (execStudyLabel) {
+      execStudyLabel.textContent = `Estudios Analizados: ${studyLabel} (${filteredAudits.length} auditorías)`;
+    }
+
+    // 2. Renderizar Sub-Vista Operacional
+    this.renderOperationalMetrics(filteredAudits);
+
+    // 3. Renderizar Sub-Vista Ejecutiva para Comité
+    this.renderExecutiveMetrics(filteredAudits);
+  }
+
+  renderOperationalMetrics(audits) {
+    const totalAudits = audits.length;
+    const completedAudits = audits.filter(a => a.validationStatus === 'completada').length;
+    const pendingAudits = totalAudits - completedAudits;
+
+    let totalEvaluatedKpis = 0;
+    let totalAplicaKpis = 0;
+    let totalNoAplicaKpis = 0;
+    const reasonsMap = {};
+
+    audits.forEach(audit => {
+      Object.entries(audit.validationResults || {}).forEach(([kpiName, res]) => {
+        if (res.status) {
+          totalEvaluatedKpis++;
+          if (res.status === 'aplica') {
+            totalAplicaKpis++;
+          } else if (res.status === 'no_aplica') {
+            totalNoAplicaKpis++;
+            if (res.tipificacion) {
+              reasonsMap[res.tipificacion] = (reasonsMap[res.tipificacion] || 0) + 1;
+            }
+          }
+        }
+      });
+    });
+
+    const repTotal = document.getElementById('rep-stat-total');
+    const repCompleted = document.getElementById('rep-stat-completed');
+    const repPending = document.getElementById('rep-stat-pending');
+    const repAplica = document.getElementById('rep-stat-aplica');
+    const repNoAplica = document.getElementById('rep-stat-no-aplica');
+
+    if (repTotal) repTotal.textContent = totalAudits;
+    if (repCompleted) repCompleted.textContent = completedAudits;
+    if (repPending) repPending.textContent = pendingAudits;
+    if (repAplica) repAplica.textContent = totalAplicaKpis;
+    if (repNoAplica) repNoAplica.textContent = totalNoAplicaKpis;
+
+    const reasonsContainer = document.getElementById('reasons-breakdown-list');
+    if (reasonsContainer) {
+      const reasonEntries = Object.entries(reasonsMap).sort((a, b) => b[1] - a[1]);
+
+      if (reasonEntries.length === 0) {
+        reasonsContainer.innerHTML = `
+          <div class="empty-reasons-state">
+            <p>Aún no se han registrado tipificaciones de "No Aplica" en los estudios seleccionados.</p>
+          </div>
+        `;
+      } else {
+        reasonsContainer.innerHTML = reasonEntries.map(([reason, count]) => {
+          const pct = totalNoAplicaKpis > 0 ? Math.round((count / totalNoAplicaKpis) * 100) : 0;
+          return `
+            <div class="reason-item">
+              <div class="reason-info">
+                <span class="reason-text">${reason}</span>
+                <span class="reason-count"><strong>${count}</strong> (${pct}%)</span>
+              </div>
+              <div class="progress-bar-bg">
+                <div class="progress-bar-fill progress-rose" style="width: ${pct}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    this.renderDailyReportsView();
+  }
+
+  renderExecutiveMetrics(audits) {
+    let totalAlerts = 0;
+    let totalAplica = 0;
+    let totalNoAplica = 0;
+    let totalDurationSec = 0;
+    let completedAuditsCount = 0;
+
+    const kpiStats = {};
+    const channelStats = {};
+    const reasonsMap = {};
+    const allUniqueKpis = new Set();
+
+    const officialStudies = [
+      { key: 'Chile', label: '🇨🇱 Chile' },
+      { key: 'Tradicional', label: '🏪 Tradicional' },
+      { key: 'Moderno', label: '🏬 Moderno' },
+      { key: 'Lindley', label: '🥤 Lindley' }
+    ];
+
+    officialStudies.forEach(s => {
+      channelStats[s.key] = { key: s.key, name: s.label, audits: 0, alerts: 0, aplica: 0, noAplica: 0 };
+    });
+
+    audits.forEach(audit => {
+      const studyKey = this.getStudyForAudit(audit);
+      if (!channelStats[studyKey]) {
+        channelStats[studyKey] = { key: studyKey, name: studyKey, audits: 0, alerts: 0, aplica: 0, noAplica: 0 };
+      }
+      channelStats[studyKey].audits++;
+
+      if (audit.validationStatus === 'completada') {
+        completedAuditsCount++;
+        if (audit.durationSeconds) totalDurationSec += audit.durationSeconds;
+      }
+
+      (audit.kpis || []).forEach(k => {
+        allUniqueKpis.add(k.kpiName || k.name);
+        if (k.needsReview) {
+          totalAlerts++;
+          channelStats[studyKey].alerts++;
+
+          const kName = k.kpiName || k.name;
+          if (!kpiStats[kName]) {
+            kpiStats[kName] = { name: kName, total: 0, aplica: 0, noAplica: 0 };
+          }
+          kpiStats[kName].total++;
+
+          const res = (audit.validationResults || {})[k.name];
+          if (res && res.status === 'aplica') {
+            totalAplica++;
+            kpiStats[kName].aplica++;
+            channelStats[studyKey].aplica++;
+          } else if (res && res.status === 'no_aplica') {
+            totalNoAplica++;
+            kpiStats[kName].noAplica++;
+            channelStats[studyKey].noAplica++;
+            if (res.tipificacion) {
+              reasonsMap[res.tipificacion] = (reasonsMap[res.tipificacion] || 0) + 1;
+            }
+          }
+        }
+      });
+    });
+
+    const evaluated = totalAplica + totalNoAplica;
+    const confirmRateNum = evaluated > 0 ? Math.round((totalAplica / evaluated) * 100) : 0;
+    const discardRateNum = evaluated > 0 ? Math.round((totalNoAplica / evaluated) * 100) : 0;
+    const confirmRate = `${confirmRateNum}%`;
+    const discardRate = `${discardRateNum}%`;
+    const avgDuration = completedAuditsCount > 0 ? Math.round(totalDurationSec / completedAuditsCount) : 24;
+
+    // Universo Total de Medición (ej. 10 auditorías × 9 KPIs = 90 puntos)
+    const kpisPerAudit = Math.max(9, allUniqueKpis.size || 9);
+    const totalMeasurableUniverse = audits.length * kpisPerAudit;
+    const totalSinAlerta = Math.max(0, totalMeasurableUniverse - totalAlerts);
+
+    const pctSinAlerta = totalMeasurableUniverse > 0 ? ((totalSinAlerta / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
+    const pctAplicaUniverse = totalMeasurableUniverse > 0 ? ((totalAplica / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
+    const pctNoAplicaUniverse = totalMeasurableUniverse > 0 ? ((totalNoAplica / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
+    const pctAlertasEditadas = totalAlerts > 0 ? Math.round((totalNoAplica / totalAlerts) * 100) : 0;
+
+    // Ordenar ranking de KPIs por volumen total de alertas
+    const kpiRanking = Object.values(kpiStats).sort((a, b) => b.total - a.total);
+    const topKpi = kpiRanking.length > 0 ? `${kpiRanking[0].name} (${kpiRanking[0].total})` : '—';
+
+    // 1. Actualizar Tarjetas Ejecutivas & Banner Comercial
+    const statAlerts = document.getElementById('exec-stat-total-alerts');
+    const statConfirm = document.getElementById('exec-stat-confirm-rate');
+    const statDiscard = document.getElementById('exec-stat-discard-rate');
+    const statTopKpi = document.getElementById('exec-stat-top-kpi');
+
+    const statAuditsCovered = document.getElementById('exec-stat-audits-covered');
+    const statFalsePositives = document.getElementById('exec-stat-false-positives');
+    const statPrecisionRate = document.getElementById('exec-stat-precision-rate');
+    const statSlaTime = document.getElementById('exec-stat-sla-time');
+    const statQaStatus = document.getElementById('exec-stat-qa-status');
+
+    if (statAlerts) statAlerts.textContent = totalAlerts;
+    if (statConfirm) statConfirm.textContent = confirmRate;
+    if (statDiscard) statDiscard.textContent = discardRate;
+    if (statTopKpi) statTopKpi.textContent = topKpi;
+
+    if (statAuditsCovered) statAuditsCovered.textContent = audits.length;
+    if (statFalsePositives) statFalsePositives.textContent = totalNoAplica;
+    if (statPrecisionRate) statPrecisionRate.textContent = confirmRate;
+    if (statSlaTime) statSlaTime.textContent = `${avgDuration}s`;
+    if (statQaStatus) statQaStatus.textContent = `${audits.length} Auditorías Verificadas`;
+
+    // 2. Actualizar Panel de Universo de Medición & Tasa de Edición
+    const kpisBadge = document.getElementById('exec-stat-kpis-per-audit-badge');
+    if (kpisBadge) kpisBadge.textContent = `${kpisPerAudit} KPIs × Auditoría`;
+
+    const barSinAlerta = document.getElementById('exec-bar-sin-alerta');
+    const barAplica = document.getElementById('exec-bar-aplica');
+    const barEditada = document.getElementById('exec-bar-editada');
+    if (barSinAlerta) barSinAlerta.style.width = `${pctSinAlerta}%`;
+    if (barAplica) barAplica.style.width = `${pctAplicaUniverse}%`;
+    if (barEditada) barEditada.style.width = `${pctNoAplicaUniverse}%`;
+
+    const legSinAlerta = document.getElementById('exec-legend-sin-alerta');
+    const legAplica = document.getElementById('exec-legend-aplica');
+    const legEditada = document.getElementById('exec-legend-editada');
+    if (legSinAlerta) legSinAlerta.textContent = `${totalSinAlerta} (${pctSinAlerta}%)`;
+    if (legAplica) legAplica.textContent = `${totalAplica} (${pctAplicaUniverse}%)`;
+    if (legEditada) legEditada.textContent = `${totalNoAplica} (${pctNoAplicaUniverse}%)`;
+
+    const statUniTotal = document.getElementById('exec-stat-universe-total');
+    const statUniCalc = document.getElementById('exec-stat-universe-calc');
+    const statUniSinAlerta = document.getElementById('exec-stat-universe-sin-alerta');
+    const statUniSinAlertaPct = document.getElementById('exec-stat-universe-sin-alerta-pct');
+    const statUniAplica = document.getElementById('exec-stat-universe-aplica');
+    const statUniAplicaPct = document.getElementById('exec-stat-universe-aplica-pct');
+    const statUniEditadas = document.getElementById('exec-stat-universe-editadas');
+    const statUniEditadasPct = document.getElementById('exec-stat-universe-editadas-pct');
+
+    if (statUniTotal) statUniTotal.textContent = totalMeasurableUniverse;
+    if (statUniCalc) statUniCalc.textContent = `${audits.length} auditorías × ${kpisPerAudit} KPIs`;
+    if (statUniSinAlerta) statUniSinAlerta.textContent = totalSinAlerta;
+    if (statUniSinAlertaPct) statUniSinAlertaPct.textContent = `${pctSinAlerta}% del universo`;
+    if (statUniAplica) statUniAplica.textContent = totalAplica;
+    if (statUniAplicaPct) statUniAplicaPct.textContent = `${pctAplicaUniverse}% del universo`;
+    if (statUniEditadas) statUniEditadas.textContent = totalNoAplica;
+    if (statUniEditadasPct) statUniEditadasPct.textContent = `${pctNoAplicaUniverse}% del universo (${pctAlertasEditadas}% de alertas editadas)`;
+
+    // 3. Renderizar Tabla Benchmark Comercial entre Estudios
+    const benchmarkTbody = document.getElementById('exec-benchmark-tbody');
+    if (benchmarkTbody) {
+      const channelList = Object.values(channelStats);
+      if (channelList.length === 0) {
+        benchmarkTbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Sin datos de estudios.</td></tr>';
+      } else {
+        benchmarkTbody.innerHTML = channelList.map(ch => {
+          const evalCh = ch.aplica + ch.noAplica;
+          const pctConfirm = evalCh > 0 ? Math.round((ch.aplica / evalCh) * 100) : 0;
+          const efectividadExecution = ch.audits > 0 
+            ? Math.max(10, Math.min(100, Math.round(100 - (ch.aplica / (ch.audits * 3 || 1)) * 50)))
+            : 100;
+
+          return `
+            <tr>
+              <td><span class="benchmark-badge-flag">${ch.name}</span></td>
+              <td><strong>${ch.audits}</strong></td>
+              <td><span class="badge badge-purple">${ch.alerts} alertas</span></td>
+              <td><strong class="text-success">${ch.aplica}</strong></td>
+              <td><strong class="text-magenta">${ch.noAplica}</strong></td>
+              <td>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <div class="progress-bar-bg" style="width:60px; height:6px;">
+                    <div class="progress-bar-fill progress-emerald" style="width: ${pctConfirm}%"></div>
+                  </div>
+                  <strong>${pctConfirm}%</strong>
+                </div>
+              </td>
+              <td>
+                <span class="badge ${efectividadExecution >= 80 ? 'badge-success' : 'badge-warning'}">
+                  ${efectividadExecution}% en PDV
+                </span>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    // 4. Renderizar Ranking / Pareto de KPIs con más Alertas
+    const rankingContainer = document.getElementById('exec-kpi-ranking-list');
+    if (rankingContainer) {
+      if (kpiRanking.length === 0) {
+        rankingContainer.innerHTML = '<p class="text-muted">No hay datos de alertas para generar el ranking.</p>';
+      } else {
+        rankingContainer.innerHTML = kpiRanking.map((kpi, idx) => {
+          const evalK = kpi.aplica + kpi.noAplica;
+          const pctAplica = evalK > 0 ? Math.round((kpi.aplica / evalK) * 100) : 0;
+          const pctNoAplica = evalK > 0 ? Math.round((kpi.noAplica / evalK) * 100) : 0;
+          const pctGlobalAlerts = totalAlerts > 0 ? ((kpi.total / totalAlerts) * 100).toFixed(1) : 0;
+
+          return `
+            <div class="kpi-ranking-item">
+              <div class="kpi-ranking-header">
+                <span class="kpi-ranking-name">
+                  <span class="kpi-rank-badge">#${idx + 1}</span>
+                  ${kpi.name}
+                </span>
+                <span class="kpi-ranking-counts">
+                  <strong>${kpi.total} alertas</strong> (${pctGlobalAlerts}% del total)
+                </span>
+              </div>
+
+              <div class="kpi-ranking-bar-wrap" title="${kpi.aplica} Aplica / ${kpi.noAplica} No Aplica">
+                <div class="kpi-bar-fill-aplica" style="width: ${pctAplica}%"></div>
+                <div class="kpi-bar-fill-no-aplica" style="width: ${pctNoAplica}%"></div>
+              </div>
+
+              <div class="kpi-ranking-legend">
+                <span class="text-success">✓ Aplica: <strong>${kpi.aplica}</strong> (${pctAplica}%)</span>
+                <span class="text-magenta">✕ No Aplica: <strong>${kpi.noAplica}</strong> (${pctNoAplica}%)</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // 5. Renderizar Incidencia por Estudio / Canal
+    const channelsContainer = document.getElementById('exec-channels-breakdown');
+    if (channelsContainer) {
+      const channelList = Object.values(channelStats).filter(ch => ch.audits > 0 || ch.alerts > 0);
+      if (channelList.length === 0) {
+        channelsContainer.innerHTML = '<p class="text-muted">Sin datos de canales para los estudios seleccionados.</p>';
+      } else {
+        channelsContainer.innerHTML = channelList.map(ch => {
+          const pctChAlerts = totalAlerts > 0 ? Math.round((ch.alerts / totalAlerts) * 100) : 0;
+          const evalCh = ch.aplica + ch.noAplica;
+          const pctEfectividad = evalCh > 0 ? Math.round((ch.aplica / evalCh) * 100) : 0;
+
+          return `
+            <div class="exec-channel-row">
+              <div class="exec-channel-meta">
+                <span><strong>${ch.name}</strong> (${ch.audits} auditorías)</span>
+                <span>${ch.alerts} alertas (${pctChAlerts}%) • <span class="text-success">${pctEfectividad}% efectividad</span></span>
+              </div>
+              <div class="exec-channel-bar-wrap">
+                <div class="exec-channel-bar-fill" style="width: ${pctChAlerts}%; background: var(--dn-blue);"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    // 6. Renderizar Causas Raíz de Descarte
+    const reasonsContainer = document.getElementById('exec-reasons-breakdown');
+    if (reasonsContainer) {
+      const reasonEntries = Object.entries(reasonsMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      if (reasonEntries.length === 0) {
+        reasonsContainer.innerHTML = '<p class="text-muted">Sin tipificaciones de descarte registradas.</p>';
+      } else {
+        reasonsContainer.innerHTML = reasonEntries.map(([reason, count]) => {
+          const pct = totalNoAplica > 0 ? Math.round((count / totalNoAplica) * 100) : 0;
+          return `
+            <div class="exec-reason-row">
+              <span class="exec-reason-name">${reason}</span>
+              <span class="exec-reason-pct">${count} casos (${pct}%)</span>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+  }
+
+  // ==========================================
+  // INFORME COMERCIAL Y EXPORTACIÓN A PDF
+  // ==========================================
+  openCommercialReportPreview() {
+    const modal = document.getElementById('modal-commercial-report-preview');
+    if (!modal) return;
+
+    const audits = this.getFilteredAuditsForReports();
+    const studyLabel = this.selectedStudies.includes('ALL') 
+      ? 'Chile, Tradicional, Moderno, Lindley' 
+      : this.selectedStudies.join(', ');
+
+    // 1. Header & Badge
+    const scopeBadge = document.getElementById('dossier-study-scope-badge');
+    const dateLabel = document.getElementById('commercial-dossier-date-label');
+    if (scopeBadge) scopeBadge.textContent = `Estudios: ${studyLabel}`;
+    if (dateLabel) {
+      const todayStr = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+      dateLabel.textContent = `Emisión: ${todayStr} • Protocolo de Calidad dichter & neira`;
+    }
+
+    // 2. Metrics calculation
+    let totalAlerts = 0;
+    let totalAplica = 0;
+    let totalNoAplica = 0;
+    let totalSecs = 0;
+    let completedCount = 0;
+    const kpiMap = {};
+    const reasonsMap = {};
+    const allUniqueKpis = new Set();
+    const studyMap = {
+      'Chile': { name: '🇨🇱 Chile', audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
+      'Tradicional': { name: '🏪 Tradicional', audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
+      'Moderno': { name: '🏬 Moderno', audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
+      'Lindley': { name: '🥤 Lindley', audits: 0, alerts: 0, aplica: 0, noAplica: 0 }
+    };
+
+    audits.forEach(a => {
+      const st = this.getStudyForAudit(a);
+      if (!studyMap[st]) studyMap[st] = { name: st, audits: 0, alerts: 0, aplica: 0, noAplica: 0 };
+      studyMap[st].audits++;
+
+      if (a.validationStatus === 'completada') {
+        completedCount++;
+        if (a.durationSeconds) totalSecs += a.durationSeconds;
+      }
+
+      (a.kpis || []).forEach(k => {
+        allUniqueKpis.add(k.kpiName || k.name);
+        if (k.needsReview) {
+          totalAlerts++;
+          studyMap[st].alerts++;
+          const kn = k.kpiName || k.name;
+          if (!kpiMap[kn]) kpiMap[kn] = { name: kn, total: 0, aplica: 0, noAplica: 0 };
+          kpiMap[kn].total++;
+
+          const res = (a.validationResults || {})[k.name];
+          if (res && res.status === 'aplica') {
+            totalAplica++;
+            kpiMap[kn].aplica++;
+            studyMap[st].aplica++;
+          } else if (res && res.status === 'no_aplica') {
+            totalNoAplica++;
+            kpiMap[kn].noAplica++;
+            studyMap[st].noAplica++;
+            if (res.tipificacion) reasonsMap[res.tipificacion] = (reasonsMap[res.tipificacion] || 0) + 1;
+          }
+        }
+      });
+    });
+
+    const evaluated = totalAplica + totalNoAplica;
+    const confirmRate = evaluated > 0 ? `${Math.round((totalAplica / evaluated) * 100)}%` : '0%';
+    const avgSec = completedCount > 0 ? Math.round(totalSecs / completedCount) : 24;
+
+    // Universo de Medición en Dossier
+    const kpisPerAudit = Math.max(9, allUniqueKpis.size || 9);
+    const totalMeasurableUniverse = audits.length * kpisPerAudit;
+    const totalSinAlerta = Math.max(0, totalMeasurableUniverse - totalAlerts);
+    const pctSinAlerta = totalMeasurableUniverse > 0 ? ((totalSinAlerta / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
+    const pctAplicaUniverse = totalMeasurableUniverse > 0 ? ((totalAplica / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
+    const pctNoAplicaUniverse = totalMeasurableUniverse > 0 ? ((totalNoAplica / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
+    const pctAlertasEditadas = totalAlerts > 0 ? Math.round((totalNoAplica / totalAlerts) * 100) : 0;
+
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setEl('dossier-kpi-audits', audits.length);
+    setEl('dossier-kpi-alerts-total', totalAlerts);
+    setEl('dossier-kpi-confirm-rate', confirmRate);
+    setEl('dossier-kpi-false-positives', totalNoAplica);
+    setEl('dossier-kpi-avg-time', `${avgSec}s`);
+
+    // Universo DOM en Dossier Modal
+    const dBarSinAlerta = document.getElementById('dossier-bar-sin-alerta');
+    const dBarAplica = document.getElementById('dossier-bar-aplica');
+    const dBarEditada = document.getElementById('dossier-bar-editada');
+    if (dBarSinAlerta) dBarSinAlerta.style.width = `${pctSinAlerta}%`;
+    if (dBarAplica) dBarAplica.style.width = `${pctAplicaUniverse}%`;
+    if (dBarEditada) dBarEditada.style.width = `${pctNoAplicaUniverse}%`;
+
+    setEl('dossier-legend-sin-alerta', `${totalSinAlerta} (${pctSinAlerta}%)`);
+    setEl('dossier-legend-aplica', `${totalAplica} (${pctAplicaUniverse}%)`);
+    setEl('dossier-legend-editada', `${totalNoAplica} (${pctNoAplicaUniverse}%)`);
+
+    setEl('dossier-stat-universe-total', totalMeasurableUniverse);
+    setEl('dossier-stat-universe-calc', `${audits.length} Aud. × ${kpisPerAudit} KPIs`);
+    setEl('dossier-stat-universe-sin-alerta', totalSinAlerta);
+    setEl('dossier-stat-universe-sin-alerta-pct', `${pctSinAlerta}% del universo`);
+    setEl('dossier-stat-universe-aplica', totalAplica);
+    setEl('dossier-stat-universe-aplica-pct', `${pctAplicaUniverse}% del universo`);
+    setEl('dossier-stat-universe-editadas', totalNoAplica);
+    setEl('dossier-stat-universe-editadas-pct', `${pctNoAplicaUniverse}% del universo (${pctAlertasEditadas}% de alertas)`);
+
+    // POPULAR DOCUMENTO GERENCIAL EXCLUSIVO PARA IMPRESIÓN/PDF
+    const todayStr = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+    setEl('print-meta-date', todayStr);
+    setEl('print-meta-scope', studyLabel);
+
+    setEl('print-kpi-audits', audits.length);
+    setEl('print-kpi-false-positives', totalNoAplica);
+    setEl('print-kpi-precision', confirmRate);
+    setEl('print-kpi-sla', `${avgSec}s`);
+    setEl('print-kpi-universe-total', totalMeasurableUniverse);
+    setEl('print-kpi-universe-desc', `${audits.length} Aud. × ${kpisPerAudit} KPIs`);
+
+    const pBarSinAlerta = document.getElementById('print-bar-sin-alerta');
+    const pBarAplica = document.getElementById('print-bar-aplica');
+    const pBarEditada = document.getElementById('print-bar-editada');
+    if (pBarSinAlerta) pBarSinAlerta.style.width = `${pctSinAlerta}%`;
+    if (pBarAplica) pBarAplica.style.width = `${pctAplicaUniverse}%`;
+    if (pBarEditada) pBarEditada.style.width = `${pctNoAplicaUniverse}%`;
+
+    setEl('print-legend-sin-alerta', `${totalSinAlerta} (${pctSinAlerta}%)`);
+    setEl('print-legend-aplica', `${totalAplica} (${pctAplicaUniverse}%)`);
+    setEl('print-legend-editada', `${totalNoAplica} (${pctNoAplicaUniverse}%)`);
+
+    setEl('print-tbl-sin-alerta-count', totalSinAlerta);
+    setEl('print-tbl-sin-alerta-pct', `${pctSinAlerta}%`);
+    setEl('print-tbl-aplica-count', totalAplica);
+    setEl('print-tbl-aplica-pct', `${pctAplicaUniverse}%`);
+    setEl('print-tbl-editadas-count', totalNoAplica);
+    setEl('print-tbl-editadas-pct', `${pctNoAplicaUniverse}% (${pctAlertasEditadas}% de alertas)`);
+
+    // 3. Benchmark Table (Modal + Print)
+    const benchTbody = document.getElementById('dossier-benchmark-tbody');
+    const printBenchTbody = document.getElementById('print-benchmark-tbody');
+    const studyRowsHtml = Object.values(studyMap).map(st => {
+      const ev = st.aplica + st.noAplica;
+      const pConf = ev > 0 ? Math.round((st.aplica / ev) * 100) : 0;
+      const execRate = st.audits > 0 
+        ? Math.max(10, Math.min(100, Math.round(100 - (st.aplica / (st.audits * 3 || 1)) * 50)))
+        : 100;
+      return `
+        <tr>
+          <td><strong>${st.name}</strong></td>
+          <td>${st.audits}</td>
+          <td><span class="badge badge-purple">${st.alerts}</span></td>
+          <td><strong class="text-success">${st.aplica}</strong></td>
+          <td><strong class="text-magenta">${st.noAplica}</strong></td>
+          <td><strong>${pConf}%</strong></td>
+          <td><span class="badge ${execRate >= 80 ? 'badge-success' : 'badge-warning'}">${execRate}% en PDV</span></td>
+        </tr>
+      `;
+    }).join('');
+
+    if (benchTbody) benchTbody.innerHTML = studyRowsHtml;
+    if (printBenchTbody) printBenchTbody.innerHTML = studyRowsHtml;
+
+    // 4. Top KPIs list (Modal + Print)
+    const topKpisList = document.getElementById('dossier-top-kpis-list');
+    const printTopKpisTbody = document.getElementById('print-top-kpis-tbody');
+    const sortedKpis = Object.values(kpiMap).sort((a, b) => b.total - a.total).slice(0, 5);
+    
+    if (topKpisList) {
+      if (sortedKpis.length === 0) {
+        topKpisList.innerHTML = '<p class="text-muted">Sin registros de alertas.</p>';
+      } else {
+        topKpisList.innerHTML = sortedKpis.map((kpi, idx) => {
+          const ev = kpi.aplica + kpi.noAplica;
+          const pA = ev > 0 ? Math.round((kpi.aplica / ev) * 100) : 0;
+          return `
+            <div class="dossier-ranking-row">
+              <div class="dossier-rank-label">
+                <span>#${idx + 1} ${kpi.name}</span>
+                <span><strong>${kpi.total} alertas</strong> (${pA}% confirmadas)</span>
+              </div>
+              <div class="progress-bar-bg" style="height:6px;">
+                <div class="progress-bar-fill progress-emerald" style="width: ${pA}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    if (printTopKpisTbody) {
+      if (sortedKpis.length === 0) {
+        printTopKpisTbody.innerHTML = '<tr><td colspan="4" class="text-muted">Sin alertas registradas</td></tr>';
+      } else {
+        printTopKpisTbody.innerHTML = sortedKpis.map((kpi, idx) => {
+          const ev = kpi.aplica + kpi.noAplica;
+          const pA = ev > 0 ? Math.round((kpi.aplica / ev) * 100) : 0;
+          return `
+            <tr>
+              <td><strong>#${idx + 1}</strong></td>
+              <td>${kpi.name}</td>
+              <td><strong>${kpi.total}</strong></td>
+              <td><strong class="print-text-success">${pA}%</strong></td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    // 5. Reasons list (Modal + Print)
+    const reasonsList = document.getElementById('dossier-reasons-list');
+    const printReasonsTbody = document.getElementById('print-reasons-tbody');
+    const sortedReasons = Object.entries(reasonsMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+    
+    if (reasonsList) {
+      if (sortedReasons.length === 0) {
+        reasonsList.innerHTML = '<p class="text-muted">Sin motivos de descarte registrados.</p>';
+      } else {
+        reasonsList.innerHTML = sortedReasons.map(([r, c]) => {
+          const p = totalNoAplica > 0 ? Math.round((c / totalNoAplica) * 100) : 0;
+          return `
+            <div class="dossier-ranking-row">
+              <div class="dossier-rank-label">
+                <span>${r}</span>
+                <span><strong>${c} casos</strong> (${p}%)</span>
+              </div>
+              <div class="progress-bar-bg" style="height:6px;">
+                <div class="progress-bar-fill progress-rose" style="width: ${p}%"></div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    if (printReasonsTbody) {
+      if (sortedReasons.length === 0) {
+        printReasonsTbody.innerHTML = '<tr><td colspan="3" class="text-muted">Sin descartes registrados</td></tr>';
+      } else {
+        printReasonsTbody.innerHTML = sortedReasons.map(([r, c]) => {
+          const p = totalNoAplica > 0 ? Math.round((c / totalNoAplica) * 100) : 0;
+          return `
+            <tr>
+              <td>${r}</td>
+              <td><strong>${c}</strong></td>
+              <td><strong class="print-text-magenta">${p}%</strong></td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    // 6. Recommendations (Modal + Print)
+    const recGrid = document.getElementById('dossier-recommendations-content');
+    const printRecGrid = document.getElementById('print-recommendations-content');
+    const topKpiName = sortedKpis.length > 0 ? sortedKpis[0].name : 'Variables Comerciales';
+    const topReasonName = sortedReasons.length > 0 ? sortedReasons[0][0] : 'Criterios de canal';
+
+    const recHtml = `
+      <div class="dossier-rec-card">
+        <strong>1. Foco Estratégico en Punto de Venta:</strong>
+        La variable con mayor incidencia de alertas es <em>"${topKpiName}"</em>. Se recomienda coordinar con el equipo comercial y de trade marketing para reforzar la ejecución en PDV de esta categoría.
+      </div>
+      <div class="dossier-rec-card">
+        <strong>2. Optimización de Auditoría en Campo:</strong>
+        La principal causa de falsos positivos prevenidos es <em>"${topReasonName}"</em> (${totalNoAplica} alertas evitadas al cliente). Mantener la calibración periódica de las reglas smart para maximizar la efectividad.
+      </div>
+      <div class="dossier-rec-card">
+        <strong>3. Certificación de Calidad Garantizada:</strong>
+        El 100% de los datos generados cuenta con validación humana experta y respaldo documental de dichter & neira, garantizando total confiabilidad para la toma de decisiones directivas.
+      </div>
+    `;
+
+    const printRecHtml = `
+      <div class="print-rec-item">
+        <strong>1. Foco en PDV (${topKpiName})</strong>
+        Mayor concentración de alertas en <em>${topKpiName}</em>. Reforzar auditoría y alineación de trade marketing.
+      </div>
+      <div class="print-rec-item">
+        <strong>2. Filtro Humano (${totalNoAplica} alertas evitadas)</strong>
+        Causa principal de descarte: <em>${topReasonName}</em>. El filtro humano protegió la data antes del cliente.
+      </div>
+      <div class="print-rec-item">
+        <strong>3. Garantía D&N 100% Verificado</strong>
+        Toda la reportería cuenta con trazabilidad y respaldo documental de dichter & neira.
+      </div>
+    `;
+
+    if (recGrid) recGrid.innerHTML = recHtml;
+    if (printRecGrid) printRecGrid.innerHTML = printRecHtml;
+
+    modal.classList.remove('hidden');
+  }
+
+  exportCommercialPDF() {
+    this.openCommercialReportPreview();
+    this.showToast('Abriendo generador oficial de PDF gerencial dichter & neira...', 'info');
+    setTimeout(() => {
+      window.print();
+    }, 450);
+  }
+
+  // ==========================================
+  // NAVEGACIÓN DE PESTAÑAS DE SUPERVISIÓN
+  // ==========================================
+  switchSupervisorTab(targetTab) {
+    const tabBtns = document.querySelectorAll('#supervisor-nav-tabs .nav-tab-btn');
+    const tabPanes = document.querySelectorAll('#private-supervisor-view .tab-content-pane');
+
+    tabBtns.forEach(btn => {
+      if (btn.dataset.tab === targetTab) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+
+    tabPanes.forEach(p => {
+      if (p.id === `tab-${targetTab}`) {
+        p.classList.add('active');
+      } else {
+        p.classList.remove('active');
+      }
+    });
+
+    if (targetTab === 'reports') {
+      this.renderReportsView();
+    } else if (targetTab === 'admin') {
+      this.renderAdminView();
+    } else if (targetTab === 'lookup') {
+      this.populateLookupQuickTags();
+      document.getElementById('lookup-search-input')?.focus();
+    } else if (targetTab === 'queries') {
+      this.renderQueriesView();
+    } else if (targetTab === 'alerts') {
+      this.renderAlertsView();
+    }
+  }
+
+  // ==========================================
+  // SEGUIMIENTO A DUDAS Y CONSULTAS DE VALIDADORES (❓)
+  // ==========================================
+  initQueriesModule() {
+    // 1. Selector de tipo de dictamen en el modal de resolución
+    const radioAplica = document.querySelector('input[name="modal_resolve_decision"][value="aplica"]');
+    const radioNoAplica = document.querySelector('input[name="modal_resolve_decision"][value="no_aplica"]');
+    const lblAplica = document.getElementById('modal-lbl-choice-aplica');
+    const lblNoAplica = document.getElementById('modal-lbl-choice-no-aplica');
+    const tipifGroup = document.getElementById('modal-resolve-tipif-group');
+
+    radioAplica?.addEventListener('change', () => {
+      lblAplica?.classList.add('active');
+      lblNoAplica?.classList.remove('active');
+      if (tipifGroup) tipifGroup.style.display = 'none';
+    });
+
+    radioNoAplica?.addEventListener('change', () => {
+      lblNoAplica?.classList.add('active');
+      lblAplica?.classList.remove('active');
+      if (tipifGroup) tipifGroup.style.display = 'block';
+    });
+
+    // 2. Confirmar resolución de la consulta
+    document.getElementById('btn-confirm-resolve-query')?.addEventListener('click', () => {
+      this.submitResolveQuery();
+    });
+  }
+
+  getAllValidatorQueries() {
+    const queries = [];
+    const valMap = new Map(this.validators.map(v => [v.code, v]));
+
+    this.audits.forEach(audit => {
+      const results = audit.validationResults || {};
+      const val = valMap.get(audit.validatorCode) || {
+        name: audit.validadorNombre || 'Validador Asignado',
+        code: audit.validatorCode || audit.assignedValidatorId || 'VAL-01'
+      };
+
+      Object.entries(results).forEach(([kpiName, res]) => {
+        if (res.status === 'duda' || (res.dudaText && res.dudaText.trim().length > 0)) {
+          const isResolved = Boolean(res.supervisorResponse || (res.supervisorDecision && res.status !== 'duda'));
+          queries.push({
+            auditId: audit.id,
+            idPDV: audit.idPDV || audit.id,
+            study: audit.estudio || audit.canal || 'Tradicional',
+            country: audit.pais || 'N/A',
+            city: audit.ciudad || 'N/A',
+            channel: audit.canal || 'N/A',
+            validatorName: val.name,
+            validatorCode: val.code,
+            kpiName,
+            dudaText: res.dudaText || 'Duda registrada sin comentario.',
+            dudaCreatedAt: res.dudaCreatedAt || res.updatedAt || new Date().toISOString(),
+            isResolved,
+            supervisorResponse: res.supervisorResponse || '',
+            supervisorDecision: res.supervisorDecision || (res.status !== 'duda' ? res.status : ''),
+            supervisorTipificacion: res.supervisorTipificacion || res.tipificacion || '',
+            supervisorResolvedAt: res.supervisorResolvedAt || ''
+          });
+        }
+      });
+    });
+
+    // Ordenar: primero pendientes (más recientes primero), luego resueltas
+    return queries.sort((a, b) => {
+      if (a.isResolved !== b.isResolved) {
+        return a.isResolved ? 1 : -1;
+      }
+      return new Date(b.dudaCreatedAt) - new Date(a.dudaCreatedAt);
+    });
+  }
+
+  renderQueriesView() {
+    const allQueries = this.getAllValidatorQueries();
+    const pendingQueries = allQueries.filter(q => !q.isResolved);
+    const resolvedQueries = allQueries.filter(q => q.isResolved);
+
+    // 1. Actualizar Badge en la barra de navegación del Supervisor
+    const navBadge = document.getElementById('nav-queries-badge');
+    if (navBadge) {
+      if (pendingQueries.length > 0) {
+        navBadge.textContent = pendingQueries.length;
+        navBadge.classList.remove('hidden');
+      } else {
+        navBadge.classList.add('hidden');
+      }
+    }
+
+    // 2. Tarjetas de métricas
+    const elTotal = document.getElementById('query-stat-total');
+    const elPending = document.getElementById('query-stat-pending');
+    const elResolved = document.getElementById('query-stat-resolved');
+    const elTopStudy = document.getElementById('query-stat-top-study');
+
+    if (elTotal) elTotal.textContent = allQueries.length;
+    if (elPending) elPending.textContent = pendingQueries.length;
+    if (elResolved) elResolved.textContent = resolvedQueries.length;
+
+    // Estudio con más consultas
+    if (elTopStudy) {
+      if (allQueries.length === 0) {
+        elTopStudy.textContent = 'Ninguno';
+      } else {
+        const countsByStudy = {};
+        allQueries.forEach(q => countsByStudy[q.study] = (countsByStudy[q.study] || 0) + 1);
+        const top = Object.entries(countsByStudy).sort((a, b) => b[1] - a[1])[0];
+        elTopStudy.textContent = top ? `${top[0]} (${top[1]})` : '—';
+      }
+    }
+
+    // 3. Contadores de botones de filtro
+    const elCountAll = document.getElementById('qcount-all');
+    const elCountPending = document.getElementById('qcount-pending');
+    const elCountResolved = document.getElementById('qcount-resolved');
+
+    if (elCountAll) elCountAll.textContent = allQueries.length;
+    if (elCountPending) elCountPending.textContent = pendingQueries.length;
+    if (elCountResolved) elCountResolved.textContent = resolvedQueries.length;
+
+    // 4. Filtrar lista
+    let filtered = allQueries;
+    if (this.queryFilter === 'pending') {
+      filtered = filtered.filter(q => !q.isResolved);
+    } else if (this.queryFilter === 'resolved') {
+      filtered = filtered.filter(q => q.isResolved);
+    }
+
+    if (this.queryStudyFilter && this.queryStudyFilter !== 'ALL') {
+      filtered = filtered.filter(q => q.study.toLowerCase() === this.queryStudyFilter.toLowerCase());
+    }
+
+    // 5. Renderizar lista interactiva
+    const container = document.getElementById('queries-feed-container');
+    if (!container) return;
+
+    if (filtered.length === 0) {
+      container.innerHTML = `
+        <div class="glass-panel text-center" style="padding:3.5rem 2rem;">
+          <div style="font-size:3rem; margin-bottom:0.75rem;">🎉✨</div>
+          <h3 style="color:var(--dn-navy); margin-bottom:0.4rem;">¡No hay consultas pendientes con el filtro actual!</h3>
+          <p class="text-muted" style="max-width:480px; margin:0 auto;">
+            Los validadores han resuelto sus asignaciones sin dudas o todas las preguntas ya fueron dictaminadas por supervisión.
+          </p>
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = filtered.map(q => {
+      const formattedDate = new Date(q.dudaCreatedAt).toLocaleDateString('es-ES', {
+        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+      });
+
+      return `
+        <div class="query-card-item ${q.isResolved ? 'status-resolved' : 'status-pending'}">
+          <div class="query-header-row">
+            <div class="query-meta-badges">
+              <span class="query-audit-badge">Auditoría #${q.auditId}</span>
+              <span class="badge badge-info">PDV: ${q.idPDV}</span>
+              <span class="badge badge-purple">${q.study}</span>
+              <span class="badge badge-neutral">Validador: <strong>${q.validatorName}</strong> (${q.validatorCode})</span>
+            </div>
+            <div>
+              ${q.isResolved 
+                ? `<span class="badge badge-success">✅ Resuelta por Supervisor</span>`
+                : `<span class="badge badge-warning">⏳ Pendiente de Respuesta</span>`
+              }
+            </div>
+          </div>
+
+          <div class="query-body-content">
+            <div class="query-kpi-highlight">
+              🎯 KPI en Consulta: <span class="text-primary">${q.kpiName}</span>
+            </div>
+
+            <div class="query-doubt-box">
+              <strong>❓ Pregunta / Duda del Validador:</strong>
+              <p style="margin:0.25rem 0 0 0;">"${q.dudaText}"</p>
+            </div>
+
+            ${q.isResolved ? `
+              <div class="query-resolution-box">
+                <div>
+                  <strong>💬 Dictamen Oficial del Supervisor:</strong>
+                  <span class="badge ${q.supervisorDecision === 'aplica' ? 'badge-success' : 'badge-danger'}" style="margin-left:0.4rem;">
+                    ${q.supervisorDecision === 'aplica' ? '✓ Aplica (Error de Campo)' : '✕ No Aplica (Falso Positivo)'}
+                  </span>
+                  ${q.supervisorTipificacion ? `<span class="text-muted" style="font-size:0.8rem; margin-left:0.35rem;">(${q.supervisorTipificacion})</span>` : ''}
+                </div>
+                <p style="margin:0.25rem 0 0 0; font-style:italic;">"${q.supervisorResponse || 'Instrucción confirmada por supervisión.'}"</p>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="query-actions-footer">
+            <span class="query-timestamp-info">📅 Consulta registrada: ${formattedDate}</span>
+            <div style="display:flex; gap:0.5rem;">
+              <button class="btn btn-outline btn-sm" onclick="window.app?.inspectAuditInLookup('${q.auditId}')">
+                🔎 Inspeccionar Ficha
+              </button>
+              <button class="btn ${q.isResolved ? 'btn-secondary' : 'btn-primary btn-glow'} btn-sm" onclick="window.openResolveQueryModal('${q.auditId}', '${q.kpiName.replace(/'/g, "\\'")}')">
+                ${q.isResolved ? '✏️ Modificar Dictamen' : '✍️ Responder y Dictaminar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  setQueryFilter(filterKey) {
+    this.queryFilter = filterKey;
+    const filterBtns = document.querySelectorAll('#query-status-filters .filter-pill-btn');
+    filterBtns.forEach(btn => {
+      if (btn.dataset.qfilter === filterKey) {
+        btn.classList.add('active');
+      } else {
+        btn.classList.remove('active');
+      }
+    });
+    this.renderQueriesView();
+  }
+
+  setQueryStudyFilter(studyKey) {
+    this.queryStudyFilter = studyKey;
+    this.renderQueriesView();
+  }
+
+  inspectAuditInLookup(auditId) {
+    this.switchSupervisorTab('lookup');
+    const input = document.getElementById('lookup-search-input');
+    if (input) {
+      input.value = auditId;
+      this.executeLookupSearch();
+    }
+  }
+
+  openResolveQueryModal(auditId, kpiName) {
+    const audit = this.audits.find(a => String(a.id) === String(auditId));
+    if (!audit) {
+      this.showToast('Auditoría no encontrada.', 'error');
+      return;
+    }
+
+    const res = (audit.validationResults && audit.validationResults[kpiName]) || {};
+    const val = this.validators.find(v => v.code === audit.validatorCode) || {
+      name: audit.validadorNombre || 'Validador',
+      code: audit.validatorCode || 'VAL-01'
+    };
+
+    this.pendingQueryToResolve = { auditId, kpiName };
+
+    const elAuditId = document.getElementById('modal-q-audit-id');
+    const elPdvId = document.getElementById('modal-q-pdv-id');
+    const elVal = document.getElementById('modal-q-validator');
+    const elKpi = document.getElementById('modal-q-kpi-name');
+    const elDoubt = document.getElementById('modal-q-doubt-text');
+
+    if (elAuditId) elAuditId.textContent = `#${audit.id}`;
+    if (elPdvId) elPdvId.textContent = audit.idPDV || audit.id;
+    if (elVal) elVal.textContent = `${val.name} (${val.code})`;
+    if (elKpi) elKpi.textContent = kpiName;
+    if (elDoubt) elDoubt.textContent = `"${res.dudaText || 'Sin descripción'}"`;
+
+    // Llenar opciones de tipificación
+    const tipifSelect = document.getElementById('modal-resolve-tipif');
+    if (tipifSelect) {
+      tipifSelect.innerHTML = this.tipificaciones.map(t => {
+        const isSel = (res.supervisorTipificacion || res.tipificacion) === t ? 'selected' : '';
+        return `<option value="${t}" ${isSel}>${t}</option>`;
+      }).join('');
+    }
+
+    // Configurar estado inicial de la decisión
+    const curDecision = res.supervisorDecision || (res.status === 'no_aplica' ? 'no_aplica' : 'aplica');
+    const radioAplica = document.querySelector('input[name="modal_resolve_decision"][value="aplica"]');
+    const radioNoAplica = document.querySelector('input[name="modal_resolve_decision"][value="no_aplica"]');
+    const lblAplica = document.getElementById('modal-lbl-choice-aplica');
+    const lblNoAplica = document.getElementById('modal-lbl-choice-no-aplica');
+    const tipifGroup = document.getElementById('modal-resolve-tipif-group');
+
+    if (curDecision === 'no_aplica') {
+      if (radioNoAplica) radioNoAplica.checked = true;
+      lblNoAplica?.classList.add('active');
+      lblAplica?.classList.remove('active');
+      if (tipifGroup) tipifGroup.style.display = 'block';
+    } else {
+      if (radioAplica) radioAplica.checked = true;
+      lblAplica?.classList.add('active');
+      lblNoAplica?.classList.remove('active');
+      if (tipifGroup) tipifGroup.style.display = 'none';
+    }
+
+    const instTextarea = document.getElementById('modal-resolve-instructions');
+    if (instTextarea) {
+      instTextarea.value = res.supervisorResponse || '';
+      setTimeout(() => instTextarea.focus(), 150);
+    }
+
+    document.getElementById('modal-resolve-query')?.classList.remove('hidden');
+  }
+
+  submitResolveQuery() {
+    if (!this.pendingQueryToResolve) return;
+
+    const { auditId, kpiName } = this.pendingQueryToResolve;
+    const audit = this.audits.find(a => String(a.id) === String(auditId));
+    if (!audit) {
+      this.showToast('Auditoría no encontrada.', 'error');
+      return;
+    }
+
+    const radioDecision = document.querySelector('input[name="modal_resolve_decision"]:checked');
+    const decision = radioDecision?.value || 'aplica';
+    const tipifSelect = document.getElementById('modal-resolve-tipif');
+    const tipificacion = decision === 'no_aplica' ? (tipifSelect?.value || '') : '';
+    const instTextarea = document.getElementById('modal-resolve-instructions');
+    const instructions = instTextarea?.value.trim() || '';
+
+    if (!audit.validationResults) audit.validationResults = {};
+    const prev = audit.validationResults[kpiName] || {};
+
+    audit.validationResults[kpiName] = {
+      ...prev,
+      status: decision,
+      tipificacion: tipificacion,
+      supervisorDecision: decision,
+      supervisorResponse: instructions,
+      supervisorTipificacion: tipificacion,
+      supervisorResolvedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    // Verificar si la auditoría ya no tiene dudas pendientes y todos sus KPIs están evaluados
+    const kpisToReview = (audit.kpis || []).filter(k => k.needsReview);
+    let allDone = true;
+    let hasRemainingDoubts = false;
+
+    kpisToReview.forEach(k => {
+      const r = audit.validationResults[k.name];
+      if (!r || !r.status) {
+        allDone = false;
+      } else if (r.status === 'duda' && !r.supervisorResponse) {
+        hasRemainingDoubts = true;
+      }
+    });
+
+    if (allDone && !hasRemainingDoubts) {
+      audit.validationStatus = 'completada';
+      if (!audit.completedAt) audit.completedAt = new Date().toISOString();
+    }
+
+    this.saveState();
+    this.syncStateAcrossTabs();
+
+    document.getElementById('modal-resolve-query')?.classList.add('hidden');
+    this.showToast(`¡Consulta de la Auditoría #${audit.id} resuelta como "${decision === 'aplica' ? 'Aplica' : 'No Aplica'}"!`, 'success');
+
+    this.renderQueriesView();
+    this.renderAdminView();
+    this.renderReportsView();
+    this.renderAlertsView();
+    this.renderDailyReportsView();
+
+    this.pendingQueryToResolve = null;
+  }
+
+  // ==========================================
+  // DESCARGAS DÍA POR DÍA, CONSOLIDADO Y COMITÉ
+  // ==========================================
+  initDailyReportsModule() {
+    // 1. Descargar Consolidado General
+    document.getElementById('btn-export-excel')?.addEventListener('click', () => {
+      const filtered = this.getFilteredAuditsForReports();
+      if (filtered.length === 0) {
+        this.showToast('No hay auditorías en la selección actual para exportar.', 'warning');
+        return;
+      }
+      ExcelParser.exportResultsToExcel(filtered, this.validators);
+      this.showToast('Descargando archivo Excel consolidado...', 'success');
+    });
+
+    // 2. Descargar Libro Multi-Hoja Día por Día
+    document.getElementById('btn-export-multi-sheet')?.addEventListener('click', () => {
+      const filtered = this.getFilteredAuditsForReports();
+      if (filtered.length === 0) {
+        this.showToast('No hay auditorías en la selección actual para exportar.', 'warning');
+        return;
+      }
+      ExcelParser.exportDailyAndConsolidatedExcel(filtered, this.validators);
+      this.showToast('Descargando libro Excel completo (Consolidado + Hojas por Día)...', 'success');
+    });
+
+    // 3. Descargar Informe Ejecutivo para Comité
+    document.getElementById('btn-export-executive-xlsx')?.addEventListener('click', () => {
+      const filtered = this.getFilteredAuditsForReports();
+      if (filtered.length === 0) {
+        this.showToast('No hay auditorías en la selección actual para generar informe.', 'warning');
+        return;
+      }
+      const studyLabel = this.selectedStudies.includes('ALL') 
+        ? 'Todos los Estudios' 
+        : this.selectedStudies.join(', ');
+      ExcelParser.exportExecutiveExcel(filtered, studyLabel);
+      this.showToast('Generando informe ejecutivo de comité en Excel (.xlsx)...', 'success');
+    });
+  }
+
+  renderDailyReportsView() {
+    const valMap = new Map(this.validators.map(v => [v.id, v]));
+    const auditsToRender = this.getFilteredAuditsForReports();
+
+    // 1. Agrupar auditorías por día (estrictamente solo fecha) y estudio
+    const dailyGroups = {};
+    auditsToRender.forEach(audit => {
+      const dateKey = this.getAuditOperationDate(audit);
+      const studyKey = this.getStudyForAudit(audit);
+      const groupKey = `${dateKey}__${studyKey}`;
+
+      if (!dailyGroups[groupKey]) {
+        dailyGroups[groupKey] = {
+          groupKey,
+          dateKey,
+          studyKey,
+          audits: [],
+          completed: 0,
+          pending: 0,
+          inProgress: 0,
+          aplica: 0,
+          noAplica: 0,
+          totalDuration: 0,
+          validatorsMap: {}
+        };
+      }
+
+      const group = dailyGroups[groupKey];
+      group.audits.push(audit);
+
+      if (audit.assignedValidatorId) {
+        if (!group.validatorsMap[audit.assignedValidatorId]) {
+          const valObj = valMap.get(audit.assignedValidatorId) || { id: audit.assignedValidatorId, code: 'VAL-?', name: 'Validador' };
+          group.validatorsMap[audit.assignedValidatorId] = { val: valObj, total: 0, completed: 0 };
+        }
+        group.validatorsMap[audit.assignedValidatorId].total++;
+      }
+
+      if (audit.validationStatus === 'completada') {
+        group.completed++;
+        if (audit.assignedValidatorId && group.validatorsMap[audit.assignedValidatorId]) {
+          group.validatorsMap[audit.assignedValidatorId].completed++;
+        }
+        if (audit.durationSeconds) group.totalDuration += audit.durationSeconds;
+
+        Object.values(audit.validationResults || {}).forEach(res => {
+          if (res.status === 'aplica') group.aplica++;
+          if (res.status === 'no_aplica') group.noAplica++;
+        });
+      } else if (audit.validationStatus === 'en_progreso') {
+        group.inProgress++;
+      } else {
+        group.pending++;
+      }
+    });
+
+    const dailyList = Object.values(dailyGroups).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+
+    // 2. Métricas Resumen
+    const distinctDates = new Set(dailyList.map(d => d.dateKey));
+    const totalDays = distinctDates.size;
+    const totalCompleted = auditsToRender.filter(a => a.validationStatus === 'completada').length;
+    const avgPerDay = totalDays > 0 ? Math.round(totalCompleted / totalDays) : 0;
+
+    let bestDay = '—';
+    let maxCompleted = -1;
+    dailyList.forEach(d => {
+      if (d.completed > maxCompleted && d.completed > 0) {
+        maxCompleted = d.completed;
+        bestDay = `${d.dateKey} (${d.studyKey} - ${d.completed} aud.)`;
+      }
+    });
+
+    const daysCountEl = document.getElementById('daily-stat-days-count');
+    const totalCompEl = document.getElementById('daily-stat-total-completed');
+    const avgDayEl = document.getElementById('daily-stat-avg-day');
+    const bestDayEl = document.getElementById('daily-stat-best-day');
+    const daysBadgeEl = document.getElementById('daily-stat-days-badge');
+
+    if (daysCountEl) daysCountEl.textContent = totalDays;
+    if (totalCompEl) totalCompEl.textContent = totalCompleted;
+    if (avgDayEl) avgDayEl.textContent = avgPerDay;
+    if (bestDayEl) bestDayEl.textContent = bestDay;
+    if (daysBadgeEl) daysBadgeEl.textContent = `${totalDays} jornada${totalDays !== 1 ? 's' : ''} • ${dailyList.length} registro${dailyList.length !== 1 ? 's' : ''} de estudio`;
+
+    // 3. Renderizar Tarjetas Diarias
+    const container = document.getElementById('daily-cards-container');
+    if (!container) return;
+
+    if (dailyList.length === 0) {
+      container.innerHTML = `
+        <div class="empty-reasons-state">
+          <p>No hay auditorías registradas para los estudios seleccionados.</p>
+        </div>
+      `;
+      return;
+    }
+
+    const flagMap = {
+      'Chile': '🇨🇱 Chile',
+      'Tradicional': '🏪 Tradicional',
+      'Moderno': '🏬 Moderno',
+      'Lindley': '🥤 Lindley'
+    };
+
+    container.innerHTML = dailyList.map(item => {
+      const avgDuration = item.completed > 0 ? Math.round(item.totalDuration / item.completed) : 0;
+      const progressPct = item.audits.length > 0 ? Math.round((item.completed / item.audits.length) * 100) : 0;
+      const studyLabel = flagMap[item.studyKey] || item.studyKey;
+
+      // Chips de validadores de la jornada
+      const valChips = Object.values(item.validatorsMap).map(vData => {
+        const vPct = vData.total > 0 ? Math.round((vData.completed / vData.total) * 100) : 0;
+        return `
+          <span class="dd-val-chip" title="${vData.val.name}: ${vData.completed} de ${vData.total} completadas">
+            <span class="dd-val-code">${vData.val.code}</span>
+            <span>${vData.val.name.split(' ')[0]}</span>
+            <strong class="${vPct === 100 ? 'text-success' : 'text-warning'}">${vData.completed}/${vData.total} (${vPct}%)</strong>
+          </span>
+        `;
+      }).join('');
+
+      return `
+        <div class="daily-day-card" data-date="${item.dateKey}" data-study="${item.studyKey}">
+          <div class="daily-day-header">
+            <div class="day-title-group">
+              <div class="day-calendar-icon">📅</div>
+              <div>
+                <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+                  <h3 class="day-date-heading">Fecha: ${item.dateKey}</h3>
+                  <span class="val-study-tag">${studyLabel}</span>
+                </div>
+                <span class="text-muted" style="font-size:0.85rem;">
+                  <strong>${item.audits.length}</strong> auditorías cargadas • <strong>${Object.keys(item.validatorsMap).length}</strong> validadores asignados • Avance: <strong>${progressPct}%</strong>
+                </span>
+              </div>
+            </div>
+
+            <div class="daily-card-actions">
+              <button class="btn btn-outline btn-sm btn-open-daily-detail" data-date="${item.dateKey}" data-study="${item.studyKey}">
+                🔍 Ver Detallado del Día
+              </button>
+              <button class="btn btn-success btn-sm btn-download-day" data-date="${item.dateKey}" data-study="${item.studyKey}">
+                📥 Descargar Excel (.xlsx)
+              </button>
+            </div>
+          </div>
+
+          <!-- Barra de Progreso del Día -->
+          <div class="val-progress-bar-wrap" style="height:8px; margin-top:-0.35rem;">
+            <div class="val-progress-bar-fill" style="width: ${progressPct}%"></div>
+          </div>
+
+          <div class="daily-day-stats-grid">
+            <div class="day-stat-box">
+              <span class="day-stat-num">${item.audits.length}</span>
+              <span class="day-stat-label">Total Auditorías</span>
+            </div>
+            <div class="day-stat-box">
+              <span class="day-stat-num text-success">${item.completed}</span>
+              <span class="day-stat-label">Completadas (${progressPct}%)</span>
+            </div>
+            <div class="day-stat-box">
+              <span class="day-stat-num text-warning">${item.pending + item.inProgress}</span>
+              <span class="day-stat-label">Pendientes</span>
+            </div>
+            <div class="day-stat-box">
+              <span class="day-stat-num text-success">${item.aplica}</span>
+              <span class="day-stat-label">KPIs Aplica</span>
+            </div>
+            <div class="day-stat-box">
+              <span class="day-stat-num text-magenta">${item.noAplica}</span>
+              <span class="day-stat-label">KPIs No Aplica</span>
+            </div>
+            <div class="day-stat-box">
+              <span class="day-stat-num text-purple">${avgDuration}s</span>
+              <span class="day-stat-label">Tiempo Promedio</span>
+            </div>
+          </div>
+
+          <!-- Validadores y Avance en la Jornada -->
+          ${valChips ? `
+            <div style="display:flex; flex-direction:column; gap:0.4rem;">
+              <span style="font-size:0.75rem; font-weight:700; color:var(--text-secondary); text-transform:uppercase;">
+                Equipo de Validadores en esta Jornada:
+              </span>
+              <div class="dd-validators-list">
+                ${valChips}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }).join('');
+
+    // Listener para abrir detallado del día
+    container.querySelectorAll('.btn-open-daily-detail').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dKey = btn.dataset.date;
+        const sKey = btn.dataset.study;
+        this.openDailyDetailModal(dKey, sKey);
+      });
+    });
+
+    // Listener para descargar cada día específico
+    container.querySelectorAll('.btn-download-day').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const dKey = btn.dataset.date;
+        const sKey = btn.dataset.study;
+        const matchingAudits = auditsToRender.filter(a => {
+          const aDate = this.getAuditOperationDate(a);
+          const aStudy = this.getStudyForAudit(a);
+          return (aDate === dKey) && (!sKey || aStudy === sKey);
+        });
+        ExcelParser.exportSingleDayExcel(matchingAudits.length > 0 ? matchingAudits : auditsToRender, this.validators, `${dKey}_${sKey || ''}`);
+        this.showToast(`Descargando reporte de fecha: ${dKey} (${sKey || 'Todos'})`, 'success');
+      });
+    });
+  }
+
+  // ==========================================
+  // MODAL DE DETALLADO DEL DÍA (HISTORIAL DIARIO)
+  // ==========================================
+  openDailyDetailModal(dateKey, studyKey) {
+    const modal = document.getElementById('modal-daily-detail');
+    if (!modal) return;
+
+    this.currentDailyDetail = { dateKey, studyKey };
+
+    const flagMap = {
+      'Chile': '🇨🇱 Chile',
+      'Tradicional': '🏪 Tradicional',
+      'Moderno': '🏬 Moderno',
+      'Lindley': '🥤 Lindley'
+    };
+
+    const titleEl = document.getElementById('daily-detail-title');
+    const subtitleEl = document.getElementById('daily-detail-subtitle');
+    const studyBadge = studyKey ? (flagMap[studyKey] || studyKey) : 'Todos los Estudios';
+
+    if (titleEl) titleEl.textContent = `📅 Detallado de la Jornada: ${dateKey} • ${studyBadge}`;
+    if (subtitleEl) subtitleEl.textContent = `Seguimiento de auditorías, validadores y avance de la operación.`;
+
+    // Obtener auditorías del día usando getAuditOperationDate
+    const dayAudits = this.audits.filter(a => {
+      const aDate = this.getAuditOperationDate(a);
+      const aStudy = this.getStudyForAudit(a);
+      const dateMatch = aDate === dateKey || dateKey === 'Sin_Fecha';
+      const studyMatch = !studyKey || aStudy.toUpperCase() === studyKey.toUpperCase();
+      return dateMatch && studyMatch;
+    });
+
+    // 1. Métricas de la barra superior
+    const total = dayAudits.length;
+    const completed = dayAudits.filter(a => a.validationStatus === 'completada').length;
+    const pending = total - completed;
+    const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+    let aplica = 0;
+    let noAplica = 0;
+    let totalSecs = 0;
+
+    dayAudits.forEach(a => {
+      if (a.validationStatus === 'completada' && a.durationSeconds) {
+        totalSecs += a.durationSeconds;
+      }
+      Object.values(a.validationResults || {}).forEach(res => {
+        if (res.status === 'aplica') aplica++;
+        if (res.status === 'no_aplica') noAplica++;
+      });
+    });
+
+    const avgTime = completed > 0 ? Math.round(totalSecs / completed) : 0;
+
+    const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setEl('dd-stat-total', total);
+    setEl('dd-stat-completed', completed);
+    setEl('dd-stat-pending', pending);
+    setEl('dd-stat-progress', `${progress}%`);
+    setEl('dd-stat-aplica', aplica);
+    setEl('dd-stat-no-aplica', noAplica);
+    setEl('dd-stat-time', `${avgTime}s`);
+
+    // 2. Validadores del día
+    const valMap = new Map(this.validators.map(v => [v.id, v]));
+    const valStatsMap = {};
+    dayAudits.forEach(a => {
+      if (a.assignedValidatorId) {
+        if (!valStatsMap[a.assignedValidatorId]) {
+          const valObj = valMap.get(a.assignedValidatorId) || { id: a.assignedValidatorId, code: 'VAL-?', name: 'Validador' };
+          valStatsMap[a.assignedValidatorId] = { val: valObj, total: 0, completed: 0 };
+        }
+        valStatsMap[a.assignedValidatorId].total++;
+        if (a.validationStatus === 'completada') {
+          valStatsMap[a.assignedValidatorId].completed++;
+        }
+      }
+    });
+
+    const valListContainer = document.getElementById('dd-validators-list');
+    const valFilterSelect = document.getElementById('dd-filter-validator');
+
+    if (valListContainer) {
+      const valEntries = Object.values(valStatsMap);
+      if (valEntries.length === 0) {
+        valListContainer.innerHTML = '<span class="text-muted" style="font-size:0.85rem;">No hay validadores asignados en este día.</span>';
+      } else {
+        valListContainer.innerHTML = valEntries.map(vd => {
+          const pct = vd.total > 0 ? Math.round((vd.completed / vd.total) * 100) : 0;
+          return `
+            <div class="dd-val-chip">
+              <span class="dd-val-code">${vd.val.code}</span>
+              <strong>${vd.val.name}</strong>
+              <span class="${pct === 100 ? 'text-success' : 'text-warning'}">${vd.completed}/${vd.total} (${pct}%)</span>
+            </div>
+          `;
+        }).join('');
+      }
+    }
+
+    if (valFilterSelect) {
+      valFilterSelect.innerHTML = '<option value="ALL">Todos los validadores</option>' +
+        Object.values(valStatsMap).map(vd => `<option value="${vd.val.id}">${vd.val.code} - ${vd.val.name}</option>`).join('');
+    }
+
+    // 3. Inicializar listeners de búsqueda y filtrado
+    this.initDailyDetailListeners(dayAudits);
+
+    // 4. Renderizar tabla con todos los registros
+    this.renderDailyDetailTable(dayAudits);
+
+    // 5. Botón de descarga de Excel del día
+    const dlBtn = document.getElementById('btn-download-dd-excel');
+    if (dlBtn) {
+      dlBtn.onclick = () => {
+        ExcelParser.exportSingleDayExcel(dayAudits, this.validators, `${dateKey}_${studyKey || ''}`);
+        this.showToast(`Exportando ${dayAudits.length} auditorías de ${dateKey} a Excel.`, 'success');
+      };
+    }
+
+    modal.classList.remove('hidden');
+  }
+
+  initDailyDetailListeners(dayAudits) {
+    const searchInput = document.getElementById('dd-search-input');
+    const valSelect = document.getElementById('dd-filter-validator');
+    const statusSelect = document.getElementById('dd-filter-status');
+
+    const updateFilter = () => {
+      const q = (searchInput?.value || '').toLowerCase().trim();
+      const valId = valSelect?.value || 'ALL';
+      const status = statusSelect?.value || 'ALL';
+
+      const filtered = dayAudits.filter(a => {
+        // Texto
+        const matchesQuery = !q || 
+          String(a.id).toLowerCase().includes(q) ||
+          String(a.idPDV || '').toLowerCase().includes(q) ||
+          String(a.ciudad || '').toLowerCase().includes(q) ||
+          String(a.canal || '').toLowerCase().includes(q);
+
+        // Validador
+        const matchesVal = valId === 'ALL' || a.assignedValidatorId === valId;
+
+        // Estado
+        const matchesStatus = status === 'ALL' || a.validationStatus === status;
+
+        return matchesQuery && matchesVal && matchesStatus;
+      });
+
+      this.renderDailyDetailTable(filtered);
+    };
+
+    if (searchInput) {
+      searchInput.value = '';
+      searchInput.oninput = updateFilter;
+    }
+    if (valSelect) {
+      valSelect.value = 'ALL';
+      valSelect.onchange = updateFilter;
+    }
+    if (statusSelect) {
+      statusSelect.value = 'ALL';
+      statusSelect.onchange = updateFilter;
+    }
+  }
+
+  renderDailyDetailTable(audits) {
+    const tbody = document.getElementById('dd-table-tbody');
+    const countEl = document.getElementById('dd-table-count');
+    const valMap = new Map(this.validators.map(v => [v.id, v]));
+
+    if (countEl) countEl.textContent = `Mostrando ${audits.length} registros`;
+    if (!tbody) return;
+
+    if (audits.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="10" class="text-center text-muted" style="padding: 2rem;">
+            No se encontraron auditorías con los filtros seleccionados.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    tbody.innerHTML = audits.map((a, i) => {
+      const val = valMap.get(a.assignedValidatorId);
+      const kpis = (a.kpis || []).filter(k => k.needsReview);
+
+      let statusBadge = '<span class="badge badge-warning">⏳ Pendiente</span>';
+      if (a.validationStatus === 'completada') {
+        statusBadge = '<span class="badge badge-success">✓ Completada</span>';
+      } else if (a.validationStatus === 'en_progreso') {
+        statusBadge = '<span class="badge badge-info">🔄 En Progreso</span>';
+      }
+
+      // Resultados
+      let resAplica = 0;
+      let resNoAplica = 0;
+      Object.values(a.validationResults || {}).forEach(r => {
+        if (r.status === 'aplica') resAplica++;
+        if (r.status === 'no_aplica') resNoAplica++;
+      });
+
+      let resSummary = '<span class="text-muted">—</span>';
+      if (resAplica > 0 || resNoAplica > 0) {
+        resSummary = `<span class="text-success" style="font-weight:700;">✓${resAplica}</span> / <span class="text-magenta" style="font-weight:700;">✕${resNoAplica}</span>`;
+      }
+
+      const durText = a.durationSeconds ? `${a.durationSeconds}s` : '—';
+
+      return `
+        <tr>
+          <td>${i + 1}</td>
+          <td><strong>#${a.id}</strong></td>
+          <td>${a.idPDV || '-'}</td>
+          <td><span class="badge badge-purple">${a.estudio || a.canal || '-'}</span></td>
+          <td>${a.ciudad || a.pais || '-'}</td>
+          <td>
+            ${val ? `<span class="val-pill"><strong>${val.code}</strong> - ${val.name}</span>` : '<span class="text-muted">Sin asignar</span>'}
+          </td>
+          <td><span class="badge badge-blue">${kpis.length} KPIs</span></td>
+          <td>${resSummary}</td>
+          <td>${durText}</td>
+          <td>${statusBadge}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  // ==========================================
+  // MÉTODOS DE ACCIÓN RÁPIDA Y REPORTES
+  // ==========================================
+  switchReportsSubtab(subtab) {
+    this.reportsSubtab = subtab;
+    const btnOp = document.getElementById('btn-subtab-operational');
+    const btnExec = document.getElementById('btn-subtab-executive');
+    const viewOp = document.getElementById('metrics-view-operational');
+    const viewExec = document.getElementById('metrics-view-executive');
+    const titleEl = document.getElementById('reports-view-title');
+    const subtitleEl = document.getElementById('reports-view-subtitle');
+
+    if (subtab === 'operational') {
+      btnOp?.classList.add('active');
+      btnExec?.classList.remove('active');
+      viewOp?.classList.remove('hidden');
+      viewExec?.classList.add('hidden');
+      if (titleEl) titleEl.textContent = 'Métricas Operacionales de Supervisión';
+      if (subtitleEl) subtitleEl.textContent = 'Supervisa el avance operativo diario de validación, tiempos por validador y descargas día a día.';
+    } else {
+      btnExec?.classList.add('active');
+      btnOp?.classList.remove('active');
+      viewExec?.classList.remove('hidden');
+      viewOp?.classList.add('hidden');
+      if (titleEl) titleEl.textContent = 'Informe Ejecutivo de Calidad y KPIs (Comité)';
+      if (subtitleEl) subtitleEl.textContent = 'Ranking de variables con alertas, tasa de efectividad de negocio y causas raíz para comités directivos.';
+    }
+    this.renderReportsView();
+  }
+
+  setAllStudiesFilter() {
+    this.selectedStudies = ['ALL'];
+    this.renderReportsView();
+    this.showToast('Mostrando datos de todos los estudios.', 'info');
+  }
+
+  setCurrentProjectFilter() {
+    this.selectedStudies = [this.currentProject];
+    this.renderReportsView();
+    this.showToast(`Filtrando métricas por: ${this.currentProject}`, 'info');
+  }
+
+  exportConsolidatedExcel() {
+    const auditsToExport = this.getFilteredAuditsForReports();
+    ExcelParser.exportResultsToExcel(auditsToExport, this.validators);
+    this.showToast('Descargando archivo Excel consolidado...', 'success');
+  }
+
+  exportMultiSheetExcel() {
+    const auditsToExport = this.getFilteredAuditsForReports();
+    ExcelParser.exportMultiSheetDailyExcel(auditsToExport, this.validators);
+    this.showToast('Descargando libro Excel con hojas día a día...', 'success');
+  }
+
+  exportExecutiveExcel() {
+    const auditsToExport = this.getFilteredAuditsForReports();
+    ExcelParser.exportExecutiveExcel(auditsToExport, this.validators);
+    this.showToast('Descargando Informe Ejecutivo de Comité...', 'success');
+  }
+
+  applyAlertThresholds() {
+    const inputMin = document.getElementById('threshold-min-sec');
+    const inputWarn = document.getElementById('threshold-warn-sec');
+    const minVal = parseInt(inputMin?.value) || 25;
+    const warnVal = parseInt(inputWarn?.value) || 45;
+
+    if (minVal >= warnVal) {
+      this.showToast('El tiempo crítico debe ser menor al tiempo recomendado.', 'warning');
+      return;
+    }
+
+    this.thresholdMinSec = minVal;
+    this.thresholdWarnSec = warnVal;
+    this.renderAlertsView();
+    this.showToast(`Parámetros actualizados: Crítico < ${minVal}s, Advertencia < ${warnVal}s`, 'success');
+  }
+
+  // ==========================================
+  // MÓDULO EXCLUSIVO: ALERTAS BLOQUEANTES
+  // ==========================================
+  loadBlockingSampleData(notify = true) {
+    const result = ExcelParser.parseCSV(BLOCKING_ALERTS_SAMPLE_CSV);
+    this.blockingAudits = result.audits || [];
+    if (this.currentModule === 'blocking') {
+      this.audits = this.blockingAudits;
+    }
+    this.saveState();
+    this.renderBlockingMatrixView();
+    this.renderBlockingReportsView();
+    if (notify) {
+      this.showToast(`Se cargaron ${this.blockingAudits.length} auditorías para Alertas Bloqueantes.`, 'success');
+    }
+  }
+
+  // ==========================================
+  // TOAST NOTIFICATIONS
+  // ==========================================
+  showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast-message toast-${type}`;
+
+    let icon = 'ℹ️';
+    if (type === 'success') icon = '✅';
+    if (type === 'warning') icon = '⚠️';
+    if (type === 'error') icon = '❌';
+
+    toast.innerHTML = `
+      <span class="toast-icon">${icon}</span>
+      <span class="toast-text">${message}</span>
+    `;
+
+    container.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add('toast-fade-out');
+      setTimeout(() => toast.remove(), 300);
+    }, 3500);
+  }
+}
+
+// Inicializar la aplicación inmediatamente o al cargar el DOM
+function initValidaFlowApp() {
+  if (!window.app) {
+    window.app = new ValidaFlowApp();
+  }
+  return window.app;
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initValidaFlowApp);
+} else {
+  initValidaFlowApp();
+}
+
+// Exponer funciones globales para máxima compatibilidad
+window.initValidaFlowApp = initValidaFlowApp;
+window.enterSupervisorModule = (m) => (window.app || initValidaFlowApp()).enterSupervisorModule(m);
+window.enterProject = (p) => (window.app || initValidaFlowApp()).enterProject(p);
+window.selectModule = (m) => (window.app || initValidaFlowApp()).selectModule(m);
+window.showView = (v) => (window.app || initValidaFlowApp()).showView(v);
+window.confirmStudyUpload = (s) => (window.app || initValidaFlowApp()).confirmStudyUpload(s);
+window.switchSupervisorTab = (t) => (window.app || initValidaFlowApp()).switchSupervisorTab(t);
+window.switchReportsSubtab = (s) => (window.app || initValidaFlowApp()).switchReportsSubtab(s);
+window.exportConsolidatedExcel = () => (window.app || initValidaFlowApp()).exportConsolidatedExcel();
+window.exportMultiSheetExcel = () => (window.app || initValidaFlowApp()).exportMultiSheetExcel();
+window.exportExecutiveExcel = () => (window.app || initValidaFlowApp()).exportExecutiveExcel();
+window.loadSampleData = (n) => (window.app || initValidaFlowApp()).loadSampleData(n);
+window.setDistributionMode = (m) => (window.app || initValidaFlowApp()).setDistributionMode(m);
+window.executeDistribution = (m) => (window.app || initValidaFlowApp()).executeDistribution(m);
+window.openDailyDetailModal = (d, s) => (window.app || initValidaFlowApp()).openDailyDetailModal(d, s);
+window.openCommercialReportPreview = () => (window.app || initValidaFlowApp()).openCommercialReportPreview();
+window.exportCommercialPDF = () => (window.app || initValidaFlowApp()).exportCommercialPDF();
+window.openResolveQueryModal = (a, k) => (window.app || initValidaFlowApp()).openResolveQueryModal(a, k);
+window.setQueryFilter = (f) => (window.app || initValidaFlowApp()).setQueryFilter(f);
+window.setQueryStudyFilter = (s) => (window.app || initValidaFlowApp()).setQueryStudyFilter(s);
+window.renderQueriesView = () => (window.app || initValidaFlowApp()).renderQueriesView();
+window.openReassignStudyModal = () => (window.app || initValidaFlowApp()).openReassignStudyModal();
+window.selectReassignStudyOption = (s) => (window.app || initValidaFlowApp()).selectReassignStudyOption(s);
+window.executeReassignStudy = () => (window.app || initValidaFlowApp()).executeReassignStudy();
+window.clearCurrentStudyAudits = () => (window.app || initValidaFlowApp()).clearCurrentStudyAudits();
+window.clearAllDatabase = () => (window.app || initValidaFlowApp()).clearAllDatabase();
+window.toggleTheme = () => (window.app || initValidaFlowApp()).toggleTheme();

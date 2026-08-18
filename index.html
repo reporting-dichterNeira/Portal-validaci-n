@@ -1,0 +1,2207 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dichter & neira | Portal de Validación y Control de Calidad</title>
+  <meta name="description" content="Portal de validación de auditorías, alertas de KPIs, control de calidad y detección de anomalías para dichter & neira." />
+  
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  
+  <!-- SheetJS CDN para lectura y exportación de Excel -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
+  <link rel="stylesheet" href="css/styles.css" />
+
+  <script>
+    // Navigation & UI State Engine (Instant Zero-Latency Response)
+    window.currentNavState = {
+      view: 'landing',
+      module: 'smart',
+      project: 'Chile',
+      tab: 'admin',
+      subtab: 'operational'
+    };
+
+    window.showView = function(viewName) {
+      window.currentNavState.view = viewName;
+      var landingView = document.getElementById('view-landing');
+      var validatorView = document.getElementById('public-validator-view');
+      var hubView = document.getElementById('view-supervisor-hub');
+      var workspaceView = document.getElementById('private-supervisor-view');
+      var navTabs = document.getElementById('supervisor-nav-tabs');
+      var modeBadge = document.getElementById('header-mode-badge');
+      var btnAuthText = document.getElementById('supervisor-btn-text');
+
+      if (landingView) landingView.classList.add('hidden');
+      if (validatorView) validatorView.classList.add('hidden');
+      if (hubView) hubView.classList.add('hidden');
+      if (workspaceView) workspaceView.classList.add('hidden');
+      if (navTabs) navTabs.classList.add('hidden');
+
+      if (viewName === 'landing') {
+        if (landingView) landingView.classList.remove('hidden');
+        if (modeBadge) {
+          modeBadge.textContent = 'Inicio';
+          modeBadge.style.background = 'var(--dn-blue-light)';
+          modeBadge.style.color = 'var(--dn-navy)';
+        }
+        if (btnAuthText) btnAuthText.textContent = sessionStorage.getItem('VALIDAFLOW_SUPERVISOR_AUTH') === 'true' ? 'Menú Supervisor 🛡️' : 'Acceso Supervisor';
+      } else if (viewName === 'validator') {
+        if (validatorView) validatorView.classList.remove('hidden');
+        if (modeBadge) {
+          modeBadge.textContent = 'Validador';
+          modeBadge.style.background = 'var(--dn-cyan-light)';
+          modeBadge.style.color = 'var(--dn-navy)';
+        }
+        if (btnAuthText) btnAuthText.textContent = 'Acceso Supervisor';
+      } else if (viewName === 'supervisor-hub') {
+        if (hubView) hubView.classList.remove('hidden');
+        if (modeBadge) {
+          modeBadge.textContent = 'Supervisor Hub';
+          modeBadge.style.background = 'var(--dn-blue)';
+          modeBadge.style.color = '#FFFFFF';
+        }
+        if (btnAuthText) btnAuthText.textContent = 'Cerrar Sesión 🚪';
+      } else if (viewName === 'supervisor-workspace') {
+        if (workspaceView) workspaceView.classList.remove('hidden');
+        if (navTabs) navTabs.classList.remove('hidden');
+        if (modeBadge) {
+          modeBadge.textContent = window.currentNavState.project + ' • ' + (window.currentNavState.module === 'smart' ? 'Smart' : 'Bloqueantes');
+          modeBadge.style.background = window.currentNavState.module === 'smart' ? 'var(--dn-blue)' : 'var(--dn-magenta)';
+          modeBadge.style.color = '#FFFFFF';
+        }
+        if (btnAuthText) btnAuthText.textContent = 'Cerrar Sesión 🚪';
+        
+        var modEl = document.getElementById('context-module-name');
+        var projEl = document.getElementById('context-project-name');
+        if (modEl) modEl.textContent = window.currentNavState.module === 'smart' ? 'Validación Smart 🧠⚡' : 'Alertas Bloqueantes 🚫🚨';
+        if (projEl) projEl.textContent = window.currentNavState.project;
+
+        window.switchSupervisorTab(window.currentNavState.tab || 'admin');
+      }
+
+      if (window.app && window.app.showView && window.app.currentView !== viewName) {
+        window.app.showView(viewName);
+      }
+    };
+
+    window.selectModule = function(moduleKey) {
+      window.currentNavState.module = moduleKey;
+      var cardSmart = document.getElementById('module-card-smart');
+      var cardBlocking = document.getElementById('module-card-blocking');
+      var statusSmart = document.getElementById('status-text-smart');
+      var statusBlocking = document.getElementById('status-text-blocking');
+      var sectionIcon = document.getElementById('current-module-icon');
+      var sectionHeadingName = document.getElementById('highlight-module-name');
+
+      if (moduleKey === 'smart') {
+        if (cardSmart) cardSmart.classList.add('active-module');
+        if (cardBlocking) cardBlocking.classList.remove('active-module');
+        if (statusSmart) statusSmart.textContent = 'Módulo Seleccionado 👇';
+        if (statusBlocking) statusBlocking.textContent = 'Haz clic para seleccionar 👉';
+        if (sectionIcon) sectionIcon.textContent = '🧠⚡';
+        if (sectionHeadingName) {
+          sectionHeadingName.textContent = 'Validación Smart';
+          sectionHeadingName.style.color = 'var(--dn-blue)';
+        }
+      } else {
+        if (cardBlocking) cardBlocking.classList.add('active-module');
+        if (cardSmart) cardSmart.classList.remove('active-module');
+        if (statusBlocking) statusBlocking.textContent = 'Módulo Seleccionado 👇';
+        if (statusSmart) statusSmart.textContent = 'Haz clic para seleccionar 👉';
+        if (sectionIcon) sectionIcon.textContent = '🚫🚨';
+        if (sectionHeadingName) {
+          sectionHeadingName.textContent = 'Alertas Bloqueantes';
+          sectionHeadingName.style.color = 'var(--dn-magenta)';
+        }
+      }
+
+      if (window.app && window.app.selectModule) {
+        window.app.selectModule(moduleKey);
+      }
+    };
+
+    window.enterSupervisorModule = function(moduleKey) {
+      window.currentNavState.module = moduleKey;
+      window.showView('supervisor-workspace');
+      if (window.app) {
+        window.app.currentModule = moduleKey;
+        window.app.renderAdminView();
+        window.app.renderReportsView();
+        window.app.renderAlertsView();
+        window.app.renderDailyReportsView();
+        window.app.populateLookupQuickTags();
+        const modeLabel = moduleKey === 'smart' ? 'Validación Smart 🧠⚡' : 'Alertas Bloqueantes 🚫🚨';
+        window.app.showToast(`Ingresando a ${modeLabel}`, 'info');
+      }
+    };
+
+    window.enterProject = function(projectName) {
+      window.currentNavState.project = projectName;
+      window.showView('supervisor-workspace');
+      if (window.app && window.app.enterProject) {
+        window.app.enterProject(projectName);
+      }
+    };
+
+    window.selectModalStudyOption = function(studyName) {
+      document.querySelectorAll('.study-option-card').forEach(function(c) {
+        if (c.dataset.study === studyName) c.classList.add('active');
+        else c.classList.remove('active');
+      });
+      var input = document.getElementById('study-custom-input');
+      if (input) input.value = studyName;
+    };
+
+    window.confirmStudyUpload = function() {
+      var activeCard = document.querySelector('.study-option-card.active');
+      var customVal = document.getElementById('study-custom-input')?.value.trim();
+      var selectedStudy = customVal || activeCard?.dataset.study || 'Chile';
+      
+      window.currentNavState.project = selectedStudy;
+      var projEl = document.getElementById('context-project-name');
+      if (projEl) projEl.textContent = selectedStudy;
+
+      if (window.app && window.app.confirmStudyUpload) {
+        window.app.confirmStudyUpload(selectedStudy);
+      } else {
+        document.getElementById('modal-select-study')?.classList.add('hidden');
+      }
+    };
+
+    window.switchSupervisorTab = function(targetTab) {
+      window.currentNavState.tab = targetTab;
+      var tabBtns = document.querySelectorAll('#supervisor-nav-tabs .nav-tab-btn');
+      var tabPanes = document.querySelectorAll('#private-supervisor-view .tab-content-pane');
+
+      tabBtns.forEach(function(b) {
+        if (b.dataset.tab === targetTab) b.classList.add('active');
+        else b.classList.remove('active');
+      });
+
+      tabPanes.forEach(function(p) {
+        p.classList.remove('active');
+      });
+      var targetPane = document.getElementById('tab-' + targetTab);
+      if (targetPane) targetPane.classList.add('active');
+
+      if (window.app && window.app.switchSupervisorTab) {
+        window.app.switchSupervisorTab(targetTab);
+      }
+    };
+
+    window.switchReportsSubtab = function(subtab) {
+      window.currentNavState.subtab = subtab;
+      var btnOp = document.getElementById('btn-subtab-operational');
+      var btnExec = document.getElementById('btn-subtab-executive');
+      var viewOp = document.getElementById('metrics-view-operational');
+      var viewExec = document.getElementById('metrics-view-executive');
+      var titleEl = document.getElementById('reports-view-title');
+      var subtitleEl = document.getElementById('reports-view-subtitle');
+
+      if (subtab === 'operational') {
+        if (btnOp) btnOp.classList.add('active');
+        if (btnExec) btnExec.classList.remove('active');
+        if (viewOp) viewOp.classList.remove('hidden');
+        if (viewExec) viewExec.classList.add('hidden');
+        if (titleEl) titleEl.textContent = 'Métricas Operacionales de Supervisión';
+        if (subtitleEl) subtitleEl.textContent = 'Supervisa el avance operativo diario de validación, tiempos por validador y descargas día a día.';
+      } else {
+        if (btnExec) btnExec.classList.add('active');
+        if (btnOp) btnOp.classList.remove('active');
+        if (viewExec) viewExec.classList.remove('hidden');
+        if (viewOp) viewOp.classList.add('hidden');
+        if (titleEl) titleEl.textContent = 'Informe Ejecutivo de Calidad y KPIs (Comité)';
+        if (subtitleEl) subtitleEl.textContent = 'Ranking de variables con alertas, tasa de efectividad de negocio y causas raíz para comités directivos.';
+      }
+
+      if (window.app && window.app.switchReportsSubtab) {
+        window.app.switchReportsSubtab(subtab);
+      }
+    };
+
+    window.openDailyDetailModal = function(dateKey, studyKey) {
+      if (window.app && window.app.openDailyDetailModal) {
+        window.app.openDailyDetailModal(dateKey, studyKey);
+      }
+    };
+
+    window.openCommercialReportPreview = function() {
+      if (window.app && window.app.openCommercialReportPreview) {
+        window.app.openCommercialReportPreview();
+      }
+    };
+
+    window.exportCommercialPDF = function() {
+      if (window.app && window.app.exportCommercialPDF) {
+        window.app.exportCommercialPDF();
+      }
+    };
+
+    window.setDistributionMode = function(mode) {
+      if (window.app && window.app.setDistributionMode) {
+        window.app.setDistributionMode(mode);
+      }
+    };
+
+    window.executeDistribution = function(mode) {
+      if (window.app && window.app.executeDistribution) {
+        window.app.executeDistribution(mode);
+      }
+    };
+  </script>
+</head>
+<body>
+  <!-- ======================================================== -->
+  <!-- HEADER PRINCIPAL                                         -->
+  <!-- ======================================================== -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="brand-logo" onclick="window.app ? window.app.showView('landing') : (document.querySelectorAll('.active-view, main > div').forEach(d => d.classList.add('hidden')), document.getElementById('view-landing').classList.remove('hidden'))">
+        <img src="assets/dn-logo-color.png" alt="dichter & neira" class="header-dn-logo" />
+        <div class="logo-text">
+          <div class="app-title-wrap">
+            <span class="logo-title">ValidaFlow</span>
+            <span class="logo-badge" id="header-mode-badge">Inicio</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Navegación de pestañas para el Supervisor (oculta si es público) -->
+      <nav class="nav-tabs hidden" id="supervisor-nav-tabs" role="tablist">
+        <button class="nav-tab-btn active" data-tab="admin" role="tab" onclick="window.switchSupervisorTab('admin')">
+          <span class="tab-icon">📊</span>
+          <span class="tab-label">Carga & Repartición</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="lookup" role="tab" onclick="window.switchSupervisorTab('lookup')">
+          <span class="tab-icon">🔍</span>
+          <span class="tab-label">Buscador PDV / Auditoría</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="queries" role="tab" onclick="window.switchSupervisorTab('queries')">
+          <span class="tab-icon">❓</span>
+          <span class="tab-label">Dudas & Consultas</span>
+          <span class="badge-alert-count hidden" id="nav-queries-badge">0</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="alerts" role="tab" onclick="window.switchSupervisorTab('alerts')">
+          <span class="tab-icon">⏱️</span>
+          <span class="tab-label">Calidad & Tiempos</span>
+          <span class="badge-alert-count hidden" id="nav-alerts-badge">0</span>
+        </button>
+        <button class="nav-tab-btn" data-tab="reports" role="tab" onclick="window.switchSupervisorTab('reports')">
+          <span class="tab-icon">📈</span>
+          <span class="tab-label">Métricas & Reportes</span>
+        </button>
+      </nav>
+
+      <!-- Utilidades del Header -->
+      <div class="header-utils">
+        <!-- Botón Conmutador de Tema (Modo Oscuro / Claro) -->
+        <button class="btn-theme-toggle" id="btn-theme-toggle" onclick="window.toggleTheme()" title="Cambiar a Modo Oscuro / Modo Claro" aria-label="Cambiar Tema">
+          <span class="theme-icon" id="theme-icon">🌙</span>
+          <span class="theme-label" id="theme-label">Oscuro</span>
+        </button>
+
+        <div class="sync-indicator" title="Sincronización multi-pestaña activa">
+          <span class="sync-dot"></span>
+          <span class="sync-label">Sync en vivo</span>
+        </div>
+
+        <!-- Botón para Iniciar / Cerrar Sesión del Supervisor -->
+        <button class="btn btn-navy btn-sm" id="btn-supervisor-auth" onclick="window.app?.handleSupervisorAuthButtonClick()">
+          <span class="btn-icon">🔒</span> <span id="supervisor-btn-text">Acceso Supervisor</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ======================================================== -->
+  <!-- CONTENEDOR PRINCIPAL DE VISTAS                          -->
+  <!-- ======================================================== -->
+  <main class="main-content">
+
+    <!-- ======================================================== -->
+    <!-- 0. PANTALLA INICIAL: LANDING / HUB PRINCIPAL             -->
+    <!-- ======================================================== -->
+    <div id="view-landing" class="active-view">
+      <div class="landing-hero-container">
+        <div class="landing-badge">
+          <span class="corp-dot"></span> dichter & neira • Intelligence & Quality Control
+        </div>
+        <h1 class="landing-main-title">Sistema de Validación y Control de Calidad</h1>
+        <p class="landing-main-desc">
+          Plataforma corporativa para la asignación equitativa de auditorías, resolución de alertas de KPIs en campo, monitoreo de tiempos y reportería consolidada.
+        </p>
+
+        <!-- 2 Botones de acceso principales -->
+        <div class="landing-portal-grid">
+          <!-- Opción 1: Validador -->
+          <div class="portal-choice-card" id="choice-btn-validator" onclick="window.app ? window.app.showView('validator') : (document.getElementById('view-landing').classList.add('hidden'), document.getElementById('public-validator-view').classList.remove('hidden'))">
+            <div class="portal-card-icon-wrap icon-cyan">
+              <span class="portal-icon">👤</span>
+            </div>
+            <div class="portal-card-tag">Acceso Operativo</div>
+            <h2 class="portal-card-title">Portal de Validador</h2>
+            <p class="portal-card-desc">
+              Ingresa con tu código único asignado para consultar tus auditorías y calificar los KPIs pendientes.
+            </p>
+            <div class="portal-card-features">
+              <div class="feat-item">✓ Lista de auditorías asignadas</div>
+              <div class="feat-item">✓ Decisión Aplica / No Aplica</div>
+              <div class="feat-item">✓ Menú desplegable de tipificación</div>
+            </div>
+            <button class="btn btn-primary btn-glow btn-block" id="btn-enter-validator-portal" onclick="event.stopPropagation(); window.app ? window.app.showView('validator') : (document.getElementById('view-landing').classList.add('hidden'), document.getElementById('public-validator-view').classList.remove('hidden'))">
+              Ingresar como Validador 🚀
+            </button>
+          </div>
+
+          <!-- Opción 2: Supervisor -->
+          <div class="portal-choice-card portal-card-supervisor" id="choice-btn-supervisor" onclick="window.app ? window.app.handleSupervisorPortalClick() : document.getElementById('modal-supervisor-login').classList.remove('hidden')">
+            <div class="portal-card-icon-wrap icon-navy">
+              <span class="portal-icon">🛡️</span>
+            </div>
+            <div class="portal-card-tag">Acceso de Supervisión</div>
+            <h2 class="portal-card-title">Portal de Supervisión</h2>
+            <p class="portal-card-desc">
+              Acceso protegido para supervisores: carga y reparto masivo, validación smart, alertas bloqueantes y control de calidad.
+            </p>
+            <div class="portal-card-features">
+              <div class="feat-item">✓ Validación Smart & Alertas Bloqueantes</div>
+              <div class="feat-item">✓ Operaciones: Chile, Tradicional, Moderno, Lindley</div>
+              <div class="feat-item">✓ Descargas consolidadas y día por día</div>
+            </div>
+            <button class="btn btn-navy btn-glow btn-block" id="btn-enter-supervisor-portal" onclick="event.stopPropagation(); window.app ? window.app.handleSupervisorPortalClick() : document.getElementById('modal-supervisor-login').classList.remove('hidden')">
+              Acceso Supervisor 🔒
+            </button>
+          </div>
+        </div>
+
+        <div style="text-align: center;">
+          <div class="landing-footer-credit-box">
+            <span class="landing-credit-icon">📊</span>
+            <span>Plataforma realizada y administrada por el <strong>Equipo de Reporting</strong> • dichter & neira</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- 1. VISTA DEL VALIDADOR (PÚBLICA CON CÓDIGO)             -->
+    <!-- ======================================================== -->
+    <div id="public-validator-view" class="hidden">
+      <!-- Barra para volver al inicio -->
+      <div class="view-back-bar">
+        <button class="btn btn-ghost btn-sm" id="btn-back-to-landing-from-val" onclick="window.app?.showView('landing')">
+          ⬅ Volver al Menú Principal
+        </button>
+      </div>
+      
+      <!-- 1.1 Pantalla de Ingreso por Código -->
+      <div class="validator-login-card" id="validator-login-section">
+        <div class="company-subtag">dichter & neira • Portal de Validación</div>
+        <div class="login-badge-icon">🔐</div>
+        <h2>Acceso de Validadores</h2>
+        <p class="login-subtitle">Ingresa tu código único asignado para visualizar y calificar tus auditorías asignadas.</p>
+
+        <div class="login-form-group">
+          <input 
+            type="text" 
+            id="validator-code-input" 
+            class="code-input" 
+            placeholder="Ej. VAL-8A21" 
+            maxlength="15" 
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button class="btn btn-primary btn-glow" id="btn-validator-login" onclick="window.app?.validatorUI?.loginWithCode(document.getElementById('validator-code-input').value.trim().toUpperCase())">
+            Ingresar a Mis Auditorías 🚀
+          </button>
+        </div>
+
+        <div class="quick-login-box">
+          <label for="validator-quick-select">O selecciona un validador de prueba:</label>
+          <select id="validator-quick-select" class="form-select">
+            <!-- Opciones cargadas dinámicamente -->
+          </select>
+        </div>
+      </div>
+
+      <!-- 1.2 Espacio de Trabajo del Validador (Master-Detail) -->
+      <div class="validator-workspace hidden" id="validator-portal-section">
+        <!-- Barra Superior del Validador -->
+        <div class="validator-top-bar glass-panel">
+          <div class="val-user-info">
+            <div class="val-avatar">👤</div>
+            <div>
+              <div class="val-corp-tag">dichter & neira</div>
+              <h3 id="val-portal-name">Nombre del Validador</h3>
+              <div class="val-code-tag">
+                <span>Código: </span><strong id="val-portal-code">VAL-XXXX</strong>
+              </div>
+            </div>
+          </div>
+
+          <div class="val-module-switcher" id="val-module-switcher">
+            <button class="val-module-pill active" id="val-pill-smart" onclick="window.app?.validatorUI?.switchModule('smart')">
+              <span>🧠⚡</span> Smart (<strong id="val-count-smart">0</strong>)
+            </button>
+            <button class="val-module-pill" id="val-pill-blocking" onclick="window.app?.validatorUI?.switchModule('blocking')">
+              <span>🚫🚨</span> Bloqueantes (<strong id="val-count-blocking">0</strong>)
+            </button>
+          </div>
+
+          <div class="val-progress-indicator">
+            <div class="progress-info-row">
+              <span class="progress-title">Progreso de Validación</span>
+              <span class="progress-fraction" id="val-portal-progress">0 de 0 (0%)</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" id="val-progress-bar" style="width: 0%"></div>
+            </div>
+          </div>
+
+          <button class="btn btn-outline btn-sm" id="btn-val-logout" onclick="window.app?.validatorUI?.logout()" title="Salir de este código">
+            Salir del Portal 🚪
+          </button>
+        </div>
+
+        <!-- Master-Detail -->
+        <div class="validator-master-detail">
+          <!-- MASTER: Lista Lateral -->
+          <aside class="val-sidebar glass-panel">
+            <div class="sidebar-header">
+              <h4>Mis Auditorías Asignadas</h4>
+              
+              <div class="search-input-wrapper">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="val-audit-search" placeholder="Buscar por ID, PDV, País..." class="search-input" />
+              </div>
+
+              <div class="filter-pills">
+                <button class="val-filter-btn active" data-filter="all">
+                  Todas (<span id="count-filter-all">0</span>)
+                </button>
+                <button class="val-filter-btn" data-filter="pending">
+                  Pendientes (<span id="count-filter-pending">0</span>)
+                </button>
+                <button class="val-filter-btn" data-filter="completed">
+                  Completadas (<span id="count-filter-completed">0</span>)
+                </button>
+              </div>
+            </div>
+
+            <div class="audit-list-scrollable" id="val-audit-list">
+              <!-- Renderizado dinámico -->
+            </div>
+          </aside>
+
+          <!-- DETAIL: Revisión de Auditoría y KPIs -->
+          <main class="val-detail-panel glass-panel">
+            <div class="no-selection-state" id="val-no-audit-selected">
+              <div class="no-selection-icon">📋</div>
+              <h3>Selecciona una auditoría de la lista izquierda</h3>
+              <p>Se desplegarán los detalles de la auditoría y los KPIs específicos a revisar con su tipificación.</p>
+            </div>
+
+            <div class="audit-detail-content hidden" id="val-audit-detail">
+              <!-- Renderizado dinámico -->
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- 2. VISTA DE SUPERVISIÓN: MENÚ PREVIO (2 MÓDULOS)         -->
+    <!-- ======================================================== -->
+    <div id="view-supervisor-hub" class="hidden">
+      <div class="supervisor-hub-container">
+        <div class="hub-header-row">
+          <div>
+            <div class="corporate-badge">dichter & neira • Panel de Control de Supervisión</div>
+            <h1 class="hub-title">Selección de Módulo</h1>
+            <p class="hub-subtitle">Selecciona el flujo de trabajo en el que deseas operar:</p>
+          </div>
+          <div class="hub-user-pill">
+            <span class="hub-user-avatar">👤</span>
+            <div class="hub-user-meta">
+              <span class="hub-user-role">Sesión Activa</span>
+              <strong class="hub-user-name">Supervisor d&n</strong>
+            </div>
+            <button class="btn btn-ghost btn-sm" id="btn-back-to-landing-from-hub" onclick="window.showView('landing')">⬅ Inicio</button>
+            <button class="btn btn-outline btn-sm" id="btn-logout-from-hub" onclick="window.app?.logoutSupervisor()">Cerrar Sesión 🚪</button>
+          </div>
+        </div>
+
+        <!-- 2 Botones Principales: Validación Smart & Alertas Bloqueantes -->
+        <div class="hub-modules-grid hub-modules-grid-large">
+          <!-- Módulo 1: Validación Smart -->
+          <div class="hub-module-card active-module" id="module-card-smart" data-module="smart" onclick="window.enterSupervisorModule('smart')">
+            <div class="module-card-header">
+              <div class="module-icon-wrap icon-blue">🧠⚡</div>
+              <div>
+                <div class="module-tag">Flujo Regular</div>
+                <h2 class="module-title">Validación Smart</h2>
+              </div>
+            </div>
+            <p class="module-desc">
+              Flujo de auditorías con reparto equitativo entre validadores, cronómetro de tiempos, control de calidad y reportería consolidada.
+            </p>
+            <div class="module-action-footer">
+              <button class="btn btn-primary btn-glow btn-block" onclick="event.stopPropagation(); window.enterSupervisorModule('smart')">
+                Ingresar a Validación Smart 🚀
+              </button>
+            </div>
+          </div>
+
+          <!-- Módulo 2: Alertas Bloqueantes -->
+          <div class="hub-module-card" id="module-card-blocking" data-module="blocking" onclick="window.enterSupervisorModule('blocking')">
+            <div class="module-card-header">
+              <div class="module-icon-wrap icon-magenta">🚫🚨</div>
+              <div>
+                <div class="module-tag">Módulo Crítico</div>
+                <h2 class="module-title">Alertas Bloqueantes</h2>
+              </div>
+            </div>
+            <p class="module-desc">
+              Resolución y calificación de alertas críticas por filas agrupadas por ID de auditoría con variaciones y criterios de negocio.
+            </p>
+            <div class="module-action-footer">
+              <button class="btn btn-navy btn-glow btn-block" onclick="event.stopPropagation(); window.enterSupervisorModule('blocking')">
+                Ingresar a Alertas Bloqueantes 🚀
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- 3. ESPACIO DE TRABAJO DEL SUPERVISOR (PANTALLAS ACTUALES) -->
+    <!-- ======================================================== -->
+    <div id="private-supervisor-view" class="hidden">
+
+      <!-- Barra Superior de Contexto y Retorno al Menú Previo -->
+      <div class="supervisor-context-bar glass-panel">
+        <div class="context-breadcrumb">
+          <span class="bread-root">Supervisión</span>
+          <span class="bread-sep">/</span>
+          <span class="bread-module" id="context-module-name">Validación Smart</span>
+          <span class="bread-sep">/</span>
+          <strong class="bread-project" id="context-project-name">Chile</strong>
+        </div>
+
+        <div class="context-module-switch-pills" id="supervisor-module-switcher">
+          <button class="context-pill active" id="pill-module-smart" onclick="window.enterSupervisorModule('smart')">
+            <span>🧠⚡</span> Validación Smart
+          </button>
+          <button class="context-pill" id="pill-module-blocking" onclick="window.enterSupervisorModule('blocking')">
+            <span>🚫🚨</span> Alertas Bloqueantes
+          </button>
+        </div>
+
+        <div class="context-actions">
+          <button class="btn btn-outline btn-sm" id="btn-back-to-hub" onclick="window.showView('supervisor-hub')">
+            ⬅ Cambiar Operación / Volver al Menú
+          </button>
+        </div>
+      </div>
+
+      <!-- PESTAÑA A: ADMINISTRACIÓN, CARGA Y REPARTO -->
+      <section class="tab-content-pane active" id="tab-admin" role="tabpanel">
+        <div class="admin-hero">
+          <div class="hero-text">
+            <div class="corporate-badge">dichter & neira • Panel de Supervisión</div>
+            <h1>Gestión y Repartición de Auditorías</h1>
+            <p>Sube el archivo Excel con las auditorías pendientes, administra los validadores y distribuye los casos con <strong>balanceo simultáneo por cantidad de auditorías y KPIs a revisar</strong>.</p>
+          </div>
+          <div class="hero-actions">
+            <button class="btn btn-outline" id="btn-load-sample" onclick="window.loadSampleData(true)">
+              <span class="btn-icon">⚡</span> Datos de Ejemplo
+            </button>
+            <button class="btn btn-primary btn-glow" id="btn-distribute-audits" onclick="window.executeDistribution()">
+              <span class="btn-icon">⚖️</span> Repartir Auditorías
+            </button>
+          </div>
+        </div>
+
+        <!-- Métricas Resumen -->
+        <div class="stats-grid stats-grid-5">
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-blue">📋</div>
+            <div class="stat-details">
+              <span class="stat-label">Total Auditorías</span>
+              <span class="stat-value" id="admin-stat-total-audits">0</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-magenta">🎯</div>
+            <div class="stat-details">
+              <span class="stat-label">KPIs con Alerta</span>
+              <span class="stat-value text-magenta" id="admin-stat-total-kpis-to-review">0</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-cyan">👥</div>
+            <div class="stat-details">
+              <span class="stat-label">Validadores Activos</span>
+              <span class="stat-value" id="admin-stat-total-validators">0</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-emerald">⚖️</div>
+            <div class="stat-details">
+              <span class="stat-label">% Auditorías Asignadas</span>
+              <span class="stat-value" id="admin-stat-assigned-percent">0%</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-orange">🎯</div>
+            <div class="stat-details">
+              <span class="stat-label">Avance Global</span>
+              <span class="stat-value" id="admin-stat-completed-percent">0%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Carga de Excel & Validadores -->
+        <div class="admin-two-cols">
+          <div class="glass-panel upload-panel">
+            <div class="panel-header">
+              <h3><span class="header-icon">📁</span> Cargar Auditorías (Excel / CSV)</h3>
+              <span class="badge badge-info">Soporta .xlsx, .xls, .csv</span>
+            </div>
+            
+            <div class="dropzone" id="excel-dropzone">
+              <input type="file" id="excel-file-input" accept=".xlsx, .xls, .csv, .txt" class="hidden-input" />
+              <div class="dropzone-inner">
+                <div class="drop-icon">📤</div>
+                <h4>Arrastra y suelta tu archivo Excel / CSV aquí</h4>
+                <p>O haz clic para seleccionar la exportación de Power BI</p>
+                <span class="drop-hint">Detecta automáticamente ID de Auditoría, ID de PDV y columnas de alertas Smart a validar.</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="glass-panel validators-panel">
+            <div class="panel-header">
+              <div>
+                <h3><span class="header-icon">👥</span> Validadores Disponibles</h3>
+                <p class="panel-desc">Cada validador tiene su código único de acceso.</p>
+              </div>
+              <button class="btn btn-navy btn-sm" id="btn-add-validator">
+                + Agregar Validador
+              </button>
+            </div>
+
+            <div class="validators-grid" id="admin-validators-grid">
+              <!-- Renderizado dinámico -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Previsualización y Control de Datos del Estudio -->
+        <div class="glass-panel audits-preview-panel">
+          <div class="panel-header" style="flex-wrap: wrap; gap: 1rem; align-items: center; justify-content: space-between;">
+            <div class="header-left">
+              <h3><span class="header-icon">📑</span> Previsualización de Auditorías y Asignaciones</h3>
+              <span class="badge badge-secondary" id="audits-table-count">0 registros</span>
+            </div>
+            
+            <!-- Botones de Control de Archivo y Gestión de Estudio -->
+            <div class="panel-actions-group" style="display:flex; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+              <button class="btn btn-outline btn-sm" id="btn-reassign-study" onclick="window.openReassignStudyModal()" title="Si te equivocaste de estudio al subir el archivo, muévelo de inmediato al estudio correcto">
+                <span class="btn-icon">🔄</span> Mover a Otro Estudio
+              </button>
+              <button class="btn btn-outline btn-sm text-danger" id="btn-clear-study" onclick="window.clearCurrentStudyAudits()" title="Elimina las auditorías de este estudio para subir una nueva base">
+                <span class="btn-icon">🗑️</span> Borrar Datos de este Estudio
+              </button>
+              <button class="btn btn-ghost btn-sm text-muted" id="btn-clear-all" onclick="window.clearAllDatabase()" title="Vaciar toda la base de datos (todos los estudios)">
+                🧹 Resetear Todo
+              </button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table class="custom-table" id="audits-preview-table">
+              <thead id="audits-preview-thead"></thead>
+              <tbody id="audits-preview-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- PESTAÑA B: BUSCADOR DE PDV Y AUDITORÍA -->
+      <section class="tab-content-pane" id="tab-lookup" role="tabpanel">
+        <div class="lookup-hero">
+          <div class="hero-text">
+            <div class="corporate-badge">dichter & neira • Consulta & Trazabilidad</div>
+            <h1>Buscador de Auditorías y Puntos de Venta (PDV)</h1>
+            <p>Busca cualquier auditoría por su <strong>ID de Auditoría</strong> o <strong>ID de PDV</strong> para conocer de inmediato qué alertas tenía marcadas, si aplicaron o no, quién fue el validador y en qué fecha/hora se validó.</p>
+          </div>
+        </div>
+
+        <!-- Barra de Búsqueda Avanzada -->
+        <div class="glass-panel search-card-panel">
+          <div class="lookup-search-bar">
+            <div class="lookup-input-box">
+              <span class="search-large-icon">🔍</span>
+              <input 
+                type="text" 
+                id="lookup-search-input" 
+                class="lookup-input" 
+                placeholder="Ingresa el ID de Auditoría (ej. 5523034) o ID de PDV (ej. 3171210615404)..." 
+                autocomplete="off"
+              />
+              <button class="btn btn-secondary btn-sm hidden" id="btn-clear-lookup">✕ Limpiar</button>
+            </div>
+            <button class="btn btn-primary btn-glow" id="btn-execute-lookup">
+              Buscar Caso 🔎
+            </button>
+          </div>
+
+          <!-- Sugerencias rápidas -->
+          <div class="quick-tags-row">
+            <span class="quick-tags-label">Ejemplos rápidos:</span>
+            <div class="quick-tags-list" id="lookup-quick-tags">
+              <!-- Renderizado dinámico -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Resultados de la Búsqueda -->
+        <div id="lookup-results-container">
+          <div class="lookup-initial-state" id="lookup-empty-placeholder">
+            <div class="lookup-placeholder-icon">🔎</div>
+            <h3>Ingresa un ID de Auditoría o ID de PDV en el buscador</h3>
+            <p>La plataforma consultará toda la base de datos y te presentará la ficha técnica completa con las alertas, tipificaciones y trazabilidad de validación.</p>
+          </div>
+
+          <!-- Ficha de Detalle del Caso Encontrado -->
+          <div id="lookup-case-file" class="hidden">
+            <!-- Renderizado dinámico desde app.js -->
+          </div>
+        </div>
+      </section>
+
+      <!-- PESTAÑA: CONSULTAS Y CASOS EN DUDA DE VALIDADORES -->
+      <section class="tab-content-pane" id="tab-queries" role="tabpanel">
+        <div class="queries-hero">
+          <div class="hero-text">
+            <div class="corporate-badge corporate-badge-warning">dichter & neira • Mesa de Ayuda & Soporte Operativo</div>
+            <h1>Seguimiento a Consultas de Validadores (❓)</h1>
+            <p>Monitorea y resuelve en tiempo real las auditorías y KPIs donde los validadores indicaron que no sabían qué hacer y solicitaron orientación.</p>
+          </div>
+          <div class="hero-actions">
+            <button class="btn btn-outline" id="btn-refresh-queries" onclick="window.app?.renderQueriesView()">
+              <span class="btn-icon">🔄</span> Actualizar Consultas
+            </button>
+          </div>
+        </div>
+
+        <!-- Métricas de Consultas -->
+        <div class="stats-grid stats-grid-4">
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-purple">❓</div>
+            <div class="stat-details">
+              <span class="stat-label">Total Consultas</span>
+              <span class="stat-value" id="query-stat-total">0</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-orange">⏳</div>
+            <div class="stat-details">
+              <span class="stat-label">Pendientes de Resolver</span>
+              <span class="stat-value text-warning" id="query-stat-pending">0</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-emerald">✅</div>
+            <div class="stat-details">
+              <span class="stat-label">Resueltas por Supervisor</span>
+              <span class="stat-value text-success" id="query-stat-resolved">0</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-blue">🏢</div>
+            <div class="stat-details">
+              <span class="stat-label">Estudio con Más Dudas</span>
+              <span class="stat-value" id="query-stat-top-study" style="font-size:1.05rem;">—</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Barra de Filtros de Consultas -->
+        <div class="glass-panel queries-filter-bar">
+          <div class="filter-group-left">
+            <span class="filter-group-label">Filtrar Estado:</span>
+            <div class="filter-pills" id="query-status-filters">
+              <button class="filter-pill-btn active" data-qfilter="all" onclick="window.app?.setQueryFilter('all')">
+                Todas (<span id="qcount-all">0</span>)
+              </button>
+              <button class="filter-pill-btn" data-qfilter="pending" onclick="window.app?.setQueryFilter('pending')">
+                ⏳ Pendientes (<span id="qcount-pending">0</span>)
+              </button>
+              <button class="filter-pill-btn" data-qfilter="resolved" onclick="window.app?.setQueryFilter('resolved')">
+                ✅ Resueltas (<span id="qcount-resolved">0</span>)
+              </button>
+            </div>
+          </div>
+
+          <div class="filter-group-right">
+            <span class="filter-group-label">Estudio:</span>
+            <select class="form-select form-select-sm" id="query-study-filter" onchange="window.app?.setQueryStudyFilter(this.value)">
+              <option value="ALL">Todos los Estudios</option>
+              <option value="Chile">🇨🇱 Chile</option>
+              <option value="Tradicional">🏪 Tradicional</option>
+              <option value="Moderno">🏬 Moderno</option>
+              <option value="Lindley">🥤 Lindley</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Contenedor de Listado de Consultas -->
+        <div class="queries-list-container" id="queries-feed-container">
+          <!-- Renderizado dinámico desde app.js -->
+        </div>
+      </section>
+
+      <!-- PESTAÑA C: ALERTAS DE CALIDAD Y MONITOREO (AMIGABLE) -->
+      <section class="tab-content-pane" id="tab-alerts" role="tabpanel">
+        <div class="alerts-hero">
+          <div class="hero-text">
+            <div class="corporate-badge">dichter & neira • Calidad y Monitoreo</div>
+            <h1>Monitoreo de Calidad y Tiempos</h1>
+            <p>Supervisa el ritmo de trabajo, la consistencia en las respuestas y la distribución de tipificaciones de todo el equipo de forma clara y visual.</p>
+          </div>
+          <div class="hero-actions">
+            <button class="btn btn-outline" id="btn-refresh-alerts">
+              <span class="btn-icon">🔄</span> Actualizar Análisis
+            </button>
+          </div>
+        </div>
+
+        <!-- Barra de Parámetros de Tiempo Amigable -->
+        <div class="glass-panel threshold-config-bar">
+          <div class="threshold-header">
+            <span class="threshold-icon">⏱️</span>
+            <div>
+              <strong>Tiempos de Referencia por Auditoría</strong>
+              <p class="panel-desc">Ajusta los segundos sugeridos que requiere en promedio la revisión de un caso.</p>
+            </div>
+          </div>
+          <div class="threshold-inputs">
+            <div class="threshold-item">
+              <label for="threshold-min-sec">Tiempo Mínimo (seg):</label>
+              <input type="number" id="threshold-min-sec" class="form-control threshold-num-input" value="25" min="5" max="180" />
+            </div>
+            <div class="threshold-item">
+              <label for="threshold-warn-sec">Tiempo Sugerido (seg):</label>
+              <input type="number" id="threshold-warn-sec" class="form-control threshold-num-input" value="45" min="15" max="300" />
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-apply-threshold">Guardar</button>
+          </div>
+        </div>
+
+        <!-- Tarjetas de Resumen Amigables -->
+        <div class="stats-grid stats-grid-4">
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-magenta">📌</div>
+            <div class="stat-details">
+              <span class="stat-label">Atención Prioritaria</span>
+              <span class="stat-value text-magenta" id="alert-stat-critical">0</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-orange">⚡</div>
+            <div class="stat-details">
+              <span class="stat-label">Revisiones Rápidas</span>
+              <span class="stat-value text-warning" id="alert-stat-fast">0</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-purple">🎯</div>
+            <div class="stat-details">
+              <span class="stat-label">Tendencias de Respuesta</span>
+              <span class="stat-value text-purple" id="alert-stat-bias">0</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon-wrapper icon-emerald">🌟</div>
+            <div class="stat-details">
+              <span class="stat-label">Índice de Calidad</span>
+              <span class="stat-value text-success" id="alert-stat-health">100%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dos Columnas: Tarjetas de Rendimiento de Validadores & Feed de Alertas -->
+        <div class="alerts-two-cols">
+          <!-- Columna 1: Tarjetas de Confiabilidad por Validador -->
+          <div class="glass-panel val-health-panel">
+            <div class="panel-header">
+              <div>
+                <h3><span class="header-icon">👥</span> Resumen de Equipo y Tiempos</h3>
+                <p class="panel-desc">Promedios de tiempo y equilibrio en respuestas por validador.</p>
+              </div>
+            </div>
+
+            <div class="val-health-list" id="val-health-list">
+              <!-- Renderizado dinámico -->
+            </div>
+          </div>
+
+          <!-- Columna 2: Feed Detallado de Observaciones -->
+          <div class="glass-panel anomalies-feed-panel">
+            <div class="panel-header">
+              <div class="header-left">
+                <h3><span class="header-icon">📋</span> Observaciones de Validación</h3>
+                <span class="badge badge-info" id="anomalies-count-badge">0 observaciones</span>
+              </div>
+              <div class="filter-pills-sm">
+                <button class="alert-filter-btn active" data-filter="all">Todas</button>
+                <button class="alert-filter-btn" data-filter="speed">⚡ Tiempos</button>
+                <button class="alert-filter-btn" data-filter="bias">🎯 Tendencias</button>
+              </div>
+            </div>
+
+            <div class="anomalies-list" id="anomalies-list">
+              <!-- Renderizado dinámico -->
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PESTAÑA D: MÉTRICAS, REPORTES Y ANALÍTICA EJECUTIVA -->
+      <section class="tab-content-pane" id="tab-reports" role="tabpanel">
+        <!-- Hero con selector de vistas: Operacionales vs Ejecutivas -->
+        <div class="reports-hero">
+          <div>
+            <div class="corporate-badge">dichter & neira • Intelligence & Analytics</div>
+            <h1 id="reports-view-title">Centro de Métricas y Analítica</h1>
+            <p id="reports-view-subtitle">Supervisa el avance operativo diario de validación o consulta métricas ejecutivas de impacto para comités.</p>
+          </div>
+          
+          <!-- Selector tipo Toggle / Botones de Sub-Pestaña -->
+          <div class="metrics-subtab-switch">
+            <button class="subtab-btn active" id="btn-subtab-operational" data-subtab="operational" onclick="window.switchReportsSubtab('operational')">
+              <span class="subtab-icon">📋</span> Métricas Operacionales
+            </button>
+            <button class="subtab-btn" id="btn-subtab-executive" data-subtab="executive" onclick="window.switchReportsSubtab('executive')">
+              <span class="subtab-icon">📊</span> Métricas Ejecutivas (Comité)
+            </button>
+          </div>
+        </div>
+
+        <!-- Barra de Filtro Multi-Estudio / Selector de Estudios -->
+        <div class="glass-panel study-filter-bar">
+          <div class="study-filter-header">
+            <div class="study-filter-title-group">
+              <span class="filter-icon">🔍</span>
+              <div>
+                <strong>Filtrar por Estudio / Canal / Modelo</strong>
+                <span class="text-muted" style="font-size:0.8rem; display:block;">Selecciona uno, varios o todos los estudios para analizar las métricas en pantalla:</span>
+              </div>
+            </div>
+            <div class="study-filter-quick-actions">
+              <button class="btn btn-ghost btn-sm" id="btn-filter-select-all" onclick="window.app?.setAllStudiesFilter()">Seleccionar Todos</button>
+              <button class="btn btn-ghost btn-sm" id="btn-filter-select-current" onclick="window.app?.setCurrentProjectFilter()">Solo Operación Activa</button>
+            </div>
+          </div>
+
+          <div class="study-pills-container" id="study-pills-container">
+            <!-- Chips de filtro generados dinámicamente -->
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- SUB-VISTA 1: MÉTRICAS OPERACIONALES (SUPERVISOR / DÍA A DÍA) -->
+        <!-- ======================================================== -->
+        <div id="metrics-view-operational" class="metrics-subview active-subview">
+          <div class="operational-actions-bar">
+            <div class="op-label-wrap">
+              <span class="badge badge-info">Vista Operativa de Supervisión</span>
+              <span class="text-muted" style="font-size:0.85rem;" id="op-filtered-count-label">Mostrando todas las auditorías</span>
+            </div>
+            <div class="op-buttons-group">
+              <button class="btn btn-outline btn-sm" id="btn-export-excel" onclick="window.exportConsolidatedExcel()">
+                <span class="btn-icon">📊</span> Descargar Consolidado (.xlsx)
+              </button>
+              <button class="btn btn-primary btn-glow btn-sm" id="btn-export-multi-sheet" onclick="window.exportMultiSheetExcel()">
+                <span class="btn-icon">📦</span> Descargar Día por Día (Multi-Hoja .xlsx)
+              </button>
+            </div>
+          </div>
+
+          <!-- Métricas Clave Globales -->
+          <div class="stats-grid stats-grid-5">
+            <div class="stat-card">
+              <div class="stat-icon-wrapper icon-blue">📑</div>
+              <div class="stat-details">
+                <span class="stat-label">Total Auditorías</span>
+                <span class="stat-value" id="rep-stat-total">0</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon-wrapper icon-emerald">✅</div>
+              <div class="stat-details">
+                <span class="stat-label">Completadas</span>
+                <span class="stat-value text-success" id="rep-stat-completed">0</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon-wrapper icon-orange">⏳</div>
+              <div class="stat-details">
+                <span class="stat-label">Pendientes</span>
+                <span class="stat-value text-warning" id="rep-stat-pending">0</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon-wrapper icon-emerald">👍</div>
+              <div class="stat-details">
+                <span class="stat-label">KPIs "Aplica"</span>
+                <span class="stat-value text-success" id="rep-stat-aplica">0</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon-wrapper icon-magenta">👎</div>
+              <div class="stat-details">
+                <span class="stat-label">KPIs "No Aplica"</span>
+                <span class="stat-value text-magenta" id="rep-stat-no-aplica">0</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel de Tipificaciones -->
+          <div class="glass-panel reasons-panel">
+            <div class="panel-header">
+              <div>
+                <h3><span class="header-icon">⚠️</span> Desglose de Tipificaciones registradas en "No Aplica"</h3>
+                <p class="panel-desc">Frecuencia y porcentaje de motivos por los cuales las alertas de KPI fueron descartadas.</p>
+              </div>
+            </div>
+
+            <div class="reasons-breakdown-list" id="reasons-breakdown-list">
+              <!-- Renderizado dinámico -->
+            </div>
+          </div>
+
+          <!-- Panel de Desglose y Descarga Día por Día -->
+          <div class="glass-panel daily-breakdown-panel" style="margin-top: 1.75rem;">
+            <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+              <div>
+                <h3><span class="header-icon">🗓️</span> Historial y Descargas por Fecha (Día x Día)</h3>
+                <p class="panel-desc">Consulta el avance registrado en cada fecha y descarga el reporte individual de cualquier día en específico.</p>
+              </div>
+              <div class="header-right">
+                <span class="badge badge-info" id="daily-stat-days-badge">0 días registrados</span>
+              </div>
+            </div>
+
+            <!-- Métricas Diarias Resumen -->
+            <div class="stats-grid stats-grid-4" style="margin-bottom:1.5rem;">
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-blue">📅</div>
+                <div class="stat-details">
+                  <span class="stat-label">Días Trabajados</span>
+                  <span class="stat-value" id="daily-stat-days-count">0</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-emerald">✅</div>
+                <div class="stat-details">
+                  <span class="stat-label">Total Validadas</span>
+                  <span class="stat-value text-success" id="daily-stat-total-completed">0</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-cyan">📊</div>
+                <div class="stat-details">
+                  <span class="stat-label">Promedio Diario</span>
+                  <span class="stat-value" id="daily-stat-avg-day">0</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-orange">🏆</div>
+                <div class="stat-details">
+                  <span class="stat-label">Mejor Jornada</span>
+                  <span class="stat-value text-warning" id="daily-stat-best-day" style="font-size:1.1rem;">—</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="daily-cards-container" id="daily-cards-container">
+              <!-- Renderizado dinámico -->
+            </div>
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- SUB-VISTA 2: MÉTRICAS EJECUTIVAS (COMITÉ Y DIRECCIÓN)    -->
+        <!-- ======================================================== -->
+        <div id="metrics-view-executive" class="metrics-subview hidden">
+          <!-- Barra de Acciones Ejecutivas -->
+          <div class="executive-actions-bar glass-panel">
+            <div class="exec-badge-wrap">
+              <span class="corporate-badge corporate-badge-purple">👔 Vista de Comité Directivo & Comercial</span>
+              <span class="text-muted" style="font-size:0.9rem;" id="exec-study-selected-label">Estudios: Todos los seleccionados</span>
+            </div>
+            <div class="op-buttons-group">
+              <button class="btn btn-navy btn-glow btn-sm" id="btn-export-commercial-pdf" onclick="window.exportCommercialPDF()">
+                <span class="btn-icon">📄</span> Exportar Informe Comercial (PDF)
+              </button>
+              <button class="btn btn-outline btn-sm" id="btn-preview-commercial-report" onclick="window.openCommercialReportPreview()">
+                <span class="btn-icon">👁️</span> Vista Previa Dossier Comercial
+              </button>
+              <button class="btn btn-success btn-sm" id="btn-export-executive-xlsx" onclick="window.exportExecutiveExcel()">
+                <span class="btn-icon">📊</span> Descargar Excel (.xlsx)
+              </button>
+            </div>
+          </div>
+
+          <!-- Banner de Impacto Comercial y ROI de Validación -->
+          <div class="commercial-roi-banner glass-panel">
+            <div class="commercial-roi-header">
+              <div class="roi-icon-box">🛡️✨</div>
+              <div>
+                <h3 class="roi-title">Valor Comercial & Eficiencia de Alertas Smart</h3>
+                <p class="roi-subtitle">Métricas de confiabilidad, prevención de falsos positivos y garantía de calidad de auditoría para comités y clientes.</p>
+              </div>
+              <div class="quality-assurance-badge">
+                <span class="qa-badge-icon">🏅</span>
+                <div class="qa-badge-text">
+                  <strong>Certificación dichter & neira</strong>
+                  <span id="exec-stat-qa-status">100% Verificado</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="commercial-roi-grid">
+              <div class="roi-metric-box">
+                <span class="roi-metric-num text-primary" id="exec-stat-audits-covered">0</span>
+                <span class="roi-metric-lbl">Auditorías Evaluadas</span>
+                <span class="roi-metric-sub">Puntos de Venta Verificados</span>
+              </div>
+              <div class="roi-metric-box">
+                <span class="roi-metric-num text-magenta" id="exec-stat-false-positives">0</span>
+                <span class="roi-metric-lbl">Falsos Positivos Filtrados</span>
+                <span class="roi-metric-sub text-success">Alertas evitadas al cliente</span>
+              </div>
+              <div class="roi-metric-box">
+                <span class="roi-metric-num text-success" id="exec-stat-precision-rate">0%</span>
+                <span class="roi-metric-lbl">Precisión de Algoritmo</span>
+                <span class="roi-metric-sub">Tasa de Efectividad Real</span>
+              </div>
+              <div class="roi-metric-box">
+                <span class="roi-metric-num text-purple" id="exec-stat-sla-time">0s</span>
+                <span class="roi-metric-lbl">Velocidad de Resolución</span>
+                <span class="roi-metric-sub">SLA Operativo &lt; 24h</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel: Universo Total de Medición & Tasa de Edición de Alertas -->
+          <div class="glass-panel universe-kpi-panel" style="margin-bottom:1.5rem;">
+            <div class="panel-header">
+              <div>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <span class="header-icon">🔬</span>
+                  <h3>Universo Total de Medición & Tasa de Edición de Alertas</h3>
+                </div>
+                <p class="panel-desc">Monitoreo de todos los KPIs medibles en el estudio y desglose de casos conformes, alertas válidas y alertas editadas/corregidas por el validador.</p>
+              </div>
+              <div class="universe-badge-wrap">
+                <span class="badge badge-purple" id="exec-stat-kpis-per-audit-badge">KPIs × Auditoría</span>
+              </div>
+            </div>
+
+            <!-- Barra de Distribución del Universo de Medición -->
+            <div class="universe-stacked-bar-wrap">
+              <div class="universe-stacked-bar">
+                <div class="universe-bar-seg seg-sin-alerta" id="exec-bar-sin-alerta" style="width: 50%" title="Sin Alerta / Conforme en Origen"></div>
+                <div class="universe-bar-seg seg-aplica" id="exec-bar-aplica" style="width: 25%" title="Alerta Confirmada (Aplica)"></div>
+                <div class="universe-bar-seg seg-editada" id="exec-bar-editada" style="width: 25%" title="Alerta Editada / Descartada por Validador (No Aplica)"></div>
+              </div>
+              <div class="universe-bar-legend">
+                <span class="leg-item"><span class="leg-dot dot-sin-alerta"></span> Conforme Sin Alerta: <strong id="exec-legend-sin-alerta">0 (0%)</strong></span>
+                <span class="leg-item"><span class="leg-dot dot-aplica"></span> Alerta Confirmada (Aplica): <strong id="exec-legend-aplica">0 (0%)</strong></span>
+                <span class="leg-item"><span class="leg-dot dot-editada"></span> Alerta Editada (No Aplica): <strong id="exec-legend-editada">0 (0%)</strong></span>
+              </div>
+            </div>
+
+            <!-- 4 Grid KPI Cards -->
+            <div class="stats-grid stats-grid-4" style="margin-top:1.25rem;">
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-blue">📐</div>
+                <div class="stat-details">
+                  <span class="stat-label">Universo Total KPIs Medibles</span>
+                  <span class="stat-value text-primary" id="exec-stat-universe-total">0</span>
+                  <span class="stat-sublabel text-muted" id="exec-stat-universe-calc">0 auditorías × KPIs</span>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-emerald">✅</div>
+                <div class="stat-details">
+                  <span class="stat-label">Sin Alerta (Conformes en Origen)</span>
+                  <span class="stat-value text-success" id="exec-stat-universe-sin-alerta">0</span>
+                  <span class="stat-sublabel text-muted" id="exec-stat-universe-sin-alerta-pct">0% del universo</span>
+                </div>
+              </div>
+
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-blue">🎯</div>
+                <div class="stat-details">
+                  <span class="stat-label">Alertas Válidas (Marcaba y Aplica)</span>
+                  <span class="stat-value text-primary" id="exec-stat-universe-aplica">0</span>
+                  <span class="stat-sublabel text-muted" id="exec-stat-universe-aplica-pct">0% del universo</span>
+                </div>
+              </div>
+
+              <div class="stat-card" style="border-left: 4px solid var(--dn-magenta);">
+                <div class="stat-icon-wrapper icon-magenta">✏️</div>
+                <div class="stat-details">
+                  <span class="stat-label">Alertas Editadas (Marcaba y No Aplica)</span>
+                  <span class="stat-value text-magenta" id="exec-stat-universe-editadas">0</span>
+                  <span class="stat-sublabel text-magenta" id="exec-stat-universe-editadas-pct">0% del universo (Tasa de Edición)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tarjetas de Indicadores Ejecutivos de Alertas -->
+          <div class="stats-grid stats-grid-4" style="margin-bottom:1.5rem;">
+            <div class="stat-card">
+              <div class="stat-icon-wrapper icon-magenta">🚨</div>
+              <div class="stat-details">
+                <span class="stat-label">Total Alertas Auditadas</span>
+                <span class="stat-value text-magenta" id="exec-stat-total-alerts">0</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon-wrapper icon-emerald">🎯</div>
+              <div class="stat-details">
+                <span class="stat-label">Tasa de Confirmación (Aplica)</span>
+                <span class="stat-value text-success" id="exec-stat-confirm-rate">0%</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon-wrapper icon-orange">⚠️</div>
+              <div class="stat-details">
+                <span class="stat-label">Tasa de Descarte (No Aplica)</span>
+                <span class="stat-value text-warning" id="exec-stat-discard-rate">0%</span>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon-wrapper icon-blue">🏆</div>
+              <div class="stat-details">
+                <span class="stat-label">KPI con Mayor Incidencia</span>
+                <span class="stat-value text-primary" id="exec-stat-top-kpi" style="font-size:1.05rem;">—</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tabla Benchmark Comercial entre Estudios (Chile, Tradicional, Moderno, Lindley) -->
+          <div class="glass-panel" style="margin-top:1.5rem;">
+            <div class="panel-header">
+              <div>
+                <h3><span class="header-icon">🌐</span> Benchmark Comercial por Estudio y Canal</h3>
+                <p class="panel-desc">Comparativa de volumen de auditorías, alertas detectadas y tasa de efectividad de ejecución en PDV.</p>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="data-table benchmark-table">
+                <thead>
+                  <tr>
+                    <th>Estudio / Canal</th>
+                    <th>Auditorías</th>
+                    <th>Total Alertas</th>
+                    <th>Alertas Confirmadas (Aplica)</th>
+                    <th>Alertas Descartadas (No Aplica)</th>
+                    <th>Tasa de Confirmación</th>
+                    <th>Efectividad de Ejecución en PDV</th>
+                  </tr>
+                </thead>
+                <tbody id="exec-benchmark-tbody">
+                  <!-- Renderizado dinámico -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Gráficos y Tablas Ejecutivas -->
+          <div class="executive-two-cols">
+            <!-- Columna 1: Ranking / Pareto de KPIs con más Alertas -->
+            <div class="glass-panel exec-ranking-panel">
+              <div class="panel-header">
+                <div>
+                  <h3><span class="header-icon">📊</span> Ranking de KPIs con Mayor Volumen de Alertas</h3>
+                  <p class="panel-desc">Variables e indicadores que concentran la mayor cantidad de no conformidades reportadas.</p>
+                </div>
+              </div>
+              <div class="exec-kpi-ranking-list" id="exec-kpi-ranking-list">
+                <!-- Renderizado dinámico -->
+              </div>
+            </div>
+
+            <!-- Columna 2: Distribución por Canal / Estudio y Motivos de Descarte -->
+            <div class="glass-panel exec-channels-panel">
+              <div class="panel-header">
+                <div>
+                  <h3><span class="header-icon">🏬</span> Incidencia por Estudio / Canal / Modelo</h3>
+                  <p class="panel-desc">Distribución porcentual del volumen de alertas entre estudios.</p>
+                </div>
+              </div>
+              <div class="exec-channels-breakdown" id="exec-channels-breakdown">
+                <!-- Renderizado dinámico -->
+              </div>
+
+              <div class="panel-header" style="margin-top:1.75rem; border-top:1px solid var(--border-color); padding-top:1.25rem;">
+                <div>
+                  <h3><span class="header-icon">📝</span> Causas Raíz de Descarte (Falsos Positivos)</h3>
+                  <p class="panel-desc">Tipificaciones más frecuentes justificadas por los validadores.</p>
+                </div>
+              </div>
+              <div class="exec-reasons-breakdown" id="exec-reasons-breakdown">
+                <!-- Renderizado dinámico -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- FOOTER CORPORATIVO GLOBAL DE LA PLATAFORMA               -->
+  <!-- ======================================================== -->
+  <footer class="app-main-footer">
+    <div class="footer-inner">
+      <div class="footer-left">
+        <img src="assets/dn-logo-white.webp" alt="dichter & neira" class="footer-dn-logo" />
+        <div class="footer-brand-info">
+          <span class="footer-company-name">dichter & neira • Intelligence & Quality Control</span>
+          <span class="footer-credit-text">
+            Plataforma Corporativa de Validación y Control de Calidad • Realizado por el <strong class="footer-credit-highlight">Equipo de Reporting</strong>
+          </span>
+        </div>
+      </div>
+      <div class="footer-right">
+        <div class="footer-team-badge">
+          <span class="badge-icon">📊</span>
+          <span>Desarrollado por el <strong>Equipo de Reporting</strong></span>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: LOGIN DEL SUPERVISOR                              -->
+  <!-- ======================================================== -->
+  <div class="modal-overlay hidden" id="modal-supervisor-login">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <span class="corporate-badge-sm">dichter & neira</span>
+          <h3>Acceso de Supervisión</h3>
+        </div>
+        <button class="btn-close-modal" id="btn-close-sup-login" onclick="document.getElementById('modal-supervisor-login').classList.add('hidden')">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="modal-desc">Ingresa tus credenciales de supervisor para acceder al panel de carga, repartición, alertas y reportes.</p>
+
+        <div class="form-group">
+          <label for="sup-login-user">Usuario / Correo de Supervisor</label>
+          <input type="text" id="sup-login-user" class="form-control" placeholder="supervisor@dichter-neira.com" value="admin" />
+        </div>
+
+        <div class="form-group">
+          <label for="sup-login-pass">Contraseña</label>
+          <input type="password" id="sup-login-pass" class="form-control" placeholder="••••••••" value="admin123" />
+        </div>
+
+        <div class="credentials-hint-box">
+          <span class="hint-title">💡 Credenciales de Supervisor:</span>
+          <span>Usuario: <strong>admin</strong> | Contraseña: <strong>admin123</strong></span>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-sup-login" onclick="document.getElementById('modal-supervisor-login').classList.add('hidden')">Cancelar</button>
+        <button class="btn btn-primary btn-glow" id="btn-submit-sup-login" onclick="window.app ? window.app.submitSupervisorLogin() : (document.getElementById('modal-supervisor-login').classList.add('hidden'), document.getElementById('view-landing').classList.add('hidden'), document.getElementById('view-supervisor-hub').classList.remove('hidden'))">Iniciar Sesión 🔓</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: AGREGAR VALIDADOR -->
+  <div class="modal-overlay hidden" id="modal-add-validator">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div>
+          <span class="corporate-badge-sm">dichter & neira</span>
+          <h3>Agregar Nuevo Validador</h3>
+        </div>
+        <button class="btn-close-modal" id="btn-close-val-modal">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="modal-val-name">Nombre Completo *</label>
+          <input type="text" id="modal-val-name" class="form-control" placeholder="Ej. Juan Pérez" />
+        </div>
+
+        <div class="form-group">
+          <label for="modal-val-email">Correo Electrónico (Opcional)</label>
+          <input type="email" id="modal-val-email" class="form-control" placeholder="juan.perez@dichter-neira.com" />
+        </div>
+
+        <div class="form-group">
+          <label for="modal-val-study">Estudio / Operación Asignada *</label>
+          <select id="modal-val-study" class="form-select">
+            <option value="Chile">🇨🇱 Chile (Región Sur)</option>
+            <option value="Tradicional">🏪 Tradicional (Tiendas / Bodegas)</option>
+            <option value="Moderno">🏬 Moderno (Grandes Cadenas)</option>
+            <option value="Lindley">🥤 Lindley (Arca Continental)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="modal-val-code">Código Único de Acceso</label>
+          <input type="text" id="modal-val-code" class="form-control code-preview-input" placeholder="VAL-XXXX" />
+          <small class="form-hint">Se autogenera un código único alfanumérico, pero puedes personalizarlo.</small>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('modal-add-validator').classList.add('hidden')">Cancelar</button>
+        <button class="btn btn-primary" id="btn-save-val-modal">Guardar Validador</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SELECCIONAR ESTUDIO AL SUBIR EXCEL -->
+  <div class="modal-overlay hidden" id="modal-select-study">
+    <div class="modal-card modal-card-lg">
+      <div class="modal-header">
+        <div>
+          <span class="corporate-badge-sm">dichter & neira • Asignación de Datos</span>
+          <h3>¿A qué Estudio u Operación corresponde este archivo?</h3>
+        </div>
+        <button class="btn-close-modal" id="btn-close-study-modal" onclick="document.getElementById('modal-select-study').classList.add('hidden')">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="file-upload-preview-meta" id="study-modal-file-info">
+          <div class="file-icon-box">📊</div>
+          <div>
+            <strong id="study-modal-filename">archivo_auditorias.xlsx</strong>
+            <span class="text-muted" style="display:block; font-size:0.8rem;" id="study-modal-rows-count">Registros detectados listos para importar</span>
+          </div>
+        </div>
+
+        <p class="modal-desc" style="margin-top:0.45rem;">
+          Selecciona el estudio o canal correspondiente para etiquetar las auditorías, métricas y reportes:
+        </p>
+
+        <div class="study-selection-grid">
+          <div class="study-option-card active" data-study="Chile" onclick="window.selectModalStudyOption('Chile')">
+            <span class="study-option-flag">🇨🇱</span>
+            <span class="study-option-name">Chile</span>
+            <span class="study-option-sub">Región Sur</span>
+          </div>
+          <div class="study-option-card" data-study="Tradicional" onclick="window.selectModalStudyOption('Tradicional')">
+            <span class="study-option-flag">🏪</span>
+            <span class="study-option-name">Tradicional</span>
+            <span class="study-option-sub">Tiendas / Bodegas</span>
+          </div>
+          <div class="study-option-card" data-study="Moderno" onclick="window.selectModalStudyOption('Moderno')">
+            <span class="study-option-flag">🏬</span>
+            <span class="study-option-name">Moderno</span>
+            <span class="study-option-sub">Grandes Cadenas</span>
+          </div>
+          <div class="study-option-card" data-study="Lindley" onclick="window.selectModalStudyOption('Lindley')">
+            <span class="study-option-flag">🥤</span>
+            <span class="study-option-name">Lindley</span>
+            <span class="study-option-sub">Arca Continental</span>
+          </div>
+        </div>
+
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.85rem; margin-top:0.5rem;">
+          <div class="form-group">
+            <label for="study-custom-input">Estudio / Canal:</label>
+            <input type="text" id="study-custom-input" class="form-control" placeholder="Ej. Stills, Titán, Grocery..." value="Chile" />
+          </div>
+
+          <div class="form-group">
+            <label for="study-operation-date">📅 Fecha de la Jornada / Operación:</label>
+            <input type="date" id="study-operation-date" class="form-control" />
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-study-modal" onclick="document.getElementById('modal-select-study').classList.add('hidden')">Cancelar</button>
+        <button class="btn btn-primary btn-glow" id="btn-confirm-study-modal" onclick="window.confirmStudyUpload()">
+          ✓ Confirmar y Cargar Auditorías 🚀
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: REASIGNAR / MOVER AUDITORÍAS A OTRO ESTUDIO       -->
+  <!-- ======================================================== -->
+  <div class="modal-overlay hidden" id="modal-reassign-study">
+    <div class="modal-card modal-card-md">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon-badge">🔄📁</span>
+          <div>
+            <h3>Mover Auditorías a Otro Estudio</h3>
+            <p class="modal-subtitle">Corrige la asignación si subiste un archivo en el estudio equivocado</p>
+          </div>
+        </div>
+        <button class="btn-close-modal" onclick="document.getElementById('modal-reassign-study').classList.add('hidden')">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div style="background: rgba(0, 114, 206, 0.06); border-left: 4px solid var(--dn-blue); padding: 0.85rem 1rem; border-radius: 8px; margin-bottom: 1.25rem;">
+          <p style="margin: 0; font-size: 0.92rem; color: var(--dn-navy);">
+            Actualmente hay <strong id="reassign-modal-count" class="text-primary">0 auditorías</strong> etiquetadas en el estudio <strong id="reassign-modal-from" class="text-primary">Moderno</strong>.
+          </p>
+        </div>
+
+        <p class="text-muted" style="font-size:0.88rem; margin-bottom:0.75rem;">
+          Selecciona el estudio correcto al que deseas mover estas auditorías:
+        </p>
+
+        <div class="study-selection-grid">
+          <div class="study-option-card" data-reassign-study="Chile" onclick="window.selectReassignStudyOption('Chile')">
+            <span class="study-option-flag">🇨🇱</span>
+            <span class="study-option-name">Chile</span>
+            <span class="study-option-sub">Región Sur</span>
+          </div>
+          <div class="study-option-card active" data-reassign-study="Tradicional" onclick="window.selectReassignStudyOption('Tradicional')">
+            <span class="study-option-flag">🏪</span>
+            <span class="study-option-name">Tradicional</span>
+            <span class="study-option-sub">Tiendas / Bodegas</span>
+          </div>
+          <div class="study-option-card" data-reassign-study="Moderno" onclick="window.selectReassignStudyOption('Moderno')">
+            <span class="study-option-flag">🏬</span>
+            <span class="study-option-name">Moderno</span>
+            <span class="study-option-sub">Grandes Cadenas</span>
+          </div>
+          <div class="study-option-card" data-reassign-study="Lindley" onclick="window.selectReassignStudyOption('Lindley')">
+            <span class="study-option-flag">🥤</span>
+            <span class="study-option-name">Lindley</span>
+            <span class="study-option-sub">Arca Continental</span>
+          </div>
+        </div>
+
+        <input type="hidden" id="reassign-target-study-input" value="Tradicional" />
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('modal-reassign-study').classList.add('hidden')">Cancelar</button>
+        <button class="btn btn-primary btn-glow" id="btn-confirm-reassign-study" onclick="window.executeReassignStudy()">
+          ✓ Confirmar y Mover Auditorías 🚀
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: DETALLADO DEL DÍA (HISTORIAL Y SEGUIMIENTO)       -->
+  <!-- ======================================================== -->
+  <div class="modal-overlay hidden" id="modal-daily-detail">
+    <div class="modal-card modal-card-xl">
+      <div class="modal-header">
+        <div>
+          <span class="corporate-badge-sm">dichter & neira • Seguimiento Operacional Diario</span>
+          <h3 id="daily-detail-title">📅 Detallado de la Jornada: 14/08/2026</h3>
+          <p class="modal-desc-sm" id="daily-detail-subtitle">Auditorías, validadores y avance de la operación seleccionada.</p>
+        </div>
+        <button class="btn-close-modal" id="btn-close-daily-detail" onclick="document.getElementById('modal-daily-detail').classList.add('hidden')">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Barra de Métricas del Día -->
+        <div class="daily-detail-stats-bar">
+          <div class="dd-stat-pill">
+            <span class="dd-lbl">Total Auditorías</span>
+            <strong class="dd-val" id="dd-stat-total">0</strong>
+          </div>
+          <div class="dd-stat-pill">
+            <span class="dd-lbl">Validadas</span>
+            <strong class="dd-val text-success" id="dd-stat-completed">0</strong>
+          </div>
+          <div class="dd-stat-pill">
+            <span class="dd-lbl">Pendientes</span>
+            <strong class="dd-val text-warning" id="dd-stat-pending">0</strong>
+          </div>
+          <div class="dd-stat-pill">
+            <span class="dd-lbl">% Avance</span>
+            <strong class="dd-val text-info" id="dd-stat-progress">0%</strong>
+          </div>
+          <div class="dd-stat-pill">
+            <span class="dd-lbl">KPIs Aplica</span>
+            <strong class="dd-val text-success" id="dd-stat-aplica">0</strong>
+          </div>
+          <div class="dd-stat-pill">
+            <span class="dd-lbl">KPIs No Aplica</span>
+            <strong class="dd-val text-magenta" id="dd-stat-no-aplica">0</strong>
+          </div>
+          <div class="dd-stat-pill">
+            <span class="dd-lbl">Tiempo Promedio</span>
+            <strong class="dd-val text-purple" id="dd-stat-time">0s</strong>
+          </div>
+        </div>
+
+        <!-- Desglose de Validadores del Día -->
+        <div class="dd-validators-section">
+          <h4 class="dd-subheading">👥 Validadores y Avance en esta Jornada</h4>
+          <div class="dd-validators-list" id="dd-validators-list">
+            <!-- Renderizado dinámico -->
+          </div>
+        </div>
+
+        <!-- Filtros y Búsqueda en la Tabla Diaria -->
+        <div class="dd-table-toolbar">
+          <div class="search-input-wrapper" style="max-width:320px;">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="dd-search-input" class="search-input" placeholder="Buscar por ID, PDV, Ciudad..." />
+          </div>
+
+          <div class="dd-filter-actions">
+            <select id="dd-filter-validator" class="form-select form-select-sm">
+              <option value="ALL">Todos los validadores</option>
+            </select>
+            <select id="dd-filter-status" class="form-select form-select-sm">
+              <option value="ALL">Todos los estados</option>
+              <option value="completada">✓ Completadas</option>
+              <option value="pendiente">⏳ Pendientes</option>
+              <option value="en_progreso">🔄 En Progreso</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Tabla de Auditorías del Día -->
+        <div class="table-responsive dd-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>ID Auditoría</th>
+                <th>ID PDV</th>
+                <th>Estudio / Canal</th>
+                <th>Ciudad / País</th>
+                <th>Validador</th>
+                <th>KPIs Asignados</th>
+                <th>Resultado</th>
+                <th>Tiempo</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody id="dd-table-tbody">
+              <!-- Renderizado dinámico -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="justify-content: space-between;">
+        <span class="text-muted" style="font-size:0.85rem;" id="dd-table-count">Mostrando 0 registros</span>
+        <div style="display:flex; gap:0.5rem;">
+          <button class="btn btn-secondary" onclick="document.getElementById('modal-daily-detail').classList.add('hidden')">Cerrar</button>
+          <button class="btn btn-success btn-glow" id="btn-download-dd-excel">
+            📥 Descargar Excel de este Día (.xlsx)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: DOSSIER EJECUTIVO E INFORME COMERCIAL (PDF PREVIEW)-->
+  <!-- ======================================================== -->
+  <div class="modal-overlay hidden" id="modal-commercial-report-preview">
+    <div class="modal-card modal-card-xl commercial-dossier-modal">
+      <div class="modal-header commercial-dossier-modal-header">
+        <div class="commercial-dossier-header-brand">
+          <img src="assets/dn-logo-color.png" alt="dichter & neira" class="dossier-brand-logo" />
+          <div>
+            <span class="corporate-badge-sm">Inteligencia de mercados para marcas de consumo masivo</span>
+            <h3 style="margin:0.2rem 0; font-size:1.25rem;">Informe Gerencial de Calidad & Eficiencia de Alertas</h3>
+            <span class="text-muted" style="font-size:0.85rem;" id="commercial-dossier-date-label">Emisión: Agosto 2026 • Cobertura Multiestudio</span>
+          </div>
+        </div>
+        <div class="dossier-header-actions">
+          <button class="btn btn-navy btn-glow btn-sm" onclick="window.exportCommercialPDF()">
+            🖨️ Imprimir / Guardar como PDF
+          </button>
+          <button class="btn-close-modal" onclick="document.getElementById('modal-commercial-report-preview').classList.add('hidden')">✕</button>
+        </div>
+      </div>
+
+      <div class="modal-body commercial-dossier-body" id="commercial-printable-content">
+        <!-- 1. Ficha Técnica y Certificado de Calidad -->
+        <div class="dossier-section-row">
+          <div class="dossier-cert-card">
+            <div class="cert-icon">🏅</div>
+            <div class="cert-info">
+              <h4>Garantía de Calidad y Verificación de Auditorías</h4>
+              <p>Este informe certifica que el 100% de las auditorías y alertas han sido evaluadas rigurosamente mediante el protocolo de Validación Smart y supervisión experta de dichter & neira antes de su entrega.</p>
+              <div class="cert-badges">
+                <span class="badge badge-success">✓ 100% Data Auditada</span>
+                <span class="badge badge-purple">🛡️ Validación Smart</span>
+                <span class="badge badge-blue" id="dossier-study-scope-badge">Estudios: Chile, Tradicional, Moderno, Lindley</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. KPIs de Impacto de Negocio y ROI -->
+        <div class="dossier-kpi-grid">
+          <div class="dossier-kpi-tile">
+            <span class="dossier-kpi-val text-primary" id="dossier-kpi-audits">0</span>
+            <span class="dossier-kpi-title">Auditorías Procesadas</span>
+            <span class="dossier-kpi-desc">Puntos de Venta Verificados</span>
+          </div>
+          <div class="dossier-kpi-tile">
+            <span class="dossier-kpi-val text-magenta" id="dossier-kpi-alerts-total">0</span>
+            <span class="dossier-kpi-title">Alertas Detectadas</span>
+            <span class="dossier-kpi-desc">Desviaciones en Punto de Venta</span>
+          </div>
+          <div class="dossier-kpi-tile">
+            <span class="dossier-kpi-val text-success" id="dossier-kpi-confirm-rate">0%</span>
+            <span class="dossier-kpi-title">Tasa de Confirmación (Aplica)</span>
+            <span class="dossier-kpi-desc">Hallazgos Reales en Campo</span>
+          </div>
+          <div class="dossier-kpi-tile">
+            <span class="dossier-kpi-val text-warning" id="dossier-kpi-false-positives">0</span>
+            <span class="dossier-kpi-title">Falsos Positivos Filtrados</span>
+            <span class="dossier-kpi-desc">Alertas Evitadas al Cliente</span>
+          </div>
+          <div class="dossier-kpi-tile">
+            <span class="dossier-kpi-val text-purple" id="dossier-kpi-avg-time">0s</span>
+            <span class="dossier-kpi-title">Tiempo Promedio por Auditoría</span>
+            <span class="dossier-kpi-desc">SLA de Respuesta Inmediata</span>
+          </div>
+        </div>
+
+        <!-- 3. Universo Total de Medición y Tasa de Edición -->
+        <div class="dossier-block">
+          <div class="dossier-block-header">
+            <h4>🔬 Desglose del Universo Total de Medición & Tasa de Edición Humana</h4>
+            <span class="text-muted" style="font-size:0.8rem;">Evaluación de todos los KPIs medibles: Conformes sin alerta, Alertas válidas confirmadas y Alertas editadas por el validador.</span>
+          </div>
+
+          <div class="universe-stacked-bar-wrap" style="margin-bottom:1rem;">
+            <div class="universe-stacked-bar">
+              <div class="universe-bar-seg seg-sin-alerta" id="dossier-bar-sin-alerta" style="width: 50%"></div>
+              <div class="universe-bar-seg seg-aplica" id="dossier-bar-aplica" style="width: 25%"></div>
+              <div class="universe-bar-seg seg-editada" id="dossier-bar-editada" style="width: 25%"></div>
+            </div>
+            <div class="universe-bar-legend">
+              <span class="leg-item"><span class="leg-dot dot-sin-alerta"></span> Conforme Sin Alerta: <strong id="dossier-legend-sin-alerta">0 (0%)</strong></span>
+              <span class="leg-item"><span class="leg-dot dot-aplica"></span> Alerta Confirmada (Aplica): <strong id="dossier-legend-aplica">0 (0%)</strong></span>
+              <span class="leg-item"><span class="leg-dot dot-editada"></span> Alerta Editada (No Aplica): <strong id="dossier-legend-editada">0 (0%)</strong></span>
+            </div>
+          </div>
+
+          <div class="dossier-kpi-grid">
+            <div class="dossier-kpi-tile">
+              <span class="dossier-kpi-val text-primary" id="dossier-stat-universe-total">0</span>
+              <span class="dossier-kpi-title">Universo Medible</span>
+              <span class="dossier-kpi-desc" id="dossier-stat-universe-calc">Auditorías × KPIs</span>
+            </div>
+            <div class="dossier-kpi-tile">
+              <span class="dossier-kpi-val text-success" id="dossier-stat-universe-sin-alerta">0</span>
+              <span class="dossier-kpi-title">Sin Alerta (Conformes)</span>
+              <span class="dossier-kpi-desc" id="dossier-stat-universe-sin-alerta-pct">0% del universo</span>
+            </div>
+            <div class="dossier-kpi-tile">
+              <span class="dossier-kpi-val text-blue" id="dossier-stat-universe-aplica">0</span>
+              <span class="dossier-kpi-title">Alertas Válidas</span>
+              <span class="dossier-kpi-desc" id="dossier-stat-universe-aplica-pct">0% del universo</span>
+            </div>
+            <div class="dossier-kpi-tile" style="border: 1px solid rgba(230, 0, 126, 0.3); background: rgba(230, 0, 126, 0.04);">
+              <span class="dossier-kpi-val text-magenta" id="dossier-stat-universe-editadas">0</span>
+              <span class="dossier-kpi-title">Alertas Editadas (No Aplica)</span>
+              <span class="dossier-kpi-desc text-magenta" id="dossier-stat-universe-editadas-pct">0% Tasa de Edición</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. Tabla Benchmark Comercial por Estudio -->
+        <div class="dossier-block">
+          <div class="dossier-block-header">
+            <h4>🌐 Benchmark de Desempeño y Efectividad por Estudio</h4>
+            <span class="text-muted" style="font-size:0.8rem;">Comparativa de volumen, precisión de alertas y tasa de efectividad de ejecución en PDV.</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table dossier-table">
+              <thead>
+                <tr>
+                  <th>Estudio / Canal</th>
+                  <th>Auditorías</th>
+                  <th>Total Alertas</th>
+                  <th>Confirmadas (Aplica)</th>
+                  <th>Descartadas (No Aplica)</th>
+                  <th>% Precisión Alerta</th>
+                  <th>Efectividad de Ejecución</th>
+                </tr>
+              </thead>
+              <tbody id="dossier-benchmark-tbody">
+                <!-- Renderizado dinámico -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 4. Pareto de Variables Críticas y Causas Raíz -->
+        <div class="dossier-two-cols">
+          <div class="dossier-block">
+            <div class="dossier-block-header">
+              <h4>📊 Top Variables con Mayor Volumen de Alertas</h4>
+              <span class="text-muted" style="font-size:0.8rem;">Variables donde se concentra la mayor fricción en PDV.</span>
+            </div>
+            <div id="dossier-top-kpis-list" class="dossier-ranking-list">
+              <!-- Renderizado dinámico -->
+            </div>
+          </div>
+
+          <div class="dossier-block">
+            <div class="dossier-block-header">
+              <h4>📝 Diagnóstico de Causas Raíz y Descarte</h4>
+              <span class="text-muted" style="font-size:0.8rem;">Motivos por los que se previnieron alertas antes de llegar al cliente.</span>
+            </div>
+            <div id="dossier-reasons-list" class="dossier-reasons-list">
+              <!-- Renderizado dinámico -->
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Conclusiones Ejecutivas y Recomendaciones Estratégicas -->
+        <div class="dossier-block dossier-recommendations-block">
+          <div class="dossier-block-header">
+            <h4>💡 Conclusiones Ejecutivas & Plan de Acción Comercial</h4>
+          </div>
+          <div class="dossier-recommendations-grid" id="dossier-recommendations-content">
+            <!-- Renderizado dinámico -->
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer commercial-dossier-footer">
+        <span class="text-muted" style="font-size:0.85rem;">dichter & neira • Sistema de Inteligencia Operativa ValidaFlow</span>
+        <div style="display:flex; gap:0.65rem;">
+          <button class="btn btn-secondary" onclick="document.getElementById('modal-commercial-report-preview').classList.add('hidden')">Cerrar</button>
+          <button class="btn btn-success" onclick="window.exportExecutiveExcel()">📊 Exportar Excel (.xlsx)</button>
+          <button class="btn btn-navy btn-glow" onclick="window.exportCommercialPDF()">🖨️ Generar / Imprimir PDF</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: RESPONDER Y RESOLVER CONSULTA DE VALIDADOR (❓) -->
+  <div class="modal-overlay hidden" id="modal-resolve-query">
+    <div class="modal-card modal-card-md">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-icon-badge">✍️❓</span>
+          <div>
+            <h3>Resolver Consulta de Validador</h3>
+            <p class="modal-subtitle" id="modal-query-subtitle">Orientación y dictamen oficial de supervisión</p>
+          </div>
+        </div>
+        <button class="btn-close-modal" onclick="document.getElementById('modal-resolve-query').classList.add('hidden')">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="query-context-card">
+          <div class="q-ctx-row">
+            <div><span class="text-muted">Auditoría:</span> <strong id="modal-q-audit-id">#—</strong></div>
+            <div><span class="text-muted">PDV:</span> <strong id="modal-q-pdv-id">—</strong></div>
+            <div><span class="text-muted">Validador:</span> <strong id="modal-q-validator">—</strong></div>
+          </div>
+          <div class="q-ctx-kpi">
+            <span class="text-muted">KPI en Consulta:</span> <strong class="text-primary" id="modal-q-kpi-name">—</strong>
+          </div>
+          <div class="q-ctx-doubt">
+            <span class="text-muted">Duda planteada por el validador:</span>
+            <blockquote id="modal-q-doubt-text" class="doubt-quote">"..."</blockquote>
+          </div>
+        </div>
+
+        <div class="resolve-form-group">
+          <label class="form-label font-bold">1. Dictamen Oficial del Supervisor:</label>
+          <div class="resolve-choice-grid">
+            <label class="resolve-choice-btn choice-aplica active" id="modal-lbl-choice-aplica">
+              <input type="radio" name="modal_resolve_decision" value="aplica" checked />
+              <span>✓ Aplica (Error de Campo)</span>
+            </label>
+            <label class="resolve-choice-btn choice-no-aplica" id="modal-lbl-choice-no-aplica">
+              <input type="radio" name="modal_resolve_decision" value="no_aplica" />
+              <span>✕ No Aplica (Falso Positivo)</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="resolve-form-group" id="modal-resolve-tipif-group" style="display:none;">
+          <label class="form-label font-bold" for="modal-resolve-tipif">2. Motivo de Falso Positivo:</label>
+          <select class="form-select" id="modal-resolve-tipif">
+            <!-- Dinámico -->
+          </select>
+        </div>
+
+        <div class="resolve-form-group">
+          <label class="form-label font-bold" for="modal-resolve-instructions">3. Indicación / Respuesta para el Validador:</label>
+          <textarea class="form-control" id="modal-resolve-instructions" rows="3" placeholder="Explica la regla o criterio para que el validador lo aplique y aprenda para futuros casos..."></textarea>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="document.getElementById('modal-resolve-query').classList.add('hidden')">Cancelar</button>
+        <button class="btn btn-primary btn-glow" id="btn-confirm-resolve-query">
+          Guardar y Enviar Respuesta ✅
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- INFORME GERENCIAL Y COMERCIAL OFICIAL (PDF & PRINT)      -->
+  <!-- ======================================================== -->
+  <div id="executive-report-print-container" class="executive-print-doc">
+    <!-- Header Corporativo D&N -->
+    <header class="print-doc-header">
+      <div class="print-header-top">
+        <div class="print-brand-wrap">
+          <img src="assets/dn-logo-color.png" alt="dichter & neira" class="print-brand-logo" />
+          <div class="print-brand-meta">
+            <span class="print-brand-slogan">Inteligencia de mercados para marcas de consumo masivo</span>
+            <span class="print-brand-web">www.dichter-neira.com</span>
+          </div>
+        </div>
+        <div class="print-doc-classification">
+          <span class="doc-badge-confidential">🔒 INFORME EJECUTIVO CONFIDENCIAL</span>
+          <span class="doc-meta-item"><strong>Fecha:</strong> <span id="print-meta-date">Agosto 2026</span></span>
+          <span class="doc-meta-item"><strong>Alcance:</strong> <span id="print-meta-scope">Chile, Tradicional, Moderno, Lindley</span></span>
+        </div>
+      </div>
+
+      <div class="print-header-title-bar">
+        <div class="print-title-left">
+          <h1 class="print-doc-title">INFORME GERENCIAL DE CALIDAD, ALERTAS & AUDITORÍA EN PDV</h1>
+          <p class="print-doc-subtitle">Evaluación de Precisión Algorítmica, Falsos Positivos Prevenidos y Garantía de Calidad</p>
+        </div>
+        <div class="print-cert-seal">
+          <span class="seal-icon">🏅</span>
+          <div class="seal-text">
+            <strong>Certificación de Calidad</strong>
+            <span>100% Data Auditada por D&N</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 1. Resumen Ejecutivo (Executive Summary Cards) -->
+    <section class="print-section">
+      <div class="print-section-header">
+        <h2>1. Resumen Ejecutivo & Impacto de Negocio</h2>
+        <span class="print-section-desc">Métricas consolidadas del proceso de validación y control de calidad de auditorías.</span>
+      </div>
+      
+      <div class="print-kpi-row">
+        <div class="print-kpi-card">
+          <span class="print-kpi-num" id="print-kpi-audits">0</span>
+          <span class="print-kpi-lbl">Puntos de Venta (PDVs)</span>
+          <span class="print-kpi-sub">Auditorías Evaluadas</span>
+        </div>
+        <div class="print-kpi-card">
+          <span class="print-kpi-num print-text-magenta" id="print-kpi-false-positives">0</span>
+          <span class="print-kpi-lbl">Falsos Positivos Filtrados</span>
+          <span class="print-kpi-sub">Alertas evitadas al cliente</span>
+        </div>
+        <div class="print-kpi-card">
+          <span class="print-kpi-num print-text-success" id="print-kpi-precision">0%</span>
+          <span class="print-kpi-lbl">Precisión de Algoritmo</span>
+          <span class="print-kpi-sub">Tasa de Efectividad Real</span>
+        </div>
+        <div class="print-kpi-card">
+          <span class="print-kpi-num" id="print-kpi-sla">0s</span>
+          <span class="print-kpi-lbl">SLA Promedio Operativo</span>
+          <span class="print-kpi-sub">Respuesta en &lt; 24 horas</span>
+        </div>
+        <div class="print-kpi-card">
+          <span class="print-kpi-num print-text-blue" id="print-kpi-universe-total">0</span>
+          <span class="print-kpi-lbl">Universo Total Evaluado</span>
+          <span class="print-kpi-sub" id="print-kpi-universe-desc">Auditorías × KPIs</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Desglose del Universo Total de Medición & Tasa de Edición -->
+    <section class="print-section">
+      <div class="print-section-header">
+        <h2>2. Desglose del Universo Total de Medición & Tasa de Edición Humana</h2>
+        <span class="print-section-desc">Cuantificación de todos los KPIs medibles: Conformes directos, Alertas válidas y Alertas editadas/descartadas.</span>
+      </div>
+
+      <div class="print-universe-box">
+        <div class="print-progress-bar">
+          <div class="print-bar-sin-alerta" id="print-bar-sin-alerta" style="width:50%;"></div>
+          <div class="print-bar-aplica" id="print-bar-aplica" style="width:25%;"></div>
+          <div class="print-bar-editada" id="print-bar-editada" style="width:25%;"></div>
+        </div>
+        <div class="print-bar-legend">
+          <span><strong class="print-dot dot-sin-alerta"></strong> Conforme Sin Alerta: <strong id="print-legend-sin-alerta">0 (0%)</strong></span>
+          <span><strong class="print-dot dot-aplica"></strong> Alerta Confirmada (Aplica): <strong id="print-legend-aplica">0 (0%)</strong></span>
+          <span><strong class="print-dot dot-editada"></strong> Alerta Editada (No Aplica): <strong id="print-legend-editada">0 (0%)</strong></span>
+        </div>
+      </div>
+
+      <div class="print-table-wrap" style="margin-top:0.6rem;">
+        <table class="print-data-table">
+          <thead>
+            <tr>
+              <th>Categoría de Medición</th>
+              <th>Total Puntos / KPIs</th>
+              <th>% del Universo Total</th>
+              <th>Interpretación Gerencial</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>✅ Conforme Sin Alerta (OK Origen)</strong></td>
+              <td id="print-tbl-sin-alerta-count">0</td>
+              <td id="print-tbl-sin-alerta-pct">0%</td>
+              <td>Puntos de venta con ejecución perfecta que cumplieron los criterios directos de canal.</td>
+            </tr>
+            <tr>
+              <td><strong>🎯 Alertas Válidas (Marcaba y Aplica)</strong></td>
+              <td id="print-tbl-aplica-count">0</td>
+              <td id="print-tbl-aplica-pct">0%</td>
+              <td>Desviaciones reales detectadas en PDV que requieren planes de acción de trade marketing.</td>
+            </tr>
+            <tr style="background:#FFF0F6;">
+              <td><strong class="print-text-magenta">✏️ Alertas Editadas (Marcaba y No Aplica)</strong></td>
+              <td id="print-tbl-editadas-count" class="print-text-magenta" style="font-weight:bold;">0</td>
+              <td id="print-tbl-editadas-pct" class="print-text-magenta" style="font-weight:bold;">0%</td>
+              <td><strong>Tasa de Edición Humana:</strong> Falsos positivos rectificados por validadores antes de la entrega al cliente.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 3. Benchmark Comparativo por Estudio -->
+    <section class="print-section">
+      <div class="print-section-header">
+        <h2>3. Benchmark Comparativo por Estudio y Canal</h2>
+        <span class="print-section-desc">Comparación de volumen de auditorías, alertas, precisión y tasa de efectividad de ejecución en PDV.</span>
+      </div>
+      <div class="print-table-wrap">
+        <table class="print-data-table">
+          <thead>
+            <tr>
+              <th>Estudio / Canal</th>
+              <th>Auditorías</th>
+              <th>Total Alertas</th>
+              <th>Confirmadas (Aplica)</th>
+              <th>Falsos Positivos Editados</th>
+              <th>% Precisión Alerta</th>
+              <th>Efectividad de Ejecución en PDV</th>
+            </tr>
+          </thead>
+          <tbody id="print-benchmark-tbody">
+            <!-- Dinámico -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 4. Pareto de Variables & Causas Raíz -->
+    <section class="print-section print-two-cols">
+      <div class="print-col">
+        <div class="print-section-header">
+          <h2>4.1 Variables con Mayor Fricción en PDV</h2>
+          <span class="print-section-desc">Ranking de las 5 variables con mayor volumen de alertas.</span>
+        </div>
+        <div class="print-table-wrap">
+          <table class="print-data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Variable / KPI</th>
+                <th>Alertas</th>
+                <th>% Confirmación</th>
+              </tr>
+            </thead>
+            <tbody id="print-top-kpis-tbody">
+              <!-- Dinámico -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="print-col">
+        <div class="print-section-header">
+          <h2>4.2 Diagnóstico de Falsos Positivos</h2>
+          <span class="print-section-desc">Motivos principales por los cuales se editaron/descartaron alertas.</span>
+        </div>
+        <div class="print-table-wrap">
+          <table class="print-data-table">
+            <thead>
+              <tr>
+                <th>Motivo de Descarte / Tipificación</th>
+                <th>Casos</th>
+                <th>% Descarte</th>
+              </tr>
+            </thead>
+            <tbody id="print-reasons-tbody">
+              <!-- Dinámico -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 5. Conclusiones y Plan de Acción -->
+    <section class="print-section">
+      <div class="print-section-header">
+        <h2>5. Conclusiones Directivas & Recomendaciones Comerciales</h2>
+      </div>
+      <div class="print-rec-grid" id="print-recommendations-content">
+        <!-- Dinámico -->
+      </div>
+    </section>
+
+    <!-- Footer Corporativo -->
+    <footer class="print-doc-footer">
+      <div class="print-footer-left">
+        <strong>dichter & neira</strong> • Inteligencia de mercados para marcas de consumo masivo<br/>
+        <span>Portal de Inteligencia Operativa y Control de Calidad ValidaFlow • Realizado por el <strong>Equipo de Reporting</strong></span>
+      </div>
+      <div class="print-footer-right">
+        <span>https://dichter-neira.com</span><br/>
+        <span>Documento emitido con respaldo y validación 100% certificada</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- TOAST NOTIFICATIONS -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Scripts ES Modules -->
+  <script type="module" src="js/app.js?v=21.0"></script>
+</body>
+</html>
