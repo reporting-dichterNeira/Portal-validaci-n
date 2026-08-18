@@ -639,12 +639,17 @@ export class ExcelParser {
 
     const valMap = new Map((validators || []).map(v => [v.id, v]));
     const dayAudits = audits.filter(audit => {
+      // La fecha del reporte es la jornada/base cargada. La fecha en que el
+      // validador terminó puede ser posterior y no debe moverla de jornada.
+      const operationDate = audit._batchOperationDate || audit.fecha || audit.fechaValidacion;
+      if (operationDate) return this.cleanDateOnly(operationDate) === targetDateKey;
+
       if (audit.completedAt) {
         const d = new Date(audit.completedAt);
         const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         return k === targetDateKey;
       }
-      return audit.fecha === targetDateKey || audit.fecha?.replace(/\//g, '-') === targetDateKey;
+      return false;
     });
 
     if (dayAudits.length === 0) {

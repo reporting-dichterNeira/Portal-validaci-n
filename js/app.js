@@ -4,7 +4,7 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, seedSampleValidations } from './sample-data.js?v=21.0';
-import { ExcelParser } from './excel-parser.js?v=21.0';
+import { ExcelParser } from './excel-parser.js?v=22.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=30.0';
 import { SupabaseBackend } from './supabase-backend.js?v=30.0';
@@ -524,7 +524,14 @@ class ValidaFlowApp {
   // ==========================================
   getAuditOperationDate(audit) {
     if (!audit) return 'Sin_Fecha';
-    // Si la auditoría fue validada, la fecha guardada es la fecha en que se validó (sin hora)
+    // La jornada pertenece a la base cargada, aunque la auditoría se complete otro día.
+    if (audit._batchOperationDate) {
+      return ExcelParser.cleanDateOnly(audit._batchOperationDate);
+    }
+    if (audit.fecha) {
+      return ExcelParser.cleanDateOnly(audit.fecha);
+    }
+    // Compatibilidad con registros antiguos que no tenían jornada de carga.
     if (audit.fechaValidacion) {
       return ExcelParser.cleanDateOnly(audit.fechaValidacion);
     }
@@ -533,10 +540,6 @@ class ValidaFlowApp {
       if (!isNaN(d.getTime())) {
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       }
-    }
-    // Si no ha sido validada, usar la fecha de captura/subida limpia (sin hora)
-    if (audit.fecha) {
-      return ExcelParser.cleanDateOnly(audit.fecha);
     }
     return new Date().toISOString().split('T')[0];
   }
@@ -4374,7 +4377,12 @@ class ValidaFlowApp {
           const aStudy = this.getStudyForAudit(a);
           return (aDate === dKey) && (!sKey || aStudy === sKey);
         });
-        ExcelParser.exportSingleDayExcel(matchingAudits.length > 0 ? matchingAudits : auditsToRender, this.validators, `${dKey}_${sKey || ''}`);
+        ExcelParser.exportSingleDayExcel(
+          matchingAudits,
+          this.validators,
+          dKey,
+          `Reporte_Validacion_${dKey}_${sKey || 'Todos'}.xlsx`
+        );
         this.showToast(`Descargando reporte de fecha: ${dKey} (${sKey || 'Todos'})`, 'success');
       });
     });
@@ -4495,7 +4503,12 @@ class ValidaFlowApp {
     const dlBtn = document.getElementById('btn-download-dd-excel');
     if (dlBtn) {
       dlBtn.onclick = () => {
-        ExcelParser.exportSingleDayExcel(dayAudits, this.validators, `${dateKey}_${studyKey || ''}`);
+        ExcelParser.exportSingleDayExcel(
+          dayAudits,
+          this.validators,
+          dateKey,
+          `Reporte_Validacion_${dateKey}_${studyKey || 'Todos'}.xlsx`
+        );
         this.showToast(`Exportando ${dayAudits.length} auditorías de ${dateKey} a Excel.`, 'success');
       };
     }
