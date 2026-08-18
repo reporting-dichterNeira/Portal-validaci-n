@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=26.0" />
+  <link rel="stylesheet" href="css/styles.css?v=28.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -127,6 +127,9 @@
     };
 
     window.enterSupervisorModule = function(moduleKey) {
+      if (window.app?.currentRole === 'supervisor' && window.app.currentScope?.module) {
+        moduleKey = window.app.currentScope.module;
+      }
       window.currentNavState.module = moduleKey;
       window.showView('supervisor-workspace');
       if (window.app) {
@@ -149,26 +152,9 @@
       }
     };
 
-    window.selectModalStudyOption = function(studyName) {
-      document.querySelectorAll('.study-option-card').forEach(function(c) {
-        if (c.dataset.study === studyName) c.classList.add('active');
-        else c.classList.remove('active');
-      });
-      var input = document.getElementById('study-custom-input');
-      if (input) input.value = studyName;
-    };
-
     window.confirmStudyUpload = function() {
-      var activeCard = document.querySelector('.study-option-card.active');
-      var customVal = document.getElementById('study-custom-input')?.value.trim();
-      var selectedStudy = customVal || activeCard?.dataset.study || 'Chile';
-      
-      window.currentNavState.project = selectedStudy;
-      var projEl = document.getElementById('context-project-name');
-      if (projEl) projEl.textContent = selectedStudy;
-
       if (window.app && window.app.confirmStudyUpload) {
-        window.app.confirmStudyUpload(selectedStudy);
+        window.app.confirmStudyUpload();
       } else {
         document.getElementById('modal-select-study')?.classList.add('hidden');
       }
@@ -210,7 +196,7 @@
         if (viewOp) viewOp.classList.remove('hidden');
         if (viewExec) viewExec.classList.add('hidden');
         if (titleEl) titleEl.textContent = 'Métricas Operacionales de Supervisión';
-        if (subtitleEl) subtitleEl.textContent = 'Supervisa el avance operativo diario de validación, tiempos por validador y descargas día a día.';
+        if (subtitleEl) subtitleEl.textContent = 'Consulta todo el histórico de validación, tiempos por validador y descargas día a día.';
       } else {
         if (btnExec) btnExec.classList.add('active');
         if (btnOp) btnOp.classList.remove('active');
@@ -387,11 +373,11 @@
             <div class="portal-card-tag">Acceso Restringido</div>
             <h2 class="portal-card-title">Administrador</h2>
             <p class="portal-card-desc">
-              Gestiona las cuentas de supervisión y define el estudio y país que corresponde a cada supervisor.
+              Gestiona las cuentas de supervisión y define el estudio y tipo de alertas de cada supervisor.
             </p>
             <div class="portal-card-features">
               <div class="feat-item">✓ Creación segura de supervisores</div>
-              <div class="feat-item">✓ Catálogo de estudios y países</div>
+              <div class="feat-item">✓ Estudios y tipo de alertas asignados</div>
               <div class="feat-item">✓ Asignación de alcance por supervisor</div>
             </div>
             <button class="btn btn-navy btn-glow btn-block" id="btn-enter-admin-portal" onclick="event.stopPropagation(); window.app?.handleAdminPortalClick()">
@@ -569,7 +555,7 @@
         </div>
 
         <section class="glass-panel admin-setup-card admin-supervisor-card">
-          <div class="section-header"><div><h2>2. Crear supervisor y asignar estudio</h2><p>El usuario tendrá acceso únicamente al estudio seleccionado.</p></div></div>
+          <div class="section-header"><div><h2>2. Crear supervisor y asignar alcance</h2><p>El usuario tendrá acceso únicamente al estudio y tipo de alertas seleccionados.</p></div></div>
           <div class="admin-form-grid">
             <div class="form-group"><label for="admin-supervisor-name">Nombre</label><input id="admin-supervisor-name" class="form-control" placeholder="Nombre completo" /></div>
             <div class="form-group"><label for="admin-supervisor-username">Usuario</label><input id="admin-supervisor-username" class="form-control" placeholder="supervisor.tradicional" autocomplete="off" /></div>
@@ -577,6 +563,15 @@
               <label for="admin-supervisor-password">Contraseña temporal</label>
               <div class="admin-password-row"><input type="text" id="admin-supervisor-password" class="form-control" autocomplete="new-password" /><button class="btn btn-outline" type="button" onclick="window.app?.generateTemporaryPassword()">Generar</button></div>
               <small class="form-help">Mínimo 12 caracteres con mayúscula, minúscula, número y símbolo.</small>
+            </div>
+            <div class="form-group">
+              <label for="admin-supervisor-module">Tipo de alertas</label>
+              <select id="admin-supervisor-module" class="form-select">
+                <option value="">Selecciona un tipo de alertas</option>
+                <option value="smart">Validación Smart</option>
+                <option value="blocking">Alertas Bloqueantes</option>
+              </select>
+              <small class="form-help">Este será el único módulo visible para el supervisor.</small>
             </div>
           </div>
           <button class="btn btn-navy btn-glow" onclick="window.app?.createAdminSupervisor()">Crear y asignar supervisor</button>
@@ -598,8 +593,8 @@
           <div class="section-header"><div><h2>Supervisores registrados</h2><p>Resumen de usuarios y alcance asignado.</p></div></div>
           <div class="table-responsive">
             <table class="data-table">
-              <thead><tr><th>Nombre</th><th>Usuario</th><th>Estudio</th><th>Estado</th><th>Acciones</th></tr></thead>
-              <tbody id="admin-supervisors-tbody"><tr><td colspan="5" class="text-center text-muted">Cargando...</td></tr></tbody>
+              <thead><tr><th>Nombre</th><th>Usuario</th><th>Estudio</th><th>Tipo de alertas</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody id="admin-supervisors-tbody"><tr><td colspan="6" class="text-center text-muted">Cargando...</td></tr></tbody>
             </table>
           </div>
         </section>
@@ -614,8 +609,8 @@
         <div class="hub-header-row">
           <div>
             <div class="corporate-badge">dichter & neira • Panel de Control de Supervisión</div>
-            <h1 class="hub-title">Selección de Módulo</h1>
-            <p class="hub-subtitle">Selecciona el flujo de trabajo en el que deseas operar:</p>
+            <h1 class="hub-title">Módulo asignado</h1>
+            <p class="hub-subtitle" id="supervisor-hub-assignment">Tu cuenta tiene un único flujo de trabajo asignado.</p>
           </div>
           <div class="hub-user-pill">
             <span class="hub-user-avatar">👤</span>
@@ -629,7 +624,7 @@
         </div>
 
         <!-- 2 Botones Principales: Validación Smart & Alertas Bloqueantes -->
-        <div class="hub-modules-grid hub-modules-grid-large">
+        <div class="hub-modules-grid hub-modules-grid-large" id="supervisor-assigned-module-grid">
           <!-- Módulo 1: Validación Smart -->
           <div class="hub-module-card active-module" id="module-card-smart" data-module="smart" onclick="window.enterSupervisorModule('smart')">
             <div class="module-card-header">
@@ -686,18 +681,13 @@
           <strong class="bread-project" id="context-project-name">Chile</strong>
         </div>
 
-        <div class="context-module-switch-pills" id="supervisor-module-switcher">
-          <button class="context-pill active" id="pill-module-smart" onclick="window.enterSupervisorModule('smart')">
-            <span>🧠⚡</span> Validación Smart
-          </button>
-          <button class="context-pill" id="pill-module-blocking" onclick="window.enterSupervisorModule('blocking')">
-            <span>🚫🚨</span> Alertas Bloqueantes
-          </button>
+        <div class="supervisor-assigned-module-message" id="supervisor-assigned-module-message" role="status">
+          Su usuario fue asignado a Validación Smart.
         </div>
 
         <div class="context-actions">
           <button class="btn btn-outline btn-sm" id="btn-back-to-hub" onclick="window.showView('supervisor-hub')">
-            ⬅ Cambiar Operación / Volver al Menú
+            ⬅ Volver al módulo asignado
           </button>
         </div>
       </div>
@@ -1074,7 +1064,7 @@
           <div>
             <div class="corporate-badge">dichter & neira • Intelligence & Analytics</div>
             <h1 id="reports-view-title">Centro de Métricas y Analítica</h1>
-            <p id="reports-view-subtitle">Supervisa el avance operativo diario de validación o consulta métricas ejecutivas de impacto para comités.</p>
+            <p id="reports-view-subtitle">Consulta todo el histórico acumulado de validación y las métricas ejecutivas para el área comercial.</p>
           </div>
           
           <!-- Selector tipo Toggle / Botones de Sub-Pestaña -->
@@ -1185,8 +1175,8 @@
           <div class="glass-panel validator-history-panel" style="margin-top: 1.75rem;">
             <div class="panel-header validator-history-header">
               <div>
-                <h3><span class="header-icon">🧭</span> Histórico semanal por validador</h3>
-                <p class="panel-desc">Consulta jornadas anteriores aunque ya se haya cargado una base nueva. El resumen se calcula en Supabase sin descargar el detalle completo.</p>
+                <h3><span class="header-icon">🧭</span> Histórico completo por validador</h3>
+                <p class="panel-desc">Incluye todas las jornadas activas y archivadas dentro del periodo seleccionado.</p>
               </div>
               <span class="badge badge-info" id="history-range-badge">Sin consulta</span>
             </div>
@@ -1262,8 +1252,8 @@
           <div class="glass-panel daily-breakdown-panel" style="margin-top: 1.75rem;">
             <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
               <div>
-                <h3><span class="header-icon">🗓️</span> Detalle de la jornada activa</h3>
-                <p class="panel-desc">Consulta y descarga el detalle operativo de la base que está activa actualmente.</p>
+                <h3><span class="header-icon">🗓️</span> Detalle histórico por jornada</h3>
+                <p class="panel-desc">Consulta y descarga cada base diaria, incluyendo jornadas anteriormente archivadas.</p>
               </div>
               <div class="header-right">
                 <span class="badge badge-info" id="daily-stat-days-badge">0 días registrados</span>
@@ -1648,13 +1638,13 @@
     </div>
   </div>
 
-  <!-- MODAL: SELECCIONAR ESTUDIO AL SUBIR EXCEL -->
+  <!-- MODAL: CONFIRMAR CARGA DIARIA AL ESTUDIO ASIGNADO -->
   <div class="modal-overlay hidden" id="modal-select-study">
     <div class="modal-card modal-card-lg">
       <div class="modal-header">
         <div>
-          <span class="corporate-badge-sm">dichter & neira • Asignación de Datos</span>
-          <h3>¿A qué Estudio u Operación corresponde este archivo?</h3>
+          <span class="corporate-badge-sm">dichter & neira • Carga de Datos</span>
+          <h3>Confirmar nueva jornada de auditorías</h3>
         </div>
         <button class="btn-close-modal" id="btn-close-study-modal" onclick="document.getElementById('modal-select-study').classList.add('hidden')">✕</button>
       </div>
@@ -1669,38 +1659,16 @@
         </div>
 
         <p class="modal-desc" style="margin-top:0.45rem;">
-          Selecciona el estudio o canal correspondiente para etiquetar las auditorías, métricas y reportes:
+          El archivo se cargará automáticamente en el estudio asignado a tu usuario de supervisor.
         </p>
 
-        <div class="study-selection-grid">
-          <div class="study-option-card active" data-study="Chile" onclick="window.selectModalStudyOption('Chile')">
-            <span class="study-option-flag">🇨🇱</span>
-            <span class="study-option-name">Chile</span>
-            <span class="study-option-sub">Región Sur</span>
-          </div>
-          <div class="study-option-card" data-study="Tradicional" onclick="window.selectModalStudyOption('Tradicional')">
-            <span class="study-option-flag">🏪</span>
-            <span class="study-option-name">Tradicional</span>
-            <span class="study-option-sub">Tiendas / Bodegas</span>
-          </div>
-          <div class="study-option-card" data-study="Moderno" onclick="window.selectModalStudyOption('Moderno')">
-            <span class="study-option-flag">🏬</span>
-            <span class="study-option-name">Moderno</span>
-            <span class="study-option-sub">Grandes Cadenas</span>
-          </div>
-          <div class="study-option-card" data-study="Lindley" onclick="window.selectModalStudyOption('Lindley')">
-            <span class="study-option-flag">🥤</span>
-            <span class="study-option-name">Lindley</span>
-            <span class="study-option-sub">Arca Continental</span>
-          </div>
+        <div class="assigned-study-upload-card">
+          <span class="assigned-study-upload-label">Estudio asignado</span>
+          <strong id="study-modal-assigned-study">—</strong>
+          <span>Esta asignación solo puede cambiarla un administrador.</span>
         </div>
 
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.85rem; margin-top:0.5rem;">
-          <div class="form-group">
-            <label for="study-custom-input">Estudio / Canal:</label>
-            <input type="text" id="study-custom-input" class="form-control" placeholder="Ej. Stills, Titán, Grocery..." value="Chile" />
-          </div>
-
+        <div style="margin-top:0.85rem;">
           <div class="form-group">
             <label for="study-operation-date">📅 Fecha de la Jornada / Operación:</label>
             <input type="date" id="study-operation-date" class="form-control" />
@@ -2365,6 +2333,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=26.0"></script>
+  <script type="module" src="js/app.js?v=28.0"></script>
 </body>
 </html>

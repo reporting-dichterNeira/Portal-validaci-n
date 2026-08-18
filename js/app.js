@@ -7,9 +7,13 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=21.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=21.0';
-import { SupabaseBackend } from './supabase-backend.js?v=26.0';
+import { SupabaseBackend } from './supabase-backend.js?v=28.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
+const SUPERVISOR_MODULES = {
+  smart: { label: 'Validación Smart', icon: '🧠⚡' },
+  blocking: { label: 'Alertas Bloqueantes', icon: '🚫🚨' }
+};
 
 class ValidaFlowApp {
   constructor() {
@@ -37,6 +41,8 @@ class ValidaFlowApp {
     this.adminData = { countries: [], studies: [], supervisors: [], assignments: [] };
     this.validatorHistoryRows = [];
     this.validatorHistoryLoaded = false;
+    this.auditHistoryByModule = { smart: null, blocking: null };
+    this.auditHistoryLoadPromises = { smart: null, blocking: null };
 
     // Sub-Pestaña activa en Métricas & Reportes: 'operational' | 'executive'
     this.reportsSubtab = 'operational';
@@ -126,6 +132,7 @@ class ValidaFlowApp {
           this.currentProject = this.currentScope.study.name;
           this.selectedStudies = [this.currentProject];
         }
+        if (context.role === 'supervisor') this.applySupervisorModuleAssignment();
         if (context.role === 'validator' && context.validator) {
           this.validatorUI.currentValidator = context.validator;
         }
@@ -186,7 +193,9 @@ class ValidaFlowApp {
   }
 
   enterSupervisorModule(moduleKey) {
-    this.currentModule = moduleKey;
+    const assignedModule = this.currentRole === 'supervisor' ? this.currentScope?.module : null;
+    this.currentModule = assignedModule || moduleKey;
+    moduleKey = this.currentModule;
 
     if (moduleKey === 'blocking') {
       this.audits = this.blockingAudits || [];
@@ -245,7 +254,9 @@ class ValidaFlowApp {
   }
 
   selectModule(moduleKey) {
-    this.currentModule = moduleKey;
+    const assignedModule = this.currentRole === 'supervisor' ? this.currentScope?.module : null;
+    this.currentModule = assignedModule || moduleKey;
+    moduleKey = this.currentModule;
     const cardSmart = document.getElementById('module-card-smart');
     const cardBlocking = document.getElementById('module-card-blocking');
 
@@ -333,6 +344,7 @@ class ValidaFlowApp {
       if (btnAuthText) btnAuthText.textContent = 'Acceso Supervisor';
     } else if (viewName === 'supervisor-hub') {
       hubView?.classList.remove('hidden');
+      this.applySupervisorModuleAssignment();
       if (modeBadge) {
         modeBadge.textContent = 'Supervisor Hub';
         modeBadge.style.background = 'var(--dn-blue)';
@@ -356,17 +368,6 @@ class ValidaFlowApp {
       const projEl = document.getElementById('context-project-name');
       if (modEl) modEl.textContent = this.currentModule === 'smart' ? 'Validación Smart 🧠⚡' : 'Alertas Bloqueantes 🚫🚨';
       if (projEl) projEl.textContent = this.currentProject;
-
-      // Actualizar pills de selector de módulo en la barra
-      const pillSmart = document.getElementById('pill-module-smart');
-      const pillBlocking = document.getElementById('pill-module-blocking');
-      if (this.currentModule === 'blocking') {
-        pillBlocking?.classList.add('active');
-        pillSmart?.classList.remove('active');
-      } else {
-        pillSmart?.classList.add('active');
-        pillBlocking?.classList.remove('active');
-      }
 
       // Asegurar que la pestaña activa esté visible
       const targetTab = this.currentTab || 'admin';
@@ -401,8 +402,8 @@ class ValidaFlowApp {
     const label = document.getElementById('staff-login-user-label');
     if (title) title.textContent = isAdmin ? 'Acceso de Administrador' : 'Acceso de Supervisión';
     if (description) description.textContent = isAdmin
-      ? 'Ingresa las credenciales administrativas para gestionar supervisores, estudios y países.'
-      : 'Ingresa tus credenciales para acceder al estudio y país que tienes asignados.';
+      ? 'Ingresa las credenciales administrativas para gestionar supervisores, estudios y tipos de alertas.'
+      : 'Ingresa tus credenciales para acceder al estudio y módulo que tienes asignados.';
     if (label) label.textContent = isAdmin ? 'Usuario administrador' : 'Usuario supervisor';
     const modal = document.getElementById('modal-supervisor-login');
     modal?.classList.remove('hidden');
@@ -447,6 +448,7 @@ class ValidaFlowApp {
         if (result.profile.role === 'supervisor') {
           this.currentProject = result.scope.study.name;
           this.selectedStudies = [this.currentProject];
+          this.applySupervisorModuleAssignment();
           await this.refreshFromBackend();
           this.startRealtimeSync();
         }
@@ -500,6 +502,8 @@ class ValidaFlowApp {
     this.currentRole = null;
     this.currentProfile = null;
     this.currentScope = null;
+    this.auditHistoryByModule = { smart: null, blocking: null };
+    this.auditHistoryLoadPromises = { smart: null, blocking: null };
     sessionStorage.removeItem('VALIDAFLOW_SUPERVISOR_AUTH');
     this.showView('landing');
     this.showToast(`Has salido de ${roleLabel}. Regresando a la pantalla principal.`, 'info');
@@ -669,17 +673,19 @@ class ValidaFlowApp {
       tbody.innerHTML = supervisors.length ? supervisors.map(supervisor => {
         const assignment = assignmentBySupervisor.get(supervisor.id);
         const study = assignment ? studyById.get(assignment.study_id) : null;
+        const moduleLabel = SUPERVISOR_MODULES[assignment?.module]?.label || 'Validación Smart';
         return `<tr>
           <td><strong>${escapeHtml(supervisor.display_name)}</strong></td>
           <td><code>${escapeHtml(supervisor.username || '—')}</code></td>
           <td>${escapeHtml(study?.name || 'Sin asignar')}</td>
+          <td><span class="badge badge-info">${escapeHtml(moduleLabel)}</span></td>
           <td><span class="badge ${supervisor.is_active ? 'badge-success' : 'badge-warning'}">${supervisor.is_active ? 'Activo' : 'Inactivo'}</span></td>
           <td><div class="admin-supervisor-actions">
             <button class="btn btn-outline btn-sm btn-admin-reset-password" type="button" data-supervisor-id="${supervisor.id}">🔑 Nueva contraseña</button>
             <button class="btn btn-ghost btn-sm text-danger btn-admin-delete-supervisor" type="button" data-supervisor-id="${supervisor.id}">🗑️ Eliminar</button>
           </div></td>
         </tr>`;
-      }).join('') : '<tr><td colspan="5" class="text-center text-muted">Aún no hay supervisores creados.</td></tr>';
+      }).join('') : '<tr><td colspan="6" class="text-center text-muted">Aún no hay supervisores creados.</td></tr>';
       tbody.querySelectorAll('.btn-admin-reset-password').forEach(button => {
         button.addEventListener('click', () => this.resetAdminSupervisorPassword(button.dataset.supervisorId));
       });
@@ -748,6 +754,7 @@ class ValidaFlowApp {
     const displayName = document.getElementById('admin-supervisor-name')?.value.trim() || '';
     const password = document.getElementById('admin-supervisor-password')?.value || '';
     const studyId = document.getElementById('admin-study-catalog')?.value || '';
+    const module = document.getElementById('admin-supervisor-module')?.value || '';
     if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) {
       this.showToast('El usuario debe tener entre 3 y 32 caracteres: letras minúsculas, números, punto, guion o guion bajo.', 'warning');
       return;
@@ -760,25 +767,31 @@ class ValidaFlowApp {
       this.showToast('Selecciona el estudio que tendrá el supervisor.', 'warning');
       return;
     }
+    if (!SUPERVISOR_MODULES[module]) {
+      this.showToast('Selecciona si el supervisor trabajará en Validación Smart o Alertas Bloqueantes.', 'warning');
+      return;
+    }
     if (!this.isStrongSupervisorPassword(password)) {
       this.showToast('La contraseña necesita mínimo 12 caracteres, mayúscula, minúscula, número y símbolo. Puedes usar “Generar”.', 'warning');
       return;
     }
     try {
-      await this.backend.createSupervisor({ username, displayName, password, studyId });
+      await this.backend.createSupervisor({ username, displayName, password, studyId, module });
       ['admin-supervisor-username', 'admin-supervisor-name', 'admin-supervisor-password'].forEach(id => {
         const element = document.getElementById(id);
         if (element) element.value = '';
       });
       await this.loadAdministratorPanel();
       this.showAdminCredential(username, password, 'Supervisor creado · guarda estas credenciales');
-      this.showToast(`Supervisor ${username} creado y asignado correctamente.`, 'success');
+      this.showToast(`Supervisor ${username} asignado a ${SUPERVISOR_MODULES[module].label}.`, 'success');
     } catch (error) {
       const message = String(error.message || '');
       const friendlyMessage = message === 'USERNAME_ALREADY_EXISTS' || /already.*registered|already.*exists/i.test(message)
         ? 'Ese nombre de usuario ya existe. Prueba con uno diferente.'
         : message === 'WEAK_PASSWORD'
           ? 'La contraseña necesita mínimo 12 caracteres, mayúscula, minúscula, número y símbolo.'
+          : message === 'MODULE_REQUIRED'
+            ? 'Selecciona el tipo de alertas que tendrá asignado el supervisor.'
           : message || 'No fue posible crear el supervisor.';
       this.showToast(friendlyMessage, 'error');
     }
@@ -850,6 +863,8 @@ class ValidaFlowApp {
     this.smartAudits = state.smartAudits || [];
     this.blockingAudits = state.blockingAudits || [];
     this.audits = this.currentModule === 'blocking' ? this.blockingAudits : this.smartAudits;
+    this.mergeActiveAuditsIntoHistory('smart', this.smartAudits);
+    this.mergeActiveAuditsIntoHistory('blocking', this.blockingAudits);
     this.saveState();
 
     this.validatorUI?.populateQuickSelect(this.validators);
@@ -871,6 +886,119 @@ class ValidaFlowApp {
         const current = source.find(a => String(a.id) === String(this.validatorUI.currentAuditId));
         if (current) this.validatorUI.renderAuditDetail(current);
       }
+    }
+  }
+
+  applySupervisorModuleAssignment() {
+    if (this.currentRole !== 'supervisor') return;
+    const assignedModule = SUPERVISOR_MODULES[this.currentScope?.module] ? this.currentScope.module : 'smart';
+    const moduleInfo = SUPERVISOR_MODULES[assignedModule];
+    this.currentModule = assignedModule;
+    if (window.currentNavState) window.currentNavState.module = assignedModule;
+
+    const message = `Su usuario fue asignado a ${moduleInfo.label}.`;
+    const contextMessage = document.getElementById('supervisor-assigned-module-message');
+    const hubMessage = document.getElementById('supervisor-hub-assignment');
+    if (contextMessage) contextMessage.textContent = message;
+    if (hubMessage) hubMessage.textContent = `${message} Solo este módulo está habilitado para su cuenta.`;
+
+    const smartCard = document.getElementById('module-card-smart');
+    const blockingCard = document.getElementById('module-card-blocking');
+    smartCard?.classList.toggle('hidden', assignedModule !== 'smart');
+    blockingCard?.classList.toggle('hidden', assignedModule !== 'blocking');
+    document.getElementById('supervisor-assigned-module-grid')?.classList.add('hub-modules-grid-single');
+
+    const historyModuleFilter = document.getElementById('history-module-filter');
+    if (historyModuleFilter) {
+      historyModuleFilter.value = assignedModule;
+      historyModuleFilter.disabled = true;
+      historyModuleFilter.title = `Asignado a ${moduleInfo.label}`;
+    }
+
+    this.selectModule(assignedModule);
+  }
+
+  mergeActiveAuditsIntoHistory(module, activeAudits) {
+    const cached = this.auditHistoryByModule[module];
+    if (!Array.isArray(cached)) return;
+
+    const keyFor = audit => audit._rowId
+      ? `row:${audit._rowId}`
+      : `batch:${audit._batchId || 'active'}:${audit.id}`;
+    const merged = new Map(cached.map(audit => [keyFor(audit), audit]));
+    (activeAudits || []).forEach(audit => merged.set(keyFor(audit), audit));
+    this.auditHistoryByModule[module] = [...merged.values()];
+  }
+
+  getReportAuditSource(module = this.currentModule) {
+    const cached = this.auditHistoryByModule[module];
+    if (Array.isArray(cached)) return cached;
+    return module === 'blocking' ? (this.blockingAudits || []) : (this.smartAudits || []);
+  }
+
+  setHistoricalReportsLoading(isLoading, loadedCount = 0) {
+    const label = document.getElementById('op-filtered-count-label');
+    if (isLoading && label) {
+      label.textContent = loadedCount > 0
+        ? `Cargando histórico completo… ${loadedCount} auditorías`
+        : 'Cargando histórico completo desde Supabase…';
+    }
+    ['btn-export-excel', 'btn-export-multi-sheet', 'btn-export-executive-xlsx',
+      'btn-export-commercial-pdf', 'btn-preview-commercial-report']
+      .forEach(id => {
+        const button = document.getElementById(id);
+        if (button) button.disabled = isLoading;
+      });
+  }
+
+  setHistoryDateRangeFromAudits(audits) {
+    const dates = (audits || [])
+      .map(audit => this.getAuditOperationDate(audit))
+      .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
+      .sort();
+    if (!dates.length) return false;
+
+    const dateFrom = document.getElementById('history-date-from');
+    const dateTo = document.getElementById('history-date-to');
+    const moduleFilter = document.getElementById('history-module-filter');
+    if (dateFrom) dateFrom.value = dates[0];
+    if (dateTo) dateTo.value = dates[dates.length - 1];
+    if (moduleFilter) moduleFilter.value = this.currentModule;
+    return true;
+  }
+
+  async ensureHistoricalReportsLoaded({ force = false } = {}) {
+    if (!this.backend.configured || !this.isSupervisor) return;
+    const module = this.currentModule;
+    if (!force && Array.isArray(this.auditHistoryByModule[module])) return;
+    if (this.auditHistoryLoadPromises[module]) return this.auditHistoryLoadPromises[module];
+
+    this.setHistoricalReportsLoading(true);
+    const loadPromise = this.backend.loadAuditHistory({
+      module,
+      pageSize: 500,
+      onProgress: count => this.setHistoricalReportsLoading(true, count)
+    });
+    this.auditHistoryLoadPromises[module] = loadPromise;
+
+    try {
+      const audits = await loadPromise;
+      this.auditHistoryByModule[module] = audits;
+      if (this.currentModule === module) {
+        this.setHistoryDateRangeFromAudits(audits);
+        this.renderReportsView();
+        this.renderDailyReportsView();
+        this.validatorHistoryLoaded = false;
+        if (audits.length) await this.loadValidatorHistory(true);
+      }
+    } catch (error) {
+      console.error('Error cargando el histórico completo:', error);
+      this.renderReportsView();
+      this.renderDailyReportsView();
+      this.showToast(error.message || 'No fue posible cargar el histórico completo.', 'error');
+    } finally {
+      this.auditHistoryLoadPromises[module] = null;
+      this.setHistoricalReportsLoading(false);
     }
   }
 
@@ -1429,33 +1557,55 @@ class ValidaFlowApp {
     });
   }
 
-  executeLookup(query) {
+  async executeLookup(query) {
     if (!query) {
       this.showToast('Ingresa un ID de Auditoría o de PDV para buscar.', 'warning');
       return;
     }
 
     const cleanQ = query.toLowerCase().trim();
-
-    const match = this.audits.find(a => {
-      return (
-        a.id.toLowerCase() === cleanQ ||
-        (a.idPDV && a.idPDV.toLowerCase() === cleanQ) ||
-        a.id.toLowerCase().includes(cleanQ) ||
-        (a.idPDV && a.idPDV.toLowerCase().includes(cleanQ))
-      );
-    });
-
     const placeholder = document.getElementById('lookup-empty-placeholder');
     const caseFileContainer = document.getElementById('lookup-case-file');
+    const searchButton = document.getElementById('btn-execute-lookup');
+    const previousButtonLabel = searchButton?.textContent;
+    let matches = [];
 
-    if (!match) {
+    if (searchButton) {
+      searchButton.disabled = true;
+      searchButton.textContent = 'Buscando en el histórico…';
+    }
+
+    try {
+      if (this.backend.configured && ['supervisor', 'admin'].includes(this.currentRole)) {
+        matches = await this.backend.searchAuditHistory(query, {
+          module: this.currentModule,
+          limit: 50
+        });
+      } else {
+        matches = this.audits.filter(audit => {
+          const auditId = String(audit.id || '').toLowerCase();
+          const pdvId = String(audit.idPDV || '').toLowerCase();
+          return auditId === cleanQ || pdvId === cleanQ;
+        });
+      }
+    } catch (error) {
+      console.error('Error consultando el histórico de auditorías:', error);
+      this.showToast(error.message || 'No fue posible consultar el histórico.', 'error');
+      return;
+    } finally {
+      if (searchButton) {
+        searchButton.disabled = false;
+        searchButton.textContent = previousButtonLabel || 'Buscar Caso 🔎';
+      }
+    }
+
+    if (!matches.length) {
       if (placeholder) {
         placeholder.classList.remove('hidden');
         placeholder.innerHTML = `
           <div class="lookup-placeholder-icon">❌</div>
-          <h3>No se encontró ninguna auditoría con el criterio: "${query}"</h3>
-          <p>Verifica que el ID de auditoría o de PDV esté escrito correctamente.</p>
+          <h3>No se encontró ninguna auditoría con ese ID</h3>
+          <p>Verifica que el ID de auditoría o de PDV esté escrito exactamente como aparece en la base.</p>
         `;
       }
       if (caseFileContainer) caseFileContainer.classList.add('hidden');
@@ -1466,8 +1616,50 @@ class ValidaFlowApp {
     if (placeholder) placeholder.classList.add('hidden');
     if (caseFileContainer) {
       caseFileContainer.classList.remove('hidden');
-      this.renderCaseFile(match, caseFileContainer);
+      this.renderLookupMatches(matches, caseFileContainer);
     }
+    if (matches.length > 1) {
+      this.showToast(`Se encontraron ${matches.length} jornadas con el ID "${query}".`, 'success');
+    }
+  }
+
+  renderLookupMatches(matches, container) {
+    if (matches.length === 1) {
+      this.renderCaseFile(matches[0], container);
+      return;
+    }
+
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    }[char]));
+    container.innerHTML = `
+      <div class="lookup-history-matches">
+        <div>
+          <strong>${matches.length} registros históricos encontrados</strong>
+          <span>Selecciona la jornada que deseas consultar.</span>
+        </div>
+        <div class="lookup-history-match-list">
+          ${matches.map((audit, index) => `
+            <button type="button" class="lookup-history-match-btn ${index === 0 ? 'active' : ''}" data-match-index="${index}">
+              <strong>${escapeHtml(audit._batchOperationDate || audit.fecha || 'Sin fecha')}</strong>
+              <span>${escapeHtml(audit._batchStatus === 'active' ? 'Base activa' : 'Histórico')} · ${escapeHtml(audit._validatorName || audit.assignedValidatorId || 'Sin asignar')}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+      <div id="lookup-selected-case"></div>
+    `;
+
+    const detail = container.querySelector('#lookup-selected-case');
+    this.renderCaseFile(matches[0], detail);
+    container.querySelectorAll('.lookup-history-match-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        container.querySelectorAll('.lookup-history-match-btn').forEach(item => item.classList.remove('active'));
+        button.classList.add('active');
+        const audit = matches[Number(button.dataset.matchIndex) || 0];
+        this.renderCaseFile(audit, detail);
+      });
+    });
   }
 
   resetLookupView() {
@@ -1487,7 +1679,10 @@ class ValidaFlowApp {
 
   renderCaseFile(audit, container) {
     const valMap = new Map(this.validators.map(v => [v.id, v]));
-    const validator = valMap.get(audit.assignedValidatorId);
+    const validator = valMap.get(audit.assignedValidatorId) || (audit._validatorName ? {
+      name: audit._validatorName,
+      code: audit._validatorCode || audit.assignedValidatorId || '—'
+    } : null);
 
     const isCompleted = audit.validationStatus === 'completada';
     const statusBadgeClass = isCompleted ? 'decision-aplica' : audit.validationStatus === 'en_progreso' ? 'decision-no-aplica' : 'decision-pendiente';
@@ -1531,6 +1726,7 @@ class ValidaFlowApp {
           </div>
 
           <div class="case-header-badges">
+            <span class="badge badge-info">Jornada: ${audit._batchOperationDate || audit.fecha || 'Sin fecha'}</span>
             <span class="decision-badge ${statusBadgeClass}">${statusText}</span>
           </div>
         </div>
@@ -1644,47 +1840,35 @@ class ValidaFlowApp {
         result
       };
 
-      // Detectar posible estudio por nombre de archivo
-      let defaultStudy = this.currentProject || 'Chile';
-      const fn = file.name.toUpperCase();
-      if (fn.includes('TRADICIONAL')) defaultStudy = 'Tradicional';
-      else if (fn.includes('MODERNO')) defaultStudy = 'Moderno';
-      else if (fn.includes('LINDLEY')) defaultStudy = 'Lindley';
-      else if (fn.includes('CHILE')) defaultStudy = 'Chile';
-
-      this.openSelectStudyModal(file.name, result.audits.length, defaultStudy);
+      this.openSelectStudyModal(file.name, result.audits.length);
     } catch (err) {
       console.error(err);
       this.showToast('Error al leer el archivo: ' + err.message, 'error');
     }
   }
 
-  openSelectStudyModal(fileName, auditCount, defaultStudy = 'Chile', detectedDate = null) {
+  openSelectStudyModal(fileName, auditCount, detectedDate = null) {
     const modal = document.getElementById('modal-select-study');
     const fnEl = document.getElementById('study-modal-filename');
     const countEl = document.getElementById('study-modal-rows-count');
-    const inputEl = document.getElementById('study-custom-input');
+    const assignedStudyEl = document.getElementById('study-modal-assigned-study');
     const dateEl = document.getElementById('study-operation-date');
 
     if (fnEl) fnEl.textContent = fileName;
     if (countEl) countEl.textContent = `${auditCount} auditorías detectadas listas para importar`;
-    const assignedStudy = this.currentScope?.study?.name || defaultStudy;
-    if (inputEl) {
-      inputEl.value = assignedStudy;
-      inputEl.readOnly = Boolean(this.currentScope?.study);
-    }
+    const assignedStudy = this.currentScope?.study?.name || this.currentProject || 'Sin estudio asignado';
+    if (assignedStudyEl) assignedStudyEl.textContent = assignedStudy;
 
     const todayStr = new Date().toISOString().split('T')[0];
     if (dateEl) {
       dateEl.value = detectedDate || todayStr;
     }
 
-    window.selectModalStudyOption?.(assignedStudy);
     modal?.classList.remove('hidden');
   }
 
-  async confirmStudyUpload(selectedStudy) {
-    const studyName = this.currentScope?.study?.name || selectedStudy || document.getElementById('study-custom-input')?.value.trim() || this.currentProject || 'Chile';
+  async confirmStudyUpload() {
+    const studyName = this.currentScope?.study?.name || this.currentProject || 'Chile';
     const opDate = document.getElementById('study-operation-date')?.value || new Date().toISOString().split('T')[0];
     const modal = document.getElementById('modal-select-study');
     modal?.classList.add('hidden');
@@ -1736,6 +1920,8 @@ class ValidaFlowApp {
           fileName: this.pendingUpload.fileName,
           validators: this.validators
         });
+        this.auditHistoryByModule[this.currentModule] = null;
+        this.validatorHistoryLoaded = false;
         this.pendingUpload = null;
         await this.refreshFromBackend();
         this.showToast(`¡${result.audits.length} auditorías guardadas como una nueva jornada para ${studyName} (${opDate})!`, 'success');
@@ -2390,7 +2576,7 @@ class ValidaFlowApp {
       viewExec?.classList.add('hidden');
 
       if (titleEl) titleEl.textContent = 'Métricas Operacionales de Supervisión';
-      if (subtitleEl) subtitleEl.textContent = 'Supervisa el avance operativo diario de validación, tiempos por validador y descargas día a día.';
+      if (subtitleEl) subtitleEl.textContent = 'Consulta todo el histórico de validación, tiempos por validador y descargas día a día.';
       this.renderReportsView();
     });
 
@@ -2414,12 +2600,14 @@ class ValidaFlowApp {
     document.getElementById('btn-filter-select-all')?.addEventListener('click', () => {
       this.selectedStudies = ['ALL'];
       this.renderReportsView();
+      this.renderDailyReportsView();
       this.showToast('Mostrando datos de todos los estudios.', 'info');
     });
 
     document.getElementById('btn-filter-select-current')?.addEventListener('click', () => {
       this.selectedStudies = [this.currentProject];
       this.renderReportsView();
+      this.renderDailyReportsView();
       this.showToast(`Filtrando métricas por: ${this.currentProject}`, 'info');
     });
   }
@@ -2427,6 +2615,7 @@ class ValidaFlowApp {
   populateStudyPills() {
     const container = document.getElementById('study-pills-container');
     if (!container) return;
+    const reportAudits = this.getReportAuditSource();
 
     // Los 4 Estudios Oficiales
     const officialStudies = [
@@ -2441,12 +2630,12 @@ class ValidaFlowApp {
     let html = `
       <div class="study-filter-pill ${isAllSelected ? 'active' : ''}" data-study="ALL">
         <span>🌐 Todos los Estudios</span>
-        <span class="pill-count-badge">${this.audits.length}</span>
+        <span class="pill-count-badge">${reportAudits.length}</span>
       </div>
     `;
 
     officialStudies.forEach(studyItem => {
-      const matchCount = this.audits.filter(a => this.getStudyForAudit(a) === studyItem.key).length;
+      const matchCount = reportAudits.filter(a => this.getStudyForAudit(a) === studyItem.key).length;
       const isSel = !isAllSelected && this.selectedStudies.some(s => s.toUpperCase() === studyItem.key.toUpperCase());
 
       html += `
@@ -2485,6 +2674,7 @@ class ValidaFlowApp {
         }
 
         this.renderReportsView();
+        this.renderDailyReportsView();
       });
     });
   }
@@ -2503,11 +2693,12 @@ class ValidaFlowApp {
   }
 
   getFilteredAuditsForReports() {
+    const reportAudits = this.getReportAuditSource();
     if (this.selectedStudies.includes('ALL') || this.selectedStudies.length === 0) {
-      return this.audits;
+      return reportAudits;
     }
 
-    return this.audits.filter(a => {
+    return reportAudits.filter(a => {
       const studyOfAudit = this.getStudyForAudit(a);
       return this.selectedStudies.some(s => s.toUpperCase() === studyOfAudit.toUpperCase());
     });
@@ -2519,6 +2710,7 @@ class ValidaFlowApp {
   renderReportsView() {
     this.populateStudyPills();
 
+    const reportAudits = this.getReportAuditSource();
     const filteredAudits = this.getFilteredAuditsForReports();
     const studyLabel = this.selectedStudies.includes('ALL') 
       ? 'Todos los Estudios (Consolidado)' 
@@ -2527,7 +2719,7 @@ class ValidaFlowApp {
     // 1. Actualizar etiquetas de contexto de filtro
     const opCountLabel = document.getElementById('op-filtered-count-label');
     if (opCountLabel) {
-      opCountLabel.textContent = `Mostrando ${filteredAudits.length} de ${this.audits.length} auditorías [${studyLabel}]`;
+      opCountLabel.textContent = `Histórico completo: ${filteredAudits.length} de ${reportAudits.length} auditorías [${studyLabel}]`;
     }
 
     const execStudyLabel = document.getElementById('exec-study-selected-label');
@@ -3191,6 +3383,7 @@ class ValidaFlowApp {
   // NAVEGACIÓN DE PESTAÑAS DE SUPERVISIÓN
   // ==========================================
   switchSupervisorTab(targetTab) {
+    this.currentTab = targetTab;
     const tabBtns = document.querySelectorAll('#supervisor-nav-tabs .nav-tab-btn');
     const tabPanes = document.querySelectorAll('#private-supervisor-view .tab-content-pane');
 
@@ -3212,6 +3405,8 @@ class ValidaFlowApp {
 
     if (targetTab === 'reports') {
       this.renderReportsView();
+      this.renderDailyReportsView();
+      this.ensureHistoricalReportsLoaded();
     } else if (targetTab === 'admin') {
       this.renderAdminView();
     } else if (targetTab === 'lookup') {
@@ -3647,7 +3842,7 @@ class ValidaFlowApp {
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
   }
 
-  async loadValidatorHistory() {
+  async loadValidatorHistory(silent = false) {
     if (!this.backend.configured || !this.isSupervisor) {
       this.showToast('El histórico en la nube está disponible para supervisores autenticados.', 'warning');
       return;
@@ -3666,8 +3861,8 @@ class ValidaFlowApp {
     }
 
     const rangeDays = Math.floor((toDate - fromDate) / 86400000);
-    if (rangeDays > 366) {
-      this.showToast('Para cuidar el rendimiento, consulta periodos de máximo 366 días.', 'warning');
+    if (rangeDays > 3650) {
+      this.showToast('Selecciona un periodo de máximo 10 años.', 'warning');
       return;
     }
 
@@ -3688,7 +3883,7 @@ class ValidaFlowApp {
       this.validatorHistoryLoaded = true;
       this.populateHistoryValidatorFilter();
       this.renderValidatorHistory(dateFrom, dateTo);
-      this.showToast(`Histórico consultado: ${dateFrom} a ${dateTo}.`, 'success');
+      if (!silent) this.showToast(`Histórico consultado: ${dateFrom} a ${dateTo}.`, 'success');
     } catch (error) {
       console.error('Error consultando el histórico:', error);
       this.showToast(error.message || 'No fue posible consultar el histórico.', 'error');
@@ -3896,7 +4091,11 @@ class ValidaFlowApp {
 
       if (audit.assignedValidatorId) {
         if (!group.validatorsMap[audit.assignedValidatorId]) {
-          const valObj = valMap.get(audit.assignedValidatorId) || { id: audit.assignedValidatorId, code: 'VAL-?', name: 'Validador' };
+          const valObj = valMap.get(audit.assignedValidatorId) || {
+            id: audit.assignedValidatorId,
+            code: audit._validatorCode || 'VAL-?',
+            name: audit._validatorName || 'Validador'
+          };
           group.validatorsMap[audit.assignedValidatorId] = { val: valObj, total: 0, completed: 0 };
         }
         group.validatorsMap[audit.assignedValidatorId].total++;
@@ -4108,7 +4307,7 @@ class ValidaFlowApp {
     if (subtitleEl) subtitleEl.textContent = `Seguimiento de auditorías, validadores y avance de la operación.`;
 
     // Obtener auditorías del día usando getAuditOperationDate
-    const dayAudits = this.audits.filter(a => {
+    const dayAudits = this.getReportAuditSource().filter(a => {
       const aDate = this.getAuditOperationDate(a);
       const aStudy = this.getStudyForAudit(a);
       const dateMatch = aDate === dateKey || dateKey === 'Sin_Fecha';
@@ -4333,7 +4532,7 @@ class ValidaFlowApp {
       viewOp?.classList.remove('hidden');
       viewExec?.classList.add('hidden');
       if (titleEl) titleEl.textContent = 'Métricas Operacionales de Supervisión';
-      if (subtitleEl) subtitleEl.textContent = 'Supervisa el avance operativo diario de validación, tiempos por validador y descargas día a día.';
+      if (subtitleEl) subtitleEl.textContent = 'Consulta todo el histórico de validación, tiempos por validador y descargas día a día.';
     } else {
       btnExec?.classList.add('active');
       btnOp?.classList.remove('active');
@@ -4348,12 +4547,14 @@ class ValidaFlowApp {
   setAllStudiesFilter() {
     this.selectedStudies = ['ALL'];
     this.renderReportsView();
+    this.renderDailyReportsView();
     this.showToast('Mostrando datos de todos los estudios.', 'info');
   }
 
   setCurrentProjectFilter() {
     this.selectedStudies = [this.currentProject];
     this.renderReportsView();
+    this.renderDailyReportsView();
     this.showToast(`Filtrando métricas por: ${this.currentProject}`, 'info');
   }
 

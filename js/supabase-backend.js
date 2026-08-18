@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
-import { SUPABASE_CONFIG } from './supabase-config.js?v=26.0';
+import { SUPABASE_CONFIG } from './supabase-config.js?v=27.0';
 
 const CONFIGURED = Boolean(
   SUPABASE_CONFIG.url &&
@@ -33,6 +33,13 @@ function mapValidator(row) {
 
 function mapAudit(row) {
   const payload = row.payload && typeof row.payload === 'object' ? row.payload : {};
+  const batch = Array.isArray(row.upload_batches)
+    ? (row.upload_batches[0] || {})
+    : (row.upload_batches || {});
+  const validator = Array.isArray(row.validators)
+    ? (row.validators[0] || {})
+    : (row.validators || {});
+  const operationDate = row.batch_operation_date || batch.operation_date || null;
   return {
     ...payload,
     id: row.external_id,
@@ -40,7 +47,7 @@ function mapAudit(row) {
     assignedValidatorId: row.assigned_validator_id,
     validationStatus: row.status,
     validationResults: row.validation_results || {},
-    fecha: row.audit_date || payload.fecha || '',
+    fecha: operationDate || row.audit_date || payload.fecha || '',
     fechaValidacion: row.validation_date || '',
     startedAt: row.started_at,
     completedAt: row.completed_at,
@@ -50,7 +57,12 @@ function mapAudit(row) {
     _module: row.module,
     _studyId: row.study_id || null,
     _countryId: row.country_id || null,
-    _updatedAt: row.updated_at
+    _updatedAt: row.updated_at,
+    _batchOperationDate: operationDate,
+    _batchStatus: row.batch_status || batch.status || null,
+    _batchSourceFilename: row.batch_source_filename || batch.source_filename || '',
+    _validatorCode: row.validator_code || validator.code || '',
+    _validatorName: row.validator_name || validator.name || ''
   };
 }
 
@@ -166,7 +178,7 @@ export class SupabaseBackend {
     this.currentScope = profile.role === 'supervisor' ? await this.getMyAssignment() : null;
     if (profile.role === 'supervisor' && !this.currentScope) {
       await this.client.auth.signOut({ scope: 'local' });
-      throw new Error('El supervisor aún no tiene un estudio y país asignados.');
+      throw new Error('El supervisor aún no tiene un estudio y módulo asignados.');
     }
     return { profile, scope: this.currentScope };
   }
@@ -179,12 +191,13 @@ export class SupabaseBackend {
     this.ensureConfigured();
     const { data, error } = await this.client
       .from('supervisor_assignments')
-      .select('id, study_id, country_id, studies(id, name), countries(id, code, name)')
+      .select('id, study_id, country_id, module, studies(id, name), countries(id, code, name)')
       .maybeSingle();
     if (error) throw error;
     if (!data) return null;
     return {
       id: data.id,
+      module: data.module,
       study: Array.isArray(data.studies) ? data.studies[0] : data.studies,
       country: Array.isArray(data.countries) ? data.countries[0] : data.countries
     };
@@ -406,12 +419,66 @@ export class SupabaseBackend {
     }));
   }
 
+  async loadAuditHistory({ module = null, pageSize = 500, onProgress = null } = {}) {
+    this.ensureConfigured();
+    const safePageSize = Math.min(Math.max(Number(pageSize) || 500, 100), 1000);
+    const rows = [];
+    let cursor = 0;
+
+    while (true) {
+      let request = this.client
+        .from('audits')
+        .select(`
+          id, batch_id, module, external_id, study, study_id, country_id,
+          assigned_validator_id, status, audit_date, validation_date, payload,
+          validation_results, started_at, completed_at, duration_seconds,
+          created_at, updated_at,
+          upload_batches!inner(operation_date, status, source_filename),
+          validators(code, name)
+        `)
+        .in('upload_batches.status', ['active', 'archived'])
+        .gt('id', cursor);
+
+      if (module) request = request.eq('module', module);
+      if (this.currentScope?.study?.id) request = request.eq('study_id', this.currentScope.study.id);
+      if (this.currentScope?.country?.id) request = request.eq('country_id', this.currentScope.country.id);
+      request = request.order('id', { ascending: true }).limit(safePageSize);
+
+      const { data, error } = await request;
+      if (error) throw error;
+
+      const page = data || [];
+      rows.push(...page);
+      if (typeof onProgress === 'function') onProgress(rows.length);
+      if (page.length < safePageSize) break;
+
+      cursor = Number(page[page.length - 1].id || 0);
+      if (!cursor) break;
+    }
+
+    return rows.map(mapAudit);
+  }
+
+  async searchAuditHistory(query, { module = null, limit = 25 } = {}) {
+    this.ensureConfigured();
+    const cleanQuery = String(query || '').trim();
+    if (!cleanQuery) return [];
+
+    const { data, error } = await this.client.rpc('search_audit_history', {
+      p_query: cleanQuery,
+      p_module: module || null,
+      p_limit: Math.min(Math.max(Number(limit) || 25, 1), 50)
+    });
+    if (error) throw error;
+    return (data || []).map(mapAudit);
+  }
+
   async loadAdministration() {
     this.ensureConfigured();
     const [studies, profiles, assignments] = await Promise.all([
       this.client.from('studies').select('id, name, description, is_active').order('name'),
       this.client.from('profiles').select('id, username, display_name, role, is_active').eq('role', 'supervisor').order('display_name'),
-      this.client.from('supervisor_assignments').select('id, supervisor_id, study_id, country_id').order('created_at')
+      this.client.from('supervisor_assignments').select('id, supervisor_id, study_id, country_id, module').order('created_at')
     ]);
     const failed = [studies, profiles, assignments].find(result => result.error);
     if (failed?.error) throw failed.error;
@@ -422,8 +489,8 @@ export class SupabaseBackend {
     };
   }
 
-  async createSupervisor({ username, displayName, password, studyId }) {
-    return this.manageSupervisor({ action: 'create', username, displayName, password, studyId });
+  async createSupervisor({ username, displayName, password, studyId, module }) {
+    return this.manageSupervisor({ action: 'create', username, displayName, password, studyId, module });
   }
 
   async resetSupervisorPassword({ supervisorId, password }) {

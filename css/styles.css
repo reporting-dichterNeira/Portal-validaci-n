@@ -1406,6 +1406,34 @@ a {
   font-size: 1.4rem;
 }
 
+.assigned-study-upload-card {
+  display: grid;
+  gap: 0.3rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid rgba(13, 92, 171, 0.28);
+  border-left: 4px solid var(--dn-blue);
+  border-radius: var(--radius-md);
+  background: var(--dn-blue-light);
+}
+
+.assigned-study-upload-card strong {
+  color: var(--dn-navy);
+  font-size: 1.2rem;
+}
+
+.assigned-study-upload-card > span:last-child {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.assigned-study-upload-label {
+  color: var(--dn-blue);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .study-selection-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -2399,6 +2427,58 @@ a {
   font-size: 3.5rem;
   margin-bottom: 1rem;
   opacity: 0.7;
+}
+
+.lookup-history-matches {
+  display: grid;
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+}
+
+.lookup-history-matches > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.lookup-history-matches > div:first-child span {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.lookup-history-match-list {
+  display: flex;
+  gap: 0.65rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+
+.lookup-history-match-btn {
+  min-width: 190px;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-elevated);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.lookup-history-match-btn span {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.lookup-history-match-btn:hover,
+.lookup-history-match-btn.active {
+  border-color: var(--dn-blue);
+  box-shadow: 0 0 0 2px rgba(13, 92, 171, 0.12);
 }
 
 /* Case File / Ficha Técnica */
@@ -6124,6 +6204,32 @@ body.dark-theme {
   .validator-history-filters {
     grid-template-columns: 1fr;
   }
+}
+
+/* A supervisor has one fixed operational module assigned by Administration. */
+.supervisor-assigned-module-message {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  padding: 0.65rem 1rem;
+  border: 1px solid rgba(20, 91, 170, 0.2);
+  border-radius: 999px;
+  background: rgba(224, 239, 255, 0.72);
+  color: var(--dn-navy);
+  font-weight: 700;
+  text-align: center;
+}
+
+.hub-modules-grid-single {
+  grid-template-columns: minmax(280px, 720px) !important;
+  justify-content: center;
+}
+
+[data-theme="dark"] .supervisor-assigned-module-message {
+  border-color: rgba(102, 178, 255, 0.35);
+  background: rgba(20, 91, 170, 0.2);
+  color: #EAF4FF;
 }
 
 

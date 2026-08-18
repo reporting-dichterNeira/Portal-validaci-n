@@ -8,6 +8,7 @@ const corsHeaders = {
 };
 
 const allowedStudyNames = new Set(['tradicional', 'moderno', 'chile', 'lindley']);
+const allowedModules = new Set(['smart', 'blocking']);
 const internalCountryCode = 'GLB';
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -96,6 +97,7 @@ Deno.serve(async (req) => {
   const username = String(body.username ?? '').trim().toLowerCase();
   const displayName = String(body.displayName ?? '').trim();
   const studyId = String(body.studyId ?? '').trim();
+  const module = String(body.module ?? '').trim().toLowerCase();
 
   if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) {
     return json({ error: 'INVALID_USERNAME' }, 400);
@@ -103,6 +105,7 @@ Deno.serve(async (req) => {
   if (displayName.length < 3) return json({ error: 'INVALID_DISPLAY_NAME' }, 400);
   if (!isStrongPassword(password)) return json({ error: 'WEAK_PASSWORD' }, 400);
   if (!studyId) return json({ error: 'STUDY_REQUIRED' }, 400);
+  if (!allowedModules.has(module)) return json({ error: 'MODULE_REQUIRED' }, 400);
 
   const [{ data: study, error: studyError }, { data: internalCountry, error: countryError }] = await Promise.all([
     adminClient.from('studies').select('id, name').eq('id', studyId).eq('is_active', true).maybeSingle(),
@@ -146,6 +149,7 @@ Deno.serve(async (req) => {
     supervisor_id: userId,
     study_id: studyId,
     country_id: internalCountry.id,
+    module,
     created_by: userData.user.id,
   });
 
@@ -156,6 +160,6 @@ Deno.serve(async (req) => {
   }
 
   return json({
-    supervisor: { id: userId, username, displayName, studyId },
+    supervisor: { id: userId, username, displayName, studyId, module },
   }, 201);
 });
