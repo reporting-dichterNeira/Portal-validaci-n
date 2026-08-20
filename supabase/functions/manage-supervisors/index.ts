@@ -96,7 +96,8 @@ Deno.serve(async (req) => {
 
   const username = String(body.username ?? '').trim().toLowerCase();
   const displayName = String(body.displayName ?? '').trim();
-  const studyId = String(body.studyId ?? '').trim();
+  const rawStudyIds = Array.isArray(body.studyIds) ? body.studyIds : [body.studyId];
+  const studyIds = [...new Set(rawStudyIds.map(value => String(value ?? '').trim()).filter(Boolean))];
   const module = String(body.module ?? '').trim().toLowerCase();
 
   if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) {
@@ -104,14 +105,19 @@ Deno.serve(async (req) => {
   }
   if (displayName.length < 3) return json({ error: 'INVALID_DISPLAY_NAME' }, 400);
   if (!isStrongPassword(password)) return json({ error: 'WEAK_PASSWORD' }, 400);
-  if (!studyId) return json({ error: 'STUDY_REQUIRED' }, 400);
+  if (studyIds.length < 1 || studyIds.length > 4 || studyIds.some(id => !uuidPattern.test(id))) {
+    return json({ error: 'STUDY_REQUIRED' }, 400);
+  }
   if (!allowedModules.has(module)) return json({ error: 'MODULE_REQUIRED' }, 400);
 
-  const [{ data: study, error: studyError }, { data: internalCountry, error: countryError }] = await Promise.all([
-    adminClient.from('studies').select('id, name').eq('id', studyId).eq('is_active', true).maybeSingle(),
+  const [{ data: studies, error: studyError }, { data: internalCountry, error: countryError }] = await Promise.all([
+    adminClient.from('studies').select('id, name').in('id', studyIds).eq('is_active', true),
     adminClient.from('countries').select('id').eq('code', internalCountryCode).eq('is_active', true).maybeSingle(),
   ]);
-  if (studyError || !study || !allowedStudyNames.has(String(study.name).toLowerCase())) {
+  if (studyError
+    || !studies
+    || studies.length !== studyIds.length
+    || studies.some(study => !allowedStudyNames.has(String(study.name).toLowerCase()))) {
     return json({ error: 'INVALID_STUDY' }, 400);
   }
   if (countryError || !internalCountry) {
@@ -145,13 +151,14 @@ Deno.serve(async (req) => {
     return json({ error: 'CREATE_PROFILE_FAILED', detail: profileError.message }, 409);
   }
 
-  const { error: assignmentError } = await adminClient.from('supervisor_assignments').insert({
+  const assignments = studyIds.map(studyId => ({
     supervisor_id: userId,
     study_id: studyId,
     country_id: internalCountry.id,
     module,
     created_by: userData.user.id,
-  });
+  }));
+  const { error: assignmentError } = await adminClient.from('supervisor_assignments').insert(assignments);
 
   if (assignmentError) {
     await adminClient.from('profiles').delete().eq('id', userId);
@@ -160,6 +167,6 @@ Deno.serve(async (req) => {
   }
 
   return json({
-    supervisor: { id: userId, username, displayName, studyId, module },
+    supervisor: { id: userId, username, displayName, studyIds, module },
   }, 201);
 });

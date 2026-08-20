@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=22.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=30.0';
-import { SupabaseBackend } from './supabase-backend.js?v=30.0';
+import { SupabaseBackend } from './supabase-backend.js?v=31.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
 const SUPERVISOR_MODULES = {
@@ -37,6 +37,7 @@ class ValidaFlowApp {
     this.currentRole = null;
     this.currentProfile = null;
     this.currentScope = null;
+    this.currentAssignments = [];
     this.pendingStaffRole = 'supervisor';
     this.adminData = { countries: [], studies: [], supervisors: [], assignments: [] };
     this.validatorHistoryRows = [];
@@ -126,17 +127,26 @@ class ValidaFlowApp {
         const context = await this.backend.getSessionContext();
         this.currentRole = context.role;
         this.currentProfile = context.profile || null;
-        this.currentScope = context.scope || null;
+        this.currentAssignments = context.assignments || [];
+        this.currentScope = null;
         this.isSupervisor = context.role === 'supervisor';
+        if (context.role === 'supervisor') {
+          const savedAssignmentId = sessionStorage.getItem('VALIDAFLOW_SELECTED_ASSIGNMENT');
+          this.currentScope = savedAssignmentId
+            ? this.backend.selectAssignment(savedAssignmentId)
+            : null;
+        } else {
+          this.currentScope = context.scope || null;
+        }
         if (this.currentScope?.study?.name) {
           this.currentProject = this.currentScope.study.name;
           this.selectedStudies = [this.currentProject];
         }
-        if (context.role === 'supervisor') this.applySupervisorModuleAssignment();
+        if (context.role === 'supervisor' && this.currentScope) this.applySupervisorModuleAssignment();
         if (context.role === 'validator' && context.validator) {
           this.validatorUI.currentValidator = context.validator;
         }
-        if (context.role) {
+        if (context.role && (context.role !== 'supervisor' || this.currentScope)) {
           await this.refreshFromBackend();
           this.startRealtimeSync();
         }
@@ -193,6 +203,11 @@ class ValidaFlowApp {
   }
 
   enterSupervisorModule(moduleKey) {
+    if (this.currentRole === 'supervisor' && !this.currentScope) {
+      this.showView('supervisor-hub');
+      this.showToast('Selecciona primero el estudio con el que vas a trabajar.', 'warning');
+      return;
+    }
     const assignedModule = this.currentRole === 'supervisor' ? this.currentScope?.module : null;
     this.currentModule = assignedModule || moduleKey;
     moduleKey = this.currentModule;
@@ -270,6 +285,11 @@ class ValidaFlowApp {
   }
 
   enterProject(projectName) {
+    if (this.currentRole === 'supervisor') {
+      const assignment = this.currentAssignments.find(item => item.study?.name === projectName);
+      if (assignment) this.selectSupervisorStudy(assignment.id);
+      return;
+    }
     this.currentProject = projectName;
     this.selectedStudies = [projectName];
     this.showView('supervisor-workspace');
@@ -344,7 +364,7 @@ class ValidaFlowApp {
       if (btnAuthText) btnAuthText.textContent = 'Acceso Supervisor';
     } else if (viewName === 'supervisor-hub') {
       hubView?.classList.remove('hidden');
-      this.applySupervisorModuleAssignment();
+      this.renderSupervisorStudySelector();
       if (modeBadge) {
         modeBadge.textContent = 'Supervisor Hub';
         modeBadge.style.background = 'var(--dn-blue)';
@@ -444,13 +464,11 @@ class ValidaFlowApp {
         const result = await this.backend.signInStaff(email, password, this.pendingStaffRole);
         this.currentRole = result.profile.role;
         this.currentProfile = result.profile;
-        this.currentScope = result.scope;
+        this.currentAssignments = result.assignments || [];
+        this.currentScope = null;
+        sessionStorage.removeItem('VALIDAFLOW_SELECTED_ASSIGNMENT');
         if (result.profile.role === 'supervisor') {
-          this.currentProject = result.scope.study.name;
-          this.selectedStudies = [this.currentProject];
-          this.applySupervisorModuleAssignment();
-          await this.refreshFromBackend();
-          this.startRealtimeSync();
+          this.renderSupervisorStudySelector();
         }
       } else {
         throw new Error('Supabase aún no está configurado para este portal.');
@@ -502,9 +520,11 @@ class ValidaFlowApp {
     this.currentRole = null;
     this.currentProfile = null;
     this.currentScope = null;
+    this.currentAssignments = [];
     this.auditHistoryByModule = { smart: null, blocking: null };
     this.auditHistoryLoadPromises = { smart: null, blocking: null };
     sessionStorage.removeItem('VALIDAFLOW_SUPERVISOR_AUTH');
+    sessionStorage.removeItem('VALIDAFLOW_SELECTED_ASSIGNMENT');
     this.showView('landing');
     this.showToast(`Has salido de ${roleLabel}. Regresando a la pantalla principal.`, 'info');
   }
@@ -663,26 +683,49 @@ class ValidaFlowApp {
     setText('admin-count-studies', ADMIN_STUDY_NAMES.length);
 
     const studySelect = document.getElementById('admin-study-catalog');
+    const checkedStudyIds = new Set(
+      [...(studySelect?.querySelectorAll('input[type="checkbox"]:checked') || [])]
+        .map(input => input.value)
+    );
     const studyByName = new Map(studies.map(item => [String(item.name).toLowerCase(), item]));
     const allowedStudies = ADMIN_STUDY_NAMES
       .map(name => studyByName.get(name.toLowerCase()))
       .filter(item => item?.is_active);
-    if (studySelect) studySelect.innerHTML = '<option value="">Selecciona un estudio</option>' +
-      allowedStudies.map(item => `<option value="${item.id}">${escapeHtml(item.name)}</option>`).join('');
+    if (studySelect) {
+      const studyIcons = { Tradicional: '🏪', Moderno: '🏬', Chile: '🇨🇱', Lindley: '🥤' };
+      studySelect.innerHTML = allowedStudies.map(item => `
+        <label class="admin-study-check-option">
+          <input type="checkbox" value="${item.id}" ${checkedStudyIds.has(item.id) ? 'checked' : ''} />
+          <span class="admin-study-check-icon">${studyIcons[item.name] || '📚'}</span>
+          <span><strong>${escapeHtml(item.name)}</strong><small>Asignar este estudio</small></span>
+        </label>
+      `).join('');
+    }
 
     const studyById = new Map(studies.map(item => [item.id, item]));
-    const assignmentBySupervisor = new Map(assignments.map(item => [item.supervisor_id, item]));
+    const assignmentsBySupervisor = new Map();
+    assignments.forEach(item => {
+      if (!assignmentsBySupervisor.has(item.supervisor_id)) assignmentsBySupervisor.set(item.supervisor_id, []);
+      assignmentsBySupervisor.get(item.supervisor_id).push(item);
+    });
     const tbody = document.getElementById('admin-supervisors-tbody');
     if (tbody) {
       tbody.innerHTML = supervisors.length ? supervisors.map(supervisor => {
-        const assignment = assignmentBySupervisor.get(supervisor.id);
-        const study = assignment ? studyById.get(assignment.study_id) : null;
-        const moduleLabel = SUPERVISOR_MODULES[assignment?.module]?.label || 'Validación Smart';
+        const supervisorAssignments = assignmentsBySupervisor.get(supervisor.id) || [];
+        const studiesHtml = supervisorAssignments.length
+          ? supervisorAssignments.map(assignment => {
+              const study = studyById.get(assignment.study_id);
+              return `<span class="badge badge-secondary">${escapeHtml(study?.name || 'Sin asignar')}</span>`;
+            }).join(' ')
+          : 'Sin asignar';
+        const moduleLabels = [...new Set(supervisorAssignments.map(assignment =>
+          SUPERVISOR_MODULES[assignment.module]?.label || 'Validación Smart'
+        ))];
         return `<tr>
           <td><strong>${escapeHtml(supervisor.display_name)}</strong></td>
           <td><code>${escapeHtml(supervisor.username || '—')}</code></td>
-          <td>${escapeHtml(study?.name || 'Sin asignar')}</td>
-          <td><span class="badge badge-info">${escapeHtml(moduleLabel)}</span></td>
+          <td><div class="admin-study-badges">${studiesHtml}</div></td>
+          <td>${moduleLabels.map(label => `<span class="badge badge-info">${escapeHtml(label)}</span>`).join(' ') || '—'}</td>
           <td><span class="badge ${supervisor.is_active ? 'badge-success' : 'badge-warning'}">${supervisor.is_active ? 'Activo' : 'Inactivo'}</span></td>
           <td><div class="admin-supervisor-actions">
             <button class="btn btn-outline btn-sm btn-admin-reset-password" type="button" data-supervisor-id="${supervisor.id}">🔑 Nueva contraseña</button>
@@ -757,7 +800,8 @@ class ValidaFlowApp {
     const username = document.getElementById('admin-supervisor-username')?.value.trim().toLowerCase() || '';
     const displayName = document.getElementById('admin-supervisor-name')?.value.trim() || '';
     const password = document.getElementById('admin-supervisor-password')?.value || '';
-    const studyId = document.getElementById('admin-study-catalog')?.value || '';
+    const studyIds = [...document.querySelectorAll('#admin-study-catalog input[type="checkbox"]:checked')]
+      .map(input => input.value);
     const module = document.getElementById('admin-supervisor-module')?.value || '';
     if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) {
       this.showToast('El usuario debe tener entre 3 y 32 caracteres: letras minúsculas, números, punto, guion o guion bajo.', 'warning');
@@ -767,8 +811,8 @@ class ValidaFlowApp {
       this.showToast('El nombre debe tener al menos 3 caracteres.', 'warning');
       return;
     }
-    if (!studyId) {
-      this.showToast('Selecciona el estudio que tendrá el supervisor.', 'warning');
+    if (!studyIds.length) {
+      this.showToast('Selecciona al menos un estudio para el supervisor.', 'warning');
       return;
     }
     if (!SUPERVISOR_MODULES[module]) {
@@ -780,14 +824,16 @@ class ValidaFlowApp {
       return;
     }
     try {
-      await this.backend.createSupervisor({ username, displayName, password, studyId, module });
+      await this.backend.createSupervisor({ username, displayName, password, studyIds, module });
       ['admin-supervisor-username', 'admin-supervisor-name', 'admin-supervisor-password'].forEach(id => {
         const element = document.getElementById(id);
         if (element) element.value = '';
       });
+      document.querySelectorAll('#admin-study-catalog input[type="checkbox"]')
+        .forEach(input => { input.checked = false; });
       await this.loadAdministratorPanel();
       this.showAdminCredential(username, password, 'Supervisor creado · guarda estas credenciales');
-      this.showToast(`Supervisor ${username} asignado a ${SUPERVISOR_MODULES[module].label}.`, 'success');
+      this.showToast(`Supervisor ${username} creado con ${studyIds.length} estudio${studyIds.length !== 1 ? 's' : ''} y ${SUPERVISOR_MODULES[module].label}.`, 'success');
     } catch (error) {
       const message = String(error.message || '');
       const friendlyMessage = message === 'USERNAME_ALREADY_EXISTS' || /already.*registered|already.*exists/i.test(message)
@@ -960,24 +1006,122 @@ class ValidaFlowApp {
     }
   }
 
-  applySupervisorModuleAssignment() {
+  renderSupervisorStudySelector() {
     if (this.currentRole !== 'supervisor') return;
+    const assignments = this.currentAssignments || [];
+    const grid = document.getElementById('supervisor-study-grid');
+    const title = document.getElementById('supervisor-hub-title');
+    const message = document.getElementById('supervisor-hub-assignment');
+    const userName = document.getElementById('supervisor-hub-user-name');
+    if (title) title.textContent = 'Selecciona tu estudio';
+    if (userName) userName.textContent = this.currentProfile?.display_name || 'Supervisor d&n';
+    if (message) {
+      message.textContent = assignments.length
+        ? `Tienes ${assignments.length} estudio${assignments.length !== 1 ? 's' : ''} asignado${assignments.length !== 1 ? 's' : ''}. ¿Con cuál vas a trabajar hoy?`
+        : 'Tu usuario todavía no tiene estudios asignados.';
+    }
+    if (!grid) return;
+
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[char]);
+    const studyInfo = {
+      Tradicional: { icon: '🏪', description: 'Tiendas, bodegas y canal tradicional' },
+      Moderno: { icon: '🏬', description: 'Grandes cadenas y canal moderno' },
+      Chile: { icon: '🇨🇱', description: 'Operación correspondiente a Chile' },
+      Lindley: { icon: '🥤', description: 'Operación Lindley / Arca Continental' }
+    };
+
+    if (!assignments.length) {
+      grid.innerHTML = '<div class="history-empty-state"><span>📚</span><p>Solicita al administrador que asigne al menos un estudio a tu usuario.</p></div>';
+      return;
+    }
+
+    grid.innerHTML = assignments.map(assignment => {
+      const studyName = assignment.study?.name || 'Estudio';
+      const info = studyInfo[studyName] || { icon: '📚', description: 'Estudio asignado' };
+      const moduleInfo = SUPERVISOR_MODULES[assignment.module] || SUPERVISOR_MODULES.smart;
+      const selected = this.currentScope?.id === assignment.id;
+      return `
+        <article class="hub-module-card supervisor-study-card ${selected ? 'active-module' : ''}" data-assignment-id="${assignment.id}">
+          <div class="module-card-header">
+            <div class="module-icon-wrap icon-blue">${info.icon}</div>
+            <div>
+              <div class="module-tag">Estudio asignado</div>
+              <h2 class="module-title">${escapeHtml(studyName)}</h2>
+            </div>
+          </div>
+          <p class="module-desc">${escapeHtml(info.description)}</p>
+          <div class="module-status-bar"><span class="status-indicator-dot dot-green"></span>${moduleInfo.icon} ${escapeHtml(moduleInfo.label)}</div>
+          <div class="module-action-footer">
+            <button class="btn btn-primary btn-glow btn-block btn-select-supervisor-study" type="button" data-assignment-id="${assignment.id}">
+              Trabajar hoy en ${escapeHtml(studyName)} →
+            </button>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    grid.querySelectorAll('.btn-select-supervisor-study').forEach(button => {
+      button.addEventListener('click', () => this.selectSupervisorStudy(button.dataset.assignmentId));
+    });
+  }
+
+  async selectSupervisorStudy(assignmentId) {
+    if (this.currentRole !== 'supervisor') return;
+    const assignment = this.backend.selectAssignment(assignmentId);
+    if (!assignment) {
+      this.showToast('Ese estudio no está asignado a tu usuario.', 'error');
+      return;
+    }
+
+    this.currentScope = assignment;
+    this.currentProject = assignment.study.name;
+    this.currentModule = assignment.module;
+    this.selectedStudies = [this.currentProject];
+    sessionStorage.setItem('VALIDAFLOW_SELECTED_ASSIGNMENT', assignment.id);
+    if (window.currentNavState) {
+      window.currentNavState.project = this.currentProject;
+      window.currentNavState.module = this.currentModule;
+    }
+
+    this.validators = [];
+    this.smartAudits = [];
+    this.blockingAudits = [];
+    this.audits = [];
+    this.auditHistoryByModule = { smart: null, blocking: null };
+    this.auditHistoryLoadPromises = { smart: null, blocking: null };
+    this.validatorHistoryRows = [];
+    this.validatorHistoryLoaded = false;
+
+    const grid = document.getElementById('supervisor-study-grid');
+    grid?.querySelectorAll('button').forEach(button => { button.disabled = true; });
+    this.showToast(`Cargando el estudio ${this.currentProject}...`, 'info');
+    try {
+      this.applySupervisorModuleAssignment();
+      await this.refreshFromBackend();
+      this.startRealtimeSync();
+      this.enterSupervisorModule(this.currentModule);
+      this.showToast(`Ahora trabajas en ${this.currentProject}. Sus validadores y auditorías están separados de los demás estudios.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible abrir el estudio seleccionado.', 'error');
+      this.showView('supervisor-hub');
+    }
+  }
+
+  applySupervisorModuleAssignment() {
+    if (this.currentRole !== 'supervisor' || !this.currentScope) return;
     const assignedModule = SUPERVISOR_MODULES[this.currentScope?.module] ? this.currentScope.module : 'smart';
     const moduleInfo = SUPERVISOR_MODULES[assignedModule];
     this.currentModule = assignedModule;
     if (window.currentNavState) window.currentNavState.module = assignedModule;
 
-    const message = `Su usuario fue asignado a ${moduleInfo.label}.`;
+    const studyName = this.currentScope.study?.name || this.currentProject;
+    const message = `Trabajando en ${studyName} · ${moduleInfo.label}.`;
     const contextMessage = document.getElementById('supervisor-assigned-module-message');
     const hubMessage = document.getElementById('supervisor-hub-assignment');
     if (contextMessage) contextMessage.textContent = message;
-    if (hubMessage) hubMessage.textContent = `${message} Solo este módulo está habilitado para su cuenta.`;
-
-    const smartCard = document.getElementById('module-card-smart');
-    const blockingCard = document.getElementById('module-card-blocking');
-    smartCard?.classList.toggle('hidden', assignedModule !== 'smart');
-    blockingCard?.classList.toggle('hidden', assignedModule !== 'blocking');
-    document.getElementById('supervisor-assigned-module-grid')?.classList.add('hub-modules-grid-single');
+    if (hubMessage) hubMessage.textContent = `${message} Puedes cambiar de estudio cuando lo necesites.`;
 
     const historyModuleFilter = document.getElementById('history-module-filter');
     if (historyModuleFilter) {
@@ -2309,7 +2453,7 @@ class ValidaFlowApp {
   getValidatorsForCurrentProject() {
     const cur = (this.currentProject || 'Chile').toUpperCase();
     const filtered = this.validators.filter(v => v.estudio && v.estudio.toUpperCase() === cur);
-    return filtered.length > 0 ? filtered : this.validators;
+    return filtered.length > 0 ? filtered : (this.isSupervisor ? [] : this.validators);
   }
 
   getAuditsForCurrentProject() {

@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=30.0" />
+  <link rel="stylesheet" href="css/styles.css?v=31.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -373,7 +373,7 @@
             <div class="portal-card-tag">Acceso Restringido</div>
             <h2 class="portal-card-title">Administrador</h2>
             <p class="portal-card-desc">
-              Gestiona las cuentas de supervisión y define el estudio y tipo de alertas de cada supervisor.
+              Gestiona las cuentas de supervisión y define los estudios y el tipo de alertas de cada supervisor.
             </p>
             <div class="portal-card-features">
               <div class="feat-item">✓ Creación segura de supervisores</div>
@@ -525,7 +525,7 @@
           <div>
             <div class="corporate-badge">dichter & neira • Administración de ValidaFlow</div>
             <h1 class="hub-title">Administrador</h1>
-            <p class="hub-subtitle">Crea supervisores y asigna el estudio que cada uno puede gestionar.</p>
+            <p class="hub-subtitle">Crea supervisores y asigna uno o varios estudios a cada usuario.</p>
           </div>
           <div class="hub-user-pill">
             <span class="hub-user-avatar">⚙️</span>
@@ -544,18 +544,19 @@
 
         <div class="admin-setup-grid">
           <section class="glass-panel admin-setup-card">
-            <div class="section-header"><div><h2>1. Seleccionar estudio</h2><p>Elige el estudio que deseas asignar al próximo supervisor.</p></div></div>
+            <div class="section-header"><div><h2>1. Seleccionar estudios</h2><p>Marca todos los estudios que deseas asignar al próximo supervisor.</p></div></div>
             <div class="form-group">
-              <label for="admin-study-catalog">Estudio</label>
-              <select id="admin-study-catalog" class="form-select">
-                <option value="">Selecciona un estudio</option>
-              </select>
+              <span class="form-label">Estudios</span>
+              <div id="admin-study-catalog" class="admin-study-checklist" role="group" aria-label="Estudios asignados">
+                <span class="text-muted">Cargando estudios...</span>
+              </div>
+              <small class="form-help">Puedes seleccionar Tradicional, Moderno, Chile y Lindley simultáneamente.</small>
             </div>
           </section>
         </div>
 
         <section class="glass-panel admin-setup-card admin-supervisor-card">
-          <div class="section-header"><div><h2>2. Crear supervisor y asignar alcance</h2><p>El usuario tendrá acceso únicamente al estudio y tipo de alertas seleccionados.</p></div></div>
+          <div class="section-header"><div><h2>2. Crear supervisor y asignar alcance</h2><p>El usuario podrá alternar únicamente entre los estudios seleccionados y conservará un tipo de alertas asignado.</p></div></div>
           <div class="admin-form-grid">
             <div class="form-group"><label for="admin-supervisor-name">Nombre</label><input id="admin-supervisor-name" class="form-control" placeholder="Nombre completo" /></div>
             <div class="form-group"><label for="admin-supervisor-username">Usuario</label><input id="admin-supervisor-username" class="form-control" placeholder="supervisor.tradicional" autocomplete="off" /></div>
@@ -620,59 +621,22 @@
         <div class="hub-header-row">
           <div>
             <div class="corporate-badge">dichter & neira • Panel de Control de Supervisión</div>
-            <h1 class="hub-title">Módulo asignado</h1>
-            <p class="hub-subtitle" id="supervisor-hub-assignment">Tu cuenta tiene un único flujo de trabajo asignado.</p>
+            <h1 class="hub-title" id="supervisor-hub-title">Selecciona tu estudio</h1>
+            <p class="hub-subtitle" id="supervisor-hub-assignment">Consultando los estudios asignados a tu usuario...</p>
           </div>
           <div class="hub-user-pill">
             <span class="hub-user-avatar">👤</span>
             <div class="hub-user-meta">
               <span class="hub-user-role">Sesión Activa</span>
-              <strong class="hub-user-name">Supervisor d&n</strong>
+              <strong class="hub-user-name" id="supervisor-hub-user-name">Supervisor d&n</strong>
             </div>
             <button class="btn btn-ghost btn-sm" id="btn-back-to-landing-from-hub" onclick="window.showView('landing')">⬅ Inicio</button>
             <button class="btn btn-outline btn-sm" id="btn-logout-from-hub" onclick="window.app?.logoutSupervisor()">Cerrar Sesión 🚪</button>
           </div>
         </div>
 
-        <!-- 2 Botones Principales: Validación Smart & Alertas Bloqueantes -->
-        <div class="hub-modules-grid hub-modules-grid-large" id="supervisor-assigned-module-grid">
-          <!-- Módulo 1: Validación Smart -->
-          <div class="hub-module-card active-module" id="module-card-smart" data-module="smart" onclick="window.enterSupervisorModule('smart')">
-            <div class="module-card-header">
-              <div class="module-icon-wrap icon-blue">🧠⚡</div>
-              <div>
-                <div class="module-tag">Flujo Regular</div>
-                <h2 class="module-title">Validación Smart</h2>
-              </div>
-            </div>
-            <p class="module-desc">
-              Flujo de auditorías con reparto equitativo entre validadores, cronómetro de tiempos, control de calidad y reportería consolidada.
-            </p>
-            <div class="module-action-footer">
-              <button class="btn btn-primary btn-glow btn-block" onclick="event.stopPropagation(); window.enterSupervisorModule('smart')">
-                Ingresar a Validación Smart 🚀
-              </button>
-            </div>
-          </div>
-
-          <!-- Módulo 2: Alertas Bloqueantes -->
-          <div class="hub-module-card" id="module-card-blocking" data-module="blocking" onclick="window.enterSupervisorModule('blocking')">
-            <div class="module-card-header">
-              <div class="module-icon-wrap icon-magenta">🚫🚨</div>
-              <div>
-                <div class="module-tag">Módulo Crítico</div>
-                <h2 class="module-title">Alertas Bloqueantes</h2>
-              </div>
-            </div>
-            <p class="module-desc">
-              Resolución y calificación de alertas críticas por filas agrupadas por ID de auditoría con variaciones y criterios de negocio.
-            </p>
-            <div class="module-action-footer">
-              <button class="btn btn-navy btn-glow btn-block" onclick="event.stopPropagation(); window.enterSupervisorModule('blocking')">
-                Ingresar a Alertas Bloqueantes 🚀
-              </button>
-            </div>
-          </div>
+        <div class="hub-modules-grid hub-modules-grid-large supervisor-study-grid" id="supervisor-study-grid" aria-live="polite">
+          <div class="history-empty-state"><span>📚</span><p>Cargando estudios asignados...</p></div>
         </div>
       </div>
     </div>
@@ -698,7 +662,7 @@
 
         <div class="context-actions">
           <button class="btn btn-outline btn-sm" id="btn-back-to-hub" onclick="window.showView('supervisor-hub')">
-            ⬅ Volver al módulo asignado
+            🔄 Cambiar de estudio
           </button>
         </div>
       </div>
@@ -2365,6 +2329,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=31.0"></script>
+  <script type="module" src="js/app.js?v=32.0"></script>
 </body>
 </html>

@@ -113,6 +113,7 @@ export class SupabaseBackend {
       : null;
     this.channel = null;
     this.currentScope = null;
+    this.currentAssignments = [];
   }
 
   ensureConfigured() {
@@ -134,8 +135,16 @@ export class SupabaseBackend {
       .maybeSingle();
 
     if (profile?.is_active && (profile.role === 'supervisor' || profile.role === 'admin')) {
-      this.currentScope = profile.role === 'supervisor' ? await this.getMyAssignment() : null;
-      return { role: profile.role, profile, scope: this.currentScope, validator: null, session };
+      this.currentAssignments = profile.role === 'supervisor' ? await this.getMyAssignments() : [];
+      this.currentScope = null;
+      return {
+        role: profile.role,
+        profile,
+        assignments: this.currentAssignments,
+        scope: null,
+        validator: null,
+        session
+      };
     }
 
     const { data: validators, error: validatorError } = await this.client
@@ -175,32 +184,38 @@ export class SupabaseBackend {
       throw new Error('La cuenta no tiene permisos para este portal.');
     }
 
-    this.currentScope = profile.role === 'supervisor' ? await this.getMyAssignment() : null;
-    if (profile.role === 'supervisor' && !this.currentScope) {
+    this.currentAssignments = profile.role === 'supervisor' ? await this.getMyAssignments() : [];
+    this.currentScope = null;
+    if (profile.role === 'supervisor' && !this.currentAssignments.length) {
       await this.client.auth.signOut({ scope: 'local' });
       throw new Error('El supervisor aún no tiene un estudio y módulo asignados.');
     }
-    return { profile, scope: this.currentScope };
+    return { profile, assignments: this.currentAssignments, scope: null };
   }
 
   async signInSupervisor(identifier, password) {
     return this.signInStaff(identifier, password, 'supervisor');
   }
 
-  async getMyAssignment() {
+  async getMyAssignments() {
     this.ensureConfigured();
     const { data, error } = await this.client
       .from('supervisor_assignments')
       .select('id, study_id, country_id, module, studies(id, name), countries(id, code, name)')
-      .maybeSingle();
+      .order('created_at', { ascending: true });
     if (error) throw error;
-    if (!data) return null;
-    return {
-      id: data.id,
-      module: data.module,
-      study: Array.isArray(data.studies) ? data.studies[0] : data.studies,
-      country: Array.isArray(data.countries) ? data.countries[0] : data.countries
-    };
+    return (data || []).map(item => ({
+      id: item.id,
+      module: item.module,
+      study: Array.isArray(item.studies) ? item.studies[0] : item.studies,
+      country: Array.isArray(item.countries) ? item.countries[0] : item.countries
+    })).filter(item => item.study && item.country);
+  }
+
+  selectAssignment(assignmentId) {
+    const assignment = this.currentAssignments.find(item => item.id === assignmentId) || null;
+    this.currentScope = assignment;
+    return assignment;
   }
 
   async signInValidator(code) {
@@ -227,16 +242,31 @@ export class SupabaseBackend {
     if (!this.configured) return;
     this.unsubscribe();
     this.currentScope = null;
+    this.currentAssignments = [];
     const { error } = await this.client.auth.signOut({ scope: 'local' });
     if (error) throw error;
   }
 
   async loadState() {
     this.ensureConfigured();
-    const [validatorsResult, batchesResult] = await Promise.all([
-      this.client.from('validators').select('id, code, name, email, study, study_id, country_id').eq('is_active', true).order('name'),
-      this.client.from('upload_batches').select('id').eq('status', 'active')
-    ]);
+    let validatorsRequest = this.client
+      .from('validators')
+      .select('id, code, name, email, study, study_id, country_id')
+      .eq('is_active', true)
+      .order('name');
+    let batchesRequest = this.client.from('upload_batches').select('id').eq('status', 'active');
+
+    if (this.currentScope?.study?.id) {
+      validatorsRequest = validatorsRequest
+        .eq('study_id', this.currentScope.study.id)
+        .eq('country_id', this.currentScope.country.id);
+      batchesRequest = batchesRequest
+        .eq('study_id', this.currentScope.study.id)
+        .eq('country_id', this.currentScope.country.id)
+        .eq('module', this.currentScope.module);
+    }
+
+    const [validatorsResult, batchesResult] = await Promise.all([validatorsRequest, batchesRequest]);
 
     if (validatorsResult.error) throw validatorsResult.error;
     if (batchesResult.error) throw batchesResult.error;
@@ -318,6 +348,7 @@ export class SupabaseBackend {
     await this.upsertValidators(validators || []);
 
     const { data: created, error: createError } = await this.client.rpc('create_upload_batch', {
+      p_study_id: this.currentScope?.study?.id || null,
       p_module: module,
       p_operation_date: cleanDate(operationDate),
       p_source_filename: String(fileName || ''),
@@ -387,6 +418,7 @@ export class SupabaseBackend {
   async deleteAudits(module, study = null) {
     this.ensureConfigured();
     const { error } = await this.client.rpc('archive_active_batches', {
+      p_study_id: this.currentScope?.study?.id || null,
       p_module: module
     });
     if (error) throw error;
@@ -398,7 +430,8 @@ export class SupabaseBackend {
       p_date_from: cleanDate(dateFrom),
       p_date_to: cleanDate(dateTo),
       p_module: module || null,
-      p_validator_id: validatorId || null
+      p_validator_id: validatorId || null,
+      p_study_id: this.currentScope?.study?.id || null
     });
     if (error) throw error;
     return (data || []).map(row => ({
@@ -476,7 +509,8 @@ export class SupabaseBackend {
     const { data, error } = await this.client.rpc('search_audit_history', {
       p_query: cleanQuery,
       p_module: module || null,
-      p_limit: Math.min(Math.max(Number(limit) || 25, 1), 50)
+      p_limit: Math.min(Math.max(Number(limit) || 25, 1), 50),
+      p_study_id: this.currentScope?.study?.id || null
     });
     if (error) throw error;
     return (data || []).map(mapAudit);
@@ -498,8 +532,8 @@ export class SupabaseBackend {
     };
   }
 
-  async createSupervisor({ username, displayName, password, studyId, module }) {
-    return this.manageSupervisor({ action: 'create', username, displayName, password, studyId, module });
+  async createSupervisor({ username, displayName, password, studyIds, module }) {
+    return this.manageSupervisor({ action: 'create', username, displayName, password, studyIds, module });
   }
 
   async resetSupervisorPassword({ supervisorId, password }) {
