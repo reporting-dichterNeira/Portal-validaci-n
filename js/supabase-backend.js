@@ -452,6 +452,15 @@ export class SupabaseBackend {
     }));
   }
 
+  async loadMyValidatorProductivity({ dateFrom, dateTo }) {
+    return this.loadValidatorHistory({
+      dateFrom,
+      dateTo,
+      module: null,
+      validatorId: null
+    });
+  }
+
   async purgeAllAuditData() {
     this.ensureConfigured();
     const { data, error } = await this.client.rpc('purge_all_audit_data', {
