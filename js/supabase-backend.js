@@ -27,7 +27,8 @@ function mapValidator(row) {
     email: row.email || '',
     estudio: row.study,
     studyId: row.study_id || null,
-    countryId: row.country_id || null
+    countryId: row.country_id || null,
+    isActive: row.is_active !== false
   };
 }
 
@@ -251,8 +252,8 @@ export class SupabaseBackend {
     this.ensureConfigured();
     let validatorsRequest = this.client
       .from('validators')
-      .select('id, code, name, email, study, study_id, country_id')
-      .eq('is_active', true)
+      .select('id, code, name, email, study, study_id, country_id, is_active')
+      .order('is_active', { ascending: false })
       .order('name');
     let batchesRequest = this.client.from('upload_batches').select('id').eq('status', 'active');
 
@@ -308,7 +309,7 @@ export class SupabaseBackend {
       study: v.estudio,
       study_id: this.currentScope?.study?.id || v.studyId || null,
       country_id: this.currentScope?.country?.id || v.countryId || null,
-      is_active: true
+      is_active: v.isActive !== false
     }));
     const { error } = await this.client.from('validators').upsert(rows, { onConflict: 'id' });
     if (error) throw error;
@@ -413,6 +414,18 @@ export class SupabaseBackend {
     this.ensureConfigured();
     const { error } = await this.client.from('validators').update({ is_active: false }).eq('id', id);
     if (error) throw error;
+  }
+
+  async setValidatorActive(id, isActive) {
+    this.ensureConfigured();
+    const { data, error } = await this.client
+      .from('validators')
+      .update({ is_active: Boolean(isActive) })
+      .eq('id', id)
+      .select('id, code, name, email, study, study_id, country_id, is_active')
+      .single();
+    if (error) throw error;
+    return mapValidator(data);
   }
 
   async deleteAudits(module, study = null) {
@@ -532,7 +545,7 @@ export class SupabaseBackend {
       this.client.from('studies').select('id, name, description, is_active').order('name'),
       this.client.from('profiles').select('id, username, display_name, role, is_active').eq('role', 'supervisor').order('display_name'),
       this.client.from('supervisor_assignments').select('id, supervisor_id, study_id, country_id, module').order('created_at'),
-      this.client.from('validators').select('id, code, name, study, study_id, is_active').eq('is_active', true).order('name'),
+      this.client.from('validators').select('id, code, name, study, study_id, is_active').order('is_active', { ascending: false }).order('name'),
       this.client
         .from('upload_batches')
         .select('id, study_id, module, operation_date, source_filename, row_count, status, created_by, created_at, activated_at')
