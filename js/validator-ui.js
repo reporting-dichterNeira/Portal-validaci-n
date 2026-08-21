@@ -11,6 +11,7 @@ export class ValidatorUI {
     this.filterStatus = 'all'; // 'all' | 'pending' | 'completed'
     this.searchQuery = '';
     this.productivityRows = [];
+    this.currentAuditNeedsSave = false;
 
     this.initElements();
     this.bindEvents();
@@ -125,6 +126,7 @@ export class ValidatorUI {
 
     // Reset selección
     this.currentAuditId = null;
+    this.currentAuditNeedsSave = false;
     this.updateProgressHeader();
     this.renderAuditList();
     await this.loadProductivity();
@@ -151,6 +153,7 @@ export class ValidatorUI {
     }
     this.currentValidator = null;
     this.currentAuditId = null;
+    this.currentAuditNeedsSave = false;
     this.validatorCodeInput.value = '';
     this.loginSection.classList.remove('hidden');
     this.portalSection.classList.add('hidden');
@@ -163,6 +166,9 @@ export class ValidatorUI {
   }
 
   switchModule(moduleKey) {
+    if (moduleKey === this.currentModule) return;
+    if (!this.canLeaveCurrentAudit()) return;
+
     this.currentModule = moduleKey;
 
     const pillSmart = document.getElementById('val-pill-smart');
@@ -176,6 +182,7 @@ export class ValidatorUI {
     }
 
     this.currentAuditId = null;
+    this.currentAuditNeedsSave = false;
     this.updateProgressHeader();
     this.renderAuditList();
 
@@ -360,7 +367,26 @@ export class ValidatorUI {
     });
   }
 
+  canLeaveCurrentAudit(targetAuditId = null) {
+    const isChangingAudit = !targetAuditId || String(targetAuditId) !== String(this.currentAuditId);
+    if (!this.currentAuditId || !this.currentAuditNeedsSave || !isChangingAudit) return true;
+
+    this.app.showToast(
+      `Guarda la Auditoría #${this.currentAuditId} como borrador o termínala antes de abrir otra.`,
+      'warning'
+    );
+    return false;
+  }
+
+  markCurrentAuditUnsaved(audit) {
+    if (String(audit?.id) === String(this.currentAuditId)) {
+      this.currentAuditNeedsSave = true;
+    }
+  }
+
   selectAudit(id) {
+    if (!this.canLeaveCurrentAudit(id)) return false;
+
     this.currentAuditId = id;
     const source = this.currentModule === 'blocking'
       ? (this.app.blockingAudits || [])
@@ -372,6 +398,7 @@ export class ValidatorUI {
       audit.validationStatus = 'en_progreso';
       this.app.syncStateAcrossTabs({ audit, module: this.currentModule });
     }
+    this.currentAuditNeedsSave = Boolean(audit && audit.validationStatus !== 'completada');
 
     // Actualizar clase seleccionada en la lista
     this.auditListContainer?.querySelectorAll('.audit-card-item').forEach(card => {
@@ -384,6 +411,7 @@ export class ValidatorUI {
     });
 
     this.renderAuditDetail(audit);
+    return true;
   }
 
   renderAuditDetail(audit) {
@@ -518,6 +546,7 @@ export class ValidatorUI {
             ${isCompleted ? '💾 Actualizar y Siguiente ⏭️' : '✓ Completar y Siguiente ⏭️'}
           </button>
         </div>
+        ${!isCompleted ? '<p class="text-muted" style="width:100%; margin:0.6rem 0 0; font-size:0.82rem;">Para abrir otra auditoría, guarda esta como borrador o termínala.</p>' : ''}
       </div>
 
       <!-- Cuadrícula de Metadatos de la Auditoría -->
@@ -608,6 +637,7 @@ export class ValidatorUI {
         audit.validationResults[kpiName].status = 'aplica';
         audit.validationResults[kpiName].tipificacion = '';
         audit.validationResults[kpiName].updatedAt = new Date().toISOString();
+        this.markCurrentAuditUnsaved(audit);
         this.app.saveState();
       });
 
@@ -630,6 +660,7 @@ export class ValidatorUI {
         audit.validationResults[kpiName].status = 'no_aplica';
         audit.validationResults[kpiName].tipificacion = tipifSelect?.value || '';
         audit.validationResults[kpiName].updatedAt = new Date().toISOString();
+        this.markCurrentAuditUnsaved(audit);
         this.app.saveState();
       });
 
@@ -653,6 +684,7 @@ export class ValidatorUI {
         audit.validationResults[kpiName].dudaText = dudaInput?.value.trim() || '';
         audit.validationResults[kpiName].dudaCreatedAt = audit.validationResults[kpiName].dudaCreatedAt || new Date().toISOString();
         audit.validationResults[kpiName].updatedAt = new Date().toISOString();
+        this.markCurrentAuditUnsaved(audit);
         this.app.saveState();
       });
 
@@ -661,6 +693,7 @@ export class ValidatorUI {
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].tipificacion = e.target.value;
         audit.validationResults[kpiName].updatedAt = new Date().toISOString();
+        this.markCurrentAuditUnsaved(audit);
         this.app.saveState();
       });
 
@@ -669,6 +702,7 @@ export class ValidatorUI {
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].dudaText = e.target.value;
         audit.validationResults[kpiName].updatedAt = new Date().toISOString();
+        this.markCurrentAuditUnsaved(audit);
         this.app.saveState();
       });
 
@@ -677,6 +711,7 @@ export class ValidatorUI {
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].observaciones = e.target.value;
         audit.validationResults[kpiName].updatedAt = new Date().toISOString();
+        this.markCurrentAuditUnsaved(audit);
         this.app.saveState();
       });
     });
@@ -695,6 +730,7 @@ export class ValidatorUI {
           { suppressErrorToast: true }
         );
         this.mergeAuditIntoAppState(audit);
+        this.currentAuditNeedsSave = false;
         this.updateProgressHeader();
         this.renderAuditList();
         this.app.showToast('Borrador guardado correctamente.', 'info');
@@ -872,6 +908,7 @@ export class ValidatorUI {
     }
 
     this.mergeAuditIntoAppState(audit);
+    this.currentAuditNeedsSave = false;
     this.updateProgressHeader();
     this.renderAuditList();
     await this.loadProductivity();
