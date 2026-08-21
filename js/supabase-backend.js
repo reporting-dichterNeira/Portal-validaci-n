@@ -19,6 +19,11 @@ function parseDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
+function isExpiredJwtError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  return /jwt.*expired|expired.*jwt|token.*expired|expired.*token/.test(message);
+}
+
 function mapValidator(row) {
   return {
     id: row.id,
@@ -115,6 +120,9 @@ export class SupabaseBackend {
     this.channel = null;
     this.currentScope = null;
     this.currentAssignments = [];
+    // Kept only in memory for the active validator page. It lets the portal
+    // restore the anonymous validator session if its refresh token expires.
+    this.currentValidatorCode = null;
   }
 
   ensureConfigured() {
@@ -223,19 +231,22 @@ export class SupabaseBackend {
     this.ensureConfigured();
     await this.client.auth.signOut({ scope: 'local' });
 
+    const normalizedCode = String(code || '').trim().toUpperCase();
+
     const { error: authError } = await this.client.auth.signInAnonymously();
     if (authError) {
       throw new Error(`No fue posible iniciar la sesión del validador: ${authError.message}`);
     }
 
     const { data, error } = await this.client.rpc('claim_validator_code', {
-      p_code: String(code || '').trim().toUpperCase()
+      p_code: normalizedCode
     });
 
     if (error || !data?.length) {
       await this.client.auth.signOut({ scope: 'local' });
       throw new Error('Código de validador inválido o inactivo.');
     }
+    this.currentValidatorCode = normalizedCode;
     return mapValidator(data[0]);
   }
 
@@ -389,6 +400,58 @@ export class SupabaseBackend {
     ]);
   }
 
+  async ensureFreshSessionForWrite() {
+    this.ensureConfigured();
+    const { data, error } = await this.client.auth.getSession();
+    if (error) throw error;
+    if (!data.session) {
+      throw new Error('La sesión venció. Tus respuestas siguen en pantalla: vuelve a ingresar con tu código y guarda nuevamente.');
+    }
+
+    // getSession refreshes when needed, but renew a token that is about to
+    // expire before starting the RPC so it cannot expire during the save.
+    const expiresAt = Number(data.session.expires_at || 0) * 1000;
+    if (expiresAt && expiresAt - Date.now() > 60_000) return data.session;
+
+    const { data: refreshed, error: refreshError } = await this.client.auth.refreshSession();
+    if (refreshError || !refreshed.session) {
+      throw new Error('La sesión venció. Tus respuestas siguen en pantalla: vuelve a ingresar con tu código y guarda nuevamente.');
+    }
+    return refreshed.session;
+  }
+
+  async restoreValidatorSession() {
+    if (!this.currentValidatorCode) {
+      throw new Error('La sesión venció. Tus respuestas siguen en pantalla: vuelve a ingresar con tu código y guarda nuevamente.');
+    }
+
+    await this.client.auth.signOut({ scope: 'local' });
+    const { error: authError } = await this.client.auth.signInAnonymously();
+    if (authError) {
+      throw new Error('No fue posible renovar la sesión. Tus respuestas siguen en pantalla: vuelve a ingresar con tu código y guarda nuevamente.');
+    }
+
+    const { data, error } = await this.client.rpc('claim_validator_code', {
+      p_code: this.currentValidatorCode
+    });
+    if (error || !data?.length) {
+      throw new Error('No fue posible restaurar la sesión del validador. Tus respuestas siguen en pantalla: vuelve a ingresar con tu código y guarda nuevamente.');
+    }
+    return mapValidator(data[0]);
+  }
+
+  async requestAuditProgressSave(audit, module, progress) {
+    const request = audit._rowId
+      ? this.client.rpc('save_audit_progress_v2', { p_audit_id: audit._rowId, ...progress })
+      : this.client.rpc('save_audit_progress', {
+          p_module: module,
+          p_external_id: String(audit.id),
+          ...progress
+        });
+    const { error } = await request;
+    if (error) throw error;
+  }
+
   async saveAuditProgress(audit, module) {
     this.ensureConfigured();
     const progress = {
@@ -399,15 +462,19 @@ export class SupabaseBackend {
       p_duration_seconds: Number.isFinite(audit.durationSeconds) ? audit.durationSeconds : null,
       p_validation_date: cleanDate(audit.fechaValidacion)
     };
-    const request = audit._rowId
-      ? this.client.rpc('save_audit_progress_v2', { p_audit_id: audit._rowId, ...progress })
-      : this.client.rpc('save_audit_progress', {
-          p_module: module,
-          p_external_id: String(audit.id),
-          ...progress
-        });
-    const { error } = await request;
-    if (error) throw error;
+
+    await this.ensureFreshSessionForWrite();
+    try {
+      await this.requestAuditProgressSave(audit, module, progress);
+    } catch (error) {
+      if (!isExpiredJwtError(error)) throw error;
+
+      // A browser tab may have been inactive during the automatic refresh.
+      // Recreate only this validator's anonymous session and retry the exact
+      // same audit once, never silently dropping the captured form values.
+      await this.restoreValidatorSession();
+      await this.requestAuditProgressSave(audit, module, progress);
+    }
   }
 
   async deleteValidator(id) {
