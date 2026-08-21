@@ -516,19 +516,39 @@ export class SupabaseBackend {
     return (data || []).map(mapAudit);
   }
 
-  async loadAdministration() {
+  async loadAdministration({ operationDate = null } = {}) {
     this.ensureConfigured();
-    const [studies, profiles, assignments] = await Promise.all([
+    const selectedDate = cleanDate(operationDate) || new Date().toISOString().slice(0, 10);
+    const [studies, profiles, assignments, validators, batches] = await Promise.all([
       this.client.from('studies').select('id, name, description, is_active').order('name'),
       this.client.from('profiles').select('id, username, display_name, role, is_active').eq('role', 'supervisor').order('display_name'),
-      this.client.from('supervisor_assignments').select('id, supervisor_id, study_id, country_id, module').order('created_at')
+      this.client.from('supervisor_assignments').select('id, supervisor_id, study_id, country_id, module').order('created_at'),
+      this.client.from('validators').select('id, code, name, study, study_id, is_active').eq('is_active', true).order('name'),
+      this.client
+        .from('upload_batches')
+        .select('id, study_id, module, operation_date, source_filename, row_count, status, created_by, created_at, activated_at')
+        .eq('operation_date', selectedDate)
+        .in('status', ['active', 'archived'])
+        .order('created_at', { ascending: false })
     ]);
-    const failed = [studies, profiles, assignments].find(result => result.error);
+    const failed = [studies, profiles, assignments, validators, batches].find(result => result.error);
     if (failed?.error) throw failed.error;
+    const batchIds = (batches.data || []).map(batch => batch.id);
+    const audits = batchIds.length
+      ? await this.client
+          .from('audits')
+          .select('id, batch_id, study_id, module, status, assigned_validator_id, started_at, completed_at, validation_date, updated_at')
+          .in('batch_id', batchIds)
+      : { data: [], error: null };
+    if (audits.error) throw audits.error;
     return {
       studies: studies.data || [],
       supervisors: profiles.data || [],
-      assignments: assignments.data || []
+      assignments: assignments.data || [],
+      validators: validators.data || [],
+      batches: batches.data || [],
+      audits: audits.data || [],
+      operationDate: selectedDate
     };
   }
 
