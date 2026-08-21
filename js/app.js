@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=22.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=30.0';
-import { SupabaseBackend } from './supabase-backend.js?v=32.0';
+import { SupabaseBackend } from './supabase-backend.js?v=33.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
 const SUPERVISOR_MODULES = {
@@ -40,6 +40,7 @@ class ValidaFlowApp {
     this.currentAssignments = [];
     this.pendingStaffRole = 'supervisor';
     this.adminData = { countries: [], studies: [], supervisors: [], assignments: [] };
+    this.historicalBatches = [];
     this.validatorHistoryRows = [];
     this.validatorHistoryLoaded = false;
     this.auditHistoryByModule = { smart: null, blocking: null };
@@ -665,7 +666,12 @@ class ValidaFlowApp {
     try {
       const selectedDate = document.getElementById('admin-productivity-date')?.value
         || this.toLocalDateInputValue(new Date());
-      this.adminData = await this.backend.loadAdministration({ operationDate: selectedDate });
+      const [administration, historicalBatches] = await Promise.all([
+        this.backend.loadAdministration({ operationDate: selectedDate }),
+        this.backend.loadHistoricalUploadBatches()
+      ]);
+      this.adminData = administration;
+      this.historicalBatches = historicalBatches;
       this.renderAdministratorPanel();
     } catch (error) {
       this.showToast(error.message || 'No fue posible cargar la administración.', 'error');
@@ -743,6 +749,35 @@ class ValidaFlowApp {
       });
     }
     this.renderAdministratorProductivity();
+    this.renderHistoricalBatchDeletionOptions();
+  }
+
+  renderHistoricalBatchDeletionOptions() {
+    const select = document.getElementById('admin-historical-batch-select');
+    const button = document.getElementById('btn-admin-delete-historical-batch');
+    if (!select) return;
+
+    const selectedId = select.value;
+    const studiesById = new Map((this.adminData?.studies || []).map(study => [study.id, study]));
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[char]);
+    const number = value => new Intl.NumberFormat('es-CO').format(Number(value || 0));
+    const batches = this.historicalBatches || [];
+
+    select.innerHTML = [
+      '<option value="">Selecciona el archivo cargado que quieres eliminar…</option>',
+      ...batches.map(batch => {
+        const study = studiesById.get(batch.study_id);
+        const module = batch.module === 'blocking' ? 'Bloqueantes' : 'Smart';
+        const status = batch.status === 'active' ? 'activa' : 'histórica';
+        const date = String(batch.operation_date || '').split('T')[0] || 'sin fecha';
+        const filename = batch.source_filename || 'Carga sin archivo';
+        return `<option value="${batch.id}">#${batch.id} · ${escapeHtml(date)} · ${escapeHtml(study?.name || 'Sin estudio')} · ${module} · ${escapeHtml(filename)} (${number(batch.row_count)} registros, ${status})</option>`;
+      })
+    ].join('');
+    if (batches.some(batch => String(batch.id) === selectedId)) select.value = selectedId;
+    if (button) button.disabled = !batches.length;
   }
 
   refreshAdministratorProductivity() {
@@ -1066,6 +1101,63 @@ class ValidaFlowApp {
       if (button) {
         button.disabled = false;
         button.innerHTML = '🧹 Eliminar datos de prueba';
+      }
+    }
+  }
+
+  async deleteHistoricalBatch() {
+    if (this.currentRole !== 'admin') {
+      this.showToast('Esta acción requiere una sesión administrativa.', 'error');
+      return;
+    }
+
+    const select = document.getElementById('admin-historical-batch-select');
+    const batchId = select?.value;
+    const batch = (this.historicalBatches || []).find(item => String(item.id) === String(batchId));
+    if (!batch) {
+      this.showToast('Selecciona primero el archivo cargado que deseas eliminar.', 'warning');
+      return;
+    }
+
+    const filename = batch.source_filename || 'Carga sin archivo';
+    const isActive = batch.status === 'active';
+    const confirmed = confirm(
+      `¿Eliminar permanentemente “${filename}”?\n\n` +
+      `Se eliminarán las ${Number(batch.row_count || 0)} auditorías de la carga #${batch.id}. ` +
+      (isActive ? 'Esta es la carga activa y dejará de estar disponible para validar.' : 'Es una carga histórica.')
+    );
+    if (!confirmed) return;
+
+    const confirmation = `ELIMINAR ARCHIVO ${batch.id}`;
+    const phrase = prompt(`Para confirmar, escribe exactamente: ${confirmation}`);
+    if (phrase !== confirmation) {
+      this.showToast('La frase no coincide. No se eliminó ningún archivo.', 'warning');
+      return;
+    }
+
+    const button = document.getElementById('btn-admin-delete-historical-batch');
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Eliminando archivo…';
+    }
+
+    try {
+      const result = await this.backend.deleteUploadBatch(batch.id, phrase);
+      this.auditHistoryByModule = { smart: null, blocking: null };
+      this.validatorHistoryRows = [];
+      this.validatorHistoryLoaded = false;
+      await this.refreshFromBackend();
+      await this.loadAdministratorPanel();
+      this.showToast(
+        `Archivo eliminado: ${Number(result?.audits_deleted || 0)} auditorías y ${Number(result?.batches_deleted || 1)} carga eliminadas.`,
+        'success'
+      );
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible eliminar el archivo cargado.', 'error');
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.innerHTML = '🗑️ Eliminar archivo y contenido';
       }
     }
   }

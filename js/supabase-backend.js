@@ -483,6 +483,32 @@ export class SupabaseBackend {
     return data || { audits_deleted: 0, batches_deleted: 0 };
   }
 
+  async loadHistoricalUploadBatches() {
+    this.ensureConfigured();
+    const { data, error } = await this.client
+      .from('upload_batches')
+      .select('id, study_id, module, operation_date, source_filename, row_count, status, created_at, activated_at, archived_at')
+      .in('status', ['active', 'archived'])
+      .order('operation_date', { ascending: false })
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async deleteUploadBatch(batchId, confirmation) {
+    this.ensureConfigured();
+    const parsedBatchId = Number(batchId);
+    if (!Number.isSafeInteger(parsedBatchId) || parsedBatchId < 1) {
+      throw new Error('Selecciona una carga válida para eliminar.');
+    }
+    const { data, error } = await this.client.rpc('delete_upload_batch', {
+      p_batch_id: parsedBatchId,
+      p_confirmation: String(confirmation || '')
+    });
+    if (error) throw error;
+    return data || { batch_id: parsedBatchId, audits_deleted: 0, batches_deleted: 0 };
+  }
+
   async loadAuditHistory({ module = null, pageSize = 500, onProgress = null } = {}) {
     this.ensureConfigured();
     const safePageSize = Math.min(Math.max(Number(pageSize) || 500, 100), 1000);

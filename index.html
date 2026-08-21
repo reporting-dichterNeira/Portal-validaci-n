@@ -17,7 +17,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=35.0" />
+  <link rel="stylesheet" href="css/styles.css?v=36.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -673,6 +673,23 @@
               <tbody id="admin-supervisors-tbody"><tr><td colspan="6" class="text-center text-muted">Cargando...</td></tr></tbody>
             </table>
           </div>
+        </section>
+
+        <section class="glass-panel admin-setup-card admin-danger-zone">
+          <div class="section-header">
+            <div>
+              <h2>🗂️ Eliminar una carga del histórico</h2>
+              <p>Si se subió un archivo equivocado, elimínalo junto con todas las auditorías que contiene.</p>
+            </div>
+          </div>
+          <div class="admin-batch-delete-controls">
+            <label class="sr-only" for="admin-historical-batch-select">Archivo cargado</label>
+            <select class="form-select" id="admin-historical-batch-select" aria-label="Archivo cargado que se va a eliminar">
+              <option value="">Cargando archivos…</option>
+            </select>
+            <button class="btn btn-outline text-danger" id="btn-admin-delete-historical-batch" type="button" onclick="window.app?.deleteHistoricalBatch()">🗑️ Eliminar archivo y contenido</button>
+          </div>
+          <small class="form-help">Acción irreversible. Si eliges una carga activa, también dejará de estar disponible para los validadores.</small>
         </section>
 
         <section class="glass-panel admin-setup-card admin-danger-zone">
@@ -2404,6 +2421,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=35.0"></script>
+  <script type="module" src="js/app.js?v=36.0"></script>
 </body>
 </html>
