@@ -6489,6 +6489,19 @@ body.dark-theme {
   margin-top: 0.65rem;
 }
 
+.admin-batch-delete-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+@media (max-width: 720px) {
+  .admin-batch-delete-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Productividad personal del validador */
 .val-productivity-panel {
   margin: 1rem 0 1.25rem;
