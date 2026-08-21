@@ -13,9 +13,11 @@
   
   <!-- SheetJS CDN para lectura y exportación de Excel -->
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <!-- Generación directa de PDF en el navegador, sin diálogo de impresión -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=33.0" />
+  <link rel="stylesheet" href="css/styles.css?v=34.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -1358,7 +1360,7 @@
             </div>
             <div class="op-buttons-group">
               <button class="btn btn-navy btn-glow btn-sm" id="btn-export-commercial-pdf" onclick="window.exportCommercialPDF()">
-                <span class="btn-icon">📄</span> Exportar Informe Comercial (PDF)
+                <span class="btn-icon">📥</span> Descargar Informe Comercial (PDF)
               </button>
               <button class="btn btn-outline btn-sm" id="btn-preview-commercial-report" onclick="window.openCommercialReportPreview()">
                 <span class="btn-icon">👁️</span> Vista Previa Dossier Comercial
@@ -1944,7 +1946,7 @@
         </div>
         <div class="dossier-header-actions">
           <button class="btn btn-navy btn-glow btn-sm" onclick="window.exportCommercialPDF()">
-            🖨️ Imprimir / Guardar como PDF
+            📥 Descargar PDF
           </button>
           <button class="btn-close-modal" onclick="document.getElementById('modal-commercial-report-preview').classList.add('hidden')">✕</button>
         </div>
@@ -2105,7 +2107,7 @@
         <div style="display:flex; gap:0.65rem;">
           <button class="btn btn-secondary" onclick="document.getElementById('modal-commercial-report-preview').classList.add('hidden')">Cerrar</button>
           <button class="btn btn-success" onclick="window.exportExecutiveExcel()">📊 Exportar Excel (.xlsx)</button>
-          <button class="btn btn-navy btn-glow" onclick="window.exportCommercialPDF()">🖨️ Generar / Imprimir PDF</button>
+          <button class="btn btn-navy btn-glow" onclick="window.exportCommercialPDF()">📥 Descargar PDF</button>
         </div>
       </div>
     </div>
@@ -2402,6 +2404,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=33.0"></script>
+  <script type="module" src="js/app.js?v=34.0"></script>
 </body>
 </html>

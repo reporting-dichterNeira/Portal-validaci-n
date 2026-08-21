@@ -3439,7 +3439,7 @@ class ValidaFlowApp {
   // ==========================================
   // INFORME COMERCIAL Y EXPORTACIÓN A PDF
   // ==========================================
-  openCommercialReportPreview() {
+  openCommercialReportPreview(showModal = true) {
     const modal = document.getElementById('modal-commercial-report-preview');
     if (!modal) return;
 
@@ -3731,15 +3731,75 @@ class ValidaFlowApp {
     if (recGrid) recGrid.innerHTML = recHtml;
     if (printRecGrid) printRecGrid.innerHTML = printRecHtml;
 
-    modal.classList.remove('hidden');
+    if (showModal) modal.classList.remove('hidden');
   }
 
-  exportCommercialPDF() {
-    this.openCommercialReportPreview();
-    this.showToast('Abriendo generador oficial de PDF gerencial dichter & neira...', 'info');
-    setTimeout(() => {
-      window.print();
-    }, 450);
+  async exportCommercialPDF() {
+    if (typeof window.html2pdf !== 'function') {
+      this.showToast('No fue posible cargar el generador de PDF. Verifica la conexión e intenta nuevamente.', 'error');
+      return;
+    }
+
+    // Actualiza las métricas sin abrir la vista previa ni el diálogo de impresión.
+    this.openCommercialReportPreview(false);
+    const source = document.getElementById('commercial-printable-content');
+    if (!source) {
+      this.showToast('No fue posible preparar el informe para descargar.', 'error');
+      return;
+    }
+
+    const capture = document.createElement('section');
+    capture.className = 'commercial-dossier-modal';
+    capture.style.cssText = [
+      'position:fixed',
+      'left:-12000px',
+      'top:0',
+      'z-index:-1',
+      'width:1050px',
+      'max-width:none',
+      'height:auto',
+      'max-height:none',
+      'overflow:visible',
+      'padding:0',
+      'background:#FFFFFF'
+    ].join(';');
+    capture.innerHTML = `
+      <header style="padding:1.25rem 1.75rem; background:#FFFFFF; border-bottom:2px solid #E0EFFF; display:flex; align-items:center; gap:1rem;">
+        <img src="assets/dn-logo-color.png" alt="dichter & neira" style="height:38px; width:auto; object-fit:contain;" />
+        <div>
+          <strong style="display:block; color:#002B49; font-size:1.25rem;">Informe Gerencial de Calidad & Eficiencia de Alertas</strong>
+          <span style="color:#64748B; font-size:0.85rem;">dichter & neira • ValidaFlow</span>
+        </div>
+      </header>
+    `;
+    capture.appendChild(source.cloneNode(true));
+    document.body.appendChild(capture);
+
+    const today = new Date();
+    const dateStamp = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    this.showToast('Generando tu PDF… la descarga iniciará automáticamente.', 'info');
+
+    try {
+      await document.fonts?.ready;
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      await window.html2pdf()
+        .set({
+          margin: [8, 8, 8, 8],
+          filename: `informe-ejecutivo-validaflow-${dateStamp}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#FFFFFF', logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+          pagebreak: { mode: ['css', 'legacy'] }
+        })
+        .from(capture)
+        .save();
+      this.showToast('PDF descargado correctamente.', 'success');
+    } catch (error) {
+      console.error('No fue posible generar el PDF ejecutivo:', error);
+      this.showToast('No fue posible generar el PDF. Intenta nuevamente.', 'error');
+    } finally {
+      capture.remove();
+    }
   }
 
   // ==========================================
