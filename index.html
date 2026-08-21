@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=32.0" />
+  <link rel="stylesheet" href="css/styles.css?v=33.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -469,6 +469,27 @@
             Salir del Portal 🚪
           </button>
         </div>
+
+        <section class="glass-panel val-productivity-panel" aria-live="polite">
+          <div class="val-productivity-heading">
+            <div>
+              <span class="val-productivity-kicker">Mi productividad</span>
+              <h4>Resumen diario</h4>
+              <p>Consulta las jornadas en las que has validado auditorías.</p>
+            </div>
+            <span class="badge badge-info" id="val-productivity-range">Histórico</span>
+          </div>
+          <div class="val-productivity-stats">
+            <div><span>Días trabajados</span><strong id="val-productivity-days">0</strong></div>
+            <div><span>Auditorías validadas</span><strong id="val-productivity-completed">0</strong></div>
+          </div>
+          <div class="val-productivity-table-wrap">
+            <table class="val-productivity-table">
+              <thead><tr><th>Jornada</th><th>Módulos</th><th>Validadas</th></tr></thead>
+              <tbody id="val-productivity-tbody"><tr><td colspan="3" class="text-center text-muted">Cargando productividad...</td></tr></tbody>
+            </table>
+          </div>
+        </section>
 
         <!-- Master-Detail -->
         <div class="validator-master-detail">
@@ -1654,7 +1675,7 @@
         <div class="form-group">
           <label for="modal-val-code">Código Único de Acceso</label>
           <input type="text" id="modal-val-code" class="form-control code-preview-input" placeholder="VAL-XXXX" />
-          <small class="form-hint">Se autogenera un código único alfanumérico, pero puedes personalizarlo.</small>
+          <small class="form-hint">Se autogenera al crear el validador y permanecerá fijo para todas sus jornadas.</small>
         </div>
       </div>
 

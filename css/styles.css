@@ -6469,6 +6469,109 @@ body.dark-theme {
   margin-top: 0.65rem;
 }
 
+/* Productividad personal del validador */
+.val-productivity-panel {
+  margin: 1rem 0 1.25rem;
+  padding: 1.2rem;
+}
+
+.val-productivity-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.val-productivity-kicker {
+  color: var(--dn-blue);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.val-productivity-heading h4 {
+  margin: 0.2rem 0;
+  color: var(--dn-navy);
+  font-size: 1.1rem;
+}
+
+.val-productivity-heading p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
+.val-productivity-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin: 1rem 0;
+}
+
+.val-productivity-stats > div {
+  padding: 0.85rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-surface);
+}
+
+.val-productivity-stats span,
+.val-productivity-stats strong {
+  display: block;
+}
+
+.val-productivity-stats span {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.val-productivity-stats strong {
+  margin-top: 0.25rem;
+  color: var(--dn-navy);
+  font-size: 1.5rem;
+}
+
+.val-productivity-table-wrap {
+  overflow-x: auto;
+}
+
+.val-productivity-table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+}
+
+.val-productivity-table th,
+.val-productivity-table td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.val-productivity-table th {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+[data-theme="dark"] .val-productivity-stats > div {
+  background: #07101B;
+}
+
+[data-theme="dark"] .val-productivity-heading h4,
+[data-theme="dark"] .val-productivity-stats strong {
+  color: #FFFFFF;
+}
+
+@media (max-width: 620px) {
+  .val-productivity-panel { padding: 1rem; }
+  .val-productivity-heading { flex-direction: column; }
+}
+
 .carryover-summary-list {
   display: grid;
   gap: 0.55rem;

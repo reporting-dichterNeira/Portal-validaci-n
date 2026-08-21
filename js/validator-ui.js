@@ -10,6 +10,7 @@ export class ValidatorUI {
     this.currentModule = 'smart'; // 'smart' | 'blocking'
     this.filterStatus = 'all'; // 'all' | 'pending' | 'completed'
     this.searchQuery = '';
+    this.productivityRows = [];
 
     this.initElements();
     this.bindEvents();
@@ -126,6 +127,7 @@ export class ValidatorUI {
     this.currentAuditId = null;
     this.updateProgressHeader();
     this.renderAuditList();
+    await this.loadProductivity();
 
     // Seleccionar automáticamente la primera auditoría pendiente
     const myAudits = this.getMyAudits();
@@ -207,6 +209,67 @@ export class ValidatorUI {
     if (this.valProgressBar) {
       this.valProgressBar.style.width = `${percent}%`;
     }
+  }
+
+  async loadProductivity() {
+    const today = new Date();
+    const from = new Date(today);
+    from.setFullYear(today.getFullYear() - 5);
+    const toDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+
+    try {
+      const rows = this.app.backend.configured
+        ? await this.app.backend.loadMyValidatorProductivity({
+          dateFrom: toDate(from),
+          dateTo: toDate(today)
+        })
+        : [];
+      this.productivityRows = rows;
+    } catch (error) {
+      console.error('No fue posible cargar la productividad del validador:', error);
+      this.productivityRows = [];
+    }
+    this.renderProductivity();
+  }
+
+  renderProductivity() {
+    const tbody = document.getElementById('val-productivity-tbody');
+    if (!tbody) return;
+
+    const days = new Map();
+    this.productivityRows.forEach(row => {
+      const date = row.operationDate;
+      if (!date) return;
+      if (!days.has(date)) days.set(date, { completed: 0, modules: new Set() });
+      const day = days.get(date);
+      day.completed += Number(row.completedAudits || 0);
+      if (row.module) day.modules.add(row.module === 'blocking' ? 'Bloqueantes' : 'Smart');
+    });
+
+    const workedDays = [...days.entries()]
+      .filter(([, day]) => day.completed > 0)
+      .sort(([first], [second]) => second.localeCompare(first));
+    const totalCompleted = workedDays.reduce((total, [, day]) => total + day.completed, 0);
+    const daysEl = document.getElementById('val-productivity-days');
+    const completedEl = document.getElementById('val-productivity-completed');
+    const rangeEl = document.getElementById('val-productivity-range');
+    if (daysEl) daysEl.textContent = workedDays.length;
+    if (completedEl) completedEl.textContent = totalCompleted;
+    if (rangeEl) rangeEl.textContent = 'Últimos 5 años';
+
+    if (!workedDays.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Aún no tienes auditorías validadas.</td></tr>';
+      return;
+    }
+
+    const dateFormatter = new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium' });
+    tbody.innerHTML = workedDays.map(([date, day]) => `
+      <tr>
+        <td><strong>${dateFormatter.format(new Date(`${date}T12:00:00`))}</strong></td>
+        <td>${[...day.modules].join(' · ') || '—'}</td>
+        <td><strong>${day.completed}</strong></td>
+      </tr>
+    `).join('');
   }
 
   renderAuditList() {
@@ -811,6 +874,7 @@ export class ValidatorUI {
     this.mergeAuditIntoAppState(audit);
     this.updateProgressHeader();
     this.renderAuditList();
+    await this.loadProductivity();
     if (hasDoubts) {
       this.app.showToast(`❓ Consulta guardada para el supervisor en la Auditoría #${audit.id}. Pasando al siguiente caso...`, 'info');
     } else {
