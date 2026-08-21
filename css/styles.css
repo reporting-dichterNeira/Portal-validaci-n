@@ -757,6 +757,16 @@ a {
   box-shadow: var(--shadow-sm);
 }
 
+.validator-admin-card.is-inactive {
+  border-style: dashed;
+  opacity: 0.72;
+}
+
+.validator-admin-card.is-inactive:hover {
+  border-color: var(--text-muted);
+  box-shadow: none;
+}
+
 .val-card-top {
   display: flex;
   align-items: center;
@@ -796,6 +806,16 @@ a {
   font-size: 0.75rem;
   color: var(--text-muted);
   display: block;
+}
+
+.val-activity-badge {
+  display: inline-flex;
+  margin-top: 0.5rem;
+}
+
+.btn-toggle-validator {
+  width: 100%;
+  justify-content: center;
 }
 
 .val-stats-grid {

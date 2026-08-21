@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=22.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=30.0';
-import { SupabaseBackend } from './supabase-backend.js?v=31.0';
+import { SupabaseBackend } from './supabase-backend.js?v=32.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
 const SUPERVISOR_MODULES = {
@@ -2569,10 +2569,13 @@ class ValidaFlowApp {
   // ==========================================
   // REPARTICIÓN EQUITATIVA Y GESTIÓN POR ESTUDIO
   // ==========================================
-  getValidatorsForCurrentProject() {
+  getValidatorsForCurrentProject({ includeInactive = false } = {}) {
     const cur = (this.currentProject || 'Chile').toUpperCase();
     const filtered = this.validators.filter(v => v.estudio && v.estudio.toUpperCase() === cur);
-    return filtered.length > 0 ? filtered : (this.isSupervisor ? [] : this.validators);
+    const projectValidators = filtered.length > 0 ? filtered : (this.isSupervisor ? [] : this.validators);
+    return includeInactive
+      ? projectValidators
+      : projectValidators.filter(validator => validator.isActive !== false);
   }
 
   getAuditsForCurrentProject() {
@@ -2586,6 +2589,41 @@ class ValidaFlowApp {
     });
   }
 
+  isPendingAudit(audit) {
+    return !audit.validationStatus || audit.validationStatus === 'pendiente';
+  }
+
+  redistributePendingAudits() {
+    const projectAudits = this.getAuditsForCurrentProject();
+    const pendingAudits = projectAudits.filter(audit => this.isPendingAudit(audit));
+    const activeValidators = this.getValidatorsForCurrentProject();
+
+    if (!pendingAudits.length) {
+      return { pendingCount: 0, activeValidators, totalKpis: 0 };
+    }
+    if (!activeValidators.length) {
+      throw new Error(`Activa al menos un validador en ${this.currentProject} para repartir las auditorías pendientes.`);
+    }
+
+    // No modifica auditorías completadas ni las que un validador ya tiene abiertas.
+    const distributedPending = Distributor.distribute(pendingAudits, activeValidators);
+    const auditKey = audit => String(audit._rowId || `${audit._batchId || 'active'}:${audit.id}`);
+    const distributedByKey = new Map(distributedPending.map(audit => [auditKey(audit), audit]));
+    this.audits = this.audits.map(audit => distributedByKey.get(auditKey(audit)) || audit);
+
+    if (this.currentModule === 'blocking') {
+      this.blockingAudits = this.audits;
+    } else {
+      this.smartAudits = this.audits;
+    }
+
+    const totalKpis = pendingAudits.reduce(
+      (total, audit) => total + (audit.kpis || []).filter(kpi => kpi.needsReview || kpi.alertaStatus === 'SE ALERTA').length,
+      0
+    );
+    return { pendingCount: pendingAudits.length, activeValidators, totalKpis };
+  }
+
   executeDistribution() {
     try {
       const projectAudits = this.getAuditsForCurrentProject();
@@ -2594,24 +2632,10 @@ class ValidaFlowApp {
         return;
       }
 
-      const projectValidators = this.getValidatorsForCurrentProject();
-
-      if (projectValidators.length === 0) {
-        this.showToast(`Agrega al menos un validador asignado al estudio ${this.currentProject}.`, 'warning');
+      const result = this.redistributePendingAudits();
+      if (!result.pendingCount) {
+        this.showToast('No hay auditorías pendientes para redistribuir. Las completadas y en progreso se conservaron.', 'info');
         return;
-      }
-
-      // Ejecutar algoritmo de distribución simultánea (balanceo dual de auditorías y KPIs)
-      const distributedProjectAudits = Distributor.distribute(projectAudits, projectValidators);
-      
-      // Actualizar en el array global this.audits
-      const distMap = new Map(distributedProjectAudits.map(a => [String(a.id), a]));
-      this.audits = this.audits.map(a => distMap.has(String(a.id)) ? distMap.get(String(a.id)) : a);
-
-      if (this.currentModule === 'blocking') {
-        this.blockingAudits = this.audits;
-      } else {
-        this.smartAudits = this.audits;
       }
 
       this.saveState();
@@ -2621,10 +2645,8 @@ class ValidaFlowApp {
       this.renderReportsView();
       this.populateLookupQuickTags();
 
-      const totalKpis = projectAudits.reduce((acc, a) => acc + (a.kpis || []).filter(k => k.needsReview || k.alertaStatus === 'SE ALERTA').length, 0);
-
       this.showToast(
-        `¡${projectAudits.length} auditorías de ${this.currentProject} (${totalKpis} KPIs a revisar) repartidas con balanceo simultáneo (Auditorías & KPIs) entre ${projectValidators.length} validadores!`,
+        `¡${result.pendingCount} auditorías pendientes de ${this.currentProject} (${result.totalKpis} KPIs a revisar) repartidas entre ${result.activeValidators.length} validadores activos!`,
         'success'
       );
     } catch (e) {
@@ -2668,7 +2690,7 @@ class ValidaFlowApp {
     const container = document.getElementById('admin-validators-grid');
     if (!container) return;
 
-    const projectValidators = this.getValidatorsForCurrentProject();
+    const projectValidators = this.getValidatorsForCurrentProject({ includeInactive: true });
     const projectAudits = this.getAuditsForCurrentProject();
 
     if (projectValidators.length === 0) {
@@ -2691,21 +2713,22 @@ class ValidaFlowApp {
 
     container.innerHTML = stats.map(val => {
       const studyLabel = flagMap[val.estudio] || val.estudio || this.currentProject || 'Chile';
+      const isActive = val.isActive !== false;
 
       return `
-        <div class="validator-admin-card" data-id="${val.id}">
+        <div class="validator-admin-card ${isActive ? '' : 'is-inactive'}" data-id="${val.id}">
           <div class="val-card-top">
             <div class="val-code-badge" title="Código único para ingresar">${val.code}</div>
             <span class="val-study-tag">${studyLabel}</span>
             <div class="val-actions-mini">
               <button class="btn-icon btn-copy-code" data-code="${val.code}" title="Copiar Código">📋</button>
-              <button class="btn-icon btn-delete-val text-danger" data-id="${val.id}" title="Eliminar Validador">🗑️</button>
             </div>
           </div>
 
           <div class="val-info">
             <h4 class="val-name">${val.name}</h4>
             <span class="val-email">${val.email || 'Sin correo'}</span>
+            <span class="badge ${isActive ? 'badge-success' : 'badge-secondary'} val-activity-badge">${isActive ? '● Activo' : '○ Inactivo'}</span>
           </div>
 
           <div class="val-stats-grid">
@@ -2726,6 +2749,9 @@ class ValidaFlowApp {
           <div class="val-progress-bar-wrap">
             <div class="val-progress-bar-fill" style="width: ${val.percentProgress}%"></div>
           </div>
+          <button class="btn btn-sm ${isActive ? 'btn-outline' : 'btn-primary'} btn-toggle-validator" data-id="${val.id}" data-active="${isActive}">
+            ${isActive ? '⏸ Desactivar' : '▶ Activar'}
+          </button>
         </div>
       `;
     }).join('');
@@ -2740,11 +2766,10 @@ class ValidaFlowApp {
       });
     });
 
-    container.querySelectorAll('.btn-delete-val').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+    container.querySelectorAll('.btn-toggle-validator').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        const id = btn.dataset.id;
-        this.deleteValidator(id);
+        await this.toggleValidatorActive(btn.dataset.id, btn.dataset.active === 'true', btn);
       });
     });
   }
@@ -2856,7 +2881,8 @@ class ValidaFlowApp {
         email,
         estudio,
         studyId: this.currentScope?.study?.id || null,
-        countryId: this.currentScope?.country?.id || null
+        countryId: this.currentScope?.country?.id || null,
+        isActive: true
       };
 
       this.validators.push(newValidator);
@@ -2917,6 +2943,76 @@ class ValidaFlowApp {
       this.renderAlertsView();
       this.validatorUI?.populateQuickSelect(this.validators);
       this.showToast(`Validador ${val.name} desactivado. Su histórico se conservó.`, 'info');
+    }
+  }
+
+  async toggleValidatorActive(id, isCurrentlyActive, button = null) {
+    const validator = this.validators.find(item => item.id === id);
+    if (!validator) return;
+
+    const willBeActive = !isCurrentlyActive;
+    const projectAudits = this.getAuditsForCurrentProject();
+    const inProgressCount = projectAudits.filter(
+      audit => audit.assignedValidatorId === id && audit.validationStatus === 'en_progreso'
+    ).length;
+    const pendingCount = projectAudits.filter(audit => this.isPendingAudit(audit)).length;
+
+    if (!willBeActive && inProgressCount > 0) {
+      this.showToast(
+        `${validator.name} tiene ${inProgressCount} auditoría${inProgressCount === 1 ? '' : 's'} en progreso. Guárdala o termínala antes de desactivarlo.`,
+        'warning'
+      );
+      return;
+    }
+
+    if (!willBeActive && pendingCount > 0) {
+      const remainingActive = this.getValidatorsForCurrentProject().filter(item => item.id !== id);
+      if (!remainingActive.length) {
+        this.showToast('No puedes desactivar al último validador activo mientras haya auditorías pendientes.', 'warning');
+        return;
+      }
+    }
+
+    const originalLabel = button?.innerHTML;
+    if (button) {
+      button.disabled = true;
+      button.textContent = willBeActive ? 'Activando...' : 'Desactivando...';
+    }
+
+    try {
+      if (this.backend.configured && this.isSupervisor) {
+        const updated = await this.backend.setValidatorActive(id, willBeActive);
+        Object.assign(validator, updated);
+      } else {
+        validator.isActive = willBeActive;
+      }
+
+      const redistribution = this.redistributePendingAudits();
+      this.saveState();
+      await this.syncStateAcrossTabs();
+      this.renderAdminView();
+      this.renderAlertsView();
+      this.renderReportsView();
+      this.validatorUI?.populateQuickSelect(this.validators);
+
+      if (willBeActive) {
+        const resultMessage = redistribution.pendingCount
+          ? ` y se redistribuyeron ${redistribution.pendingCount} auditorías pendientes entre ${redistribution.activeValidators.length} validadores activos`
+          : '';
+        this.showToast(`${validator.name} quedó activo${resultMessage}.`, 'success');
+      } else {
+        const resultMessage = redistribution.pendingCount
+          ? ` Las ${redistribution.pendingCount} auditorías pendientes fueron redistribuidas.`
+          : '';
+        this.showToast(`${validator.name} quedó inactivo. Puede reactivarse en cualquier momento.${resultMessage}`, 'info');
+      }
+    } catch (error) {
+      console.error('No fue posible actualizar el estado del validador:', error);
+      this.showToast(error.message || 'No fue posible actualizar el estado del validador.', 'error');
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.innerHTML = originalLabel;
+      }
     }
   }
 
