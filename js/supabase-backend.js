@@ -355,7 +355,25 @@ export class SupabaseBackend {
     }
   }
 
-  async importDailyBatch({ audits, module, operationDate, fileName, validators }) {
+  async getPendingCarryoverSummary({ operationDate, module }) {
+    this.ensureConfigured();
+    const { data, error } = await this.client.rpc('get_pending_carryover_summary', {
+      p_study_id: this.currentScope?.study?.id || null,
+      p_module: module,
+      p_operation_date: cleanDate(operationDate)
+    });
+    if (error) throw error;
+    const row = Array.isArray(data) ? data[0] : data;
+    if (!row || !Number(row.pending_count || 0)) return null;
+    return {
+      previousBatchId: row.previous_batch_id,
+      previousOperationDate: row.previous_operation_date,
+      pendingCount: Number(row.pending_count || 0),
+      pendingSummary: Array.isArray(row.pending_summary) ? row.pending_summary : []
+    };
+  }
+
+  async importDailyBatch({ audits, module, operationDate, fileName, validators, carryoverAction = 'carry' }) {
     this.ensureConfigured();
     await this.upsertValidators(validators || []);
 
@@ -378,7 +396,8 @@ export class SupabaseBackend {
       await this.upsertAudits(audits, module, batch.id);
 
       const { data: activated, error: activateError } = await this.client.rpc('activate_upload_batch', {
-        p_batch_id: batch.id
+        p_batch_id: batch.id,
+        p_carryover_action: carryoverAction
       });
       if (activateError) throw activateError;
       return Array.isArray(activated) ? activated[0] : activated;

@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=22.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=30.0';
-import { SupabaseBackend } from './supabase-backend.js?v=34.0';
+import { SupabaseBackend } from './supabase-backend.js?v=35.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
 const SUPERVISOR_MODULES = {
@@ -2288,16 +2288,58 @@ class ValidaFlowApp {
     const todayStr = new Date().toISOString().split('T')[0];
     if (dateEl) {
       dateEl.value = detectedDate || todayStr;
+      dateEl.onchange = () => this.refreshCarryoverDecisionPanel();
     }
 
     modal?.classList.remove('hidden');
+    this.refreshCarryoverDecisionPanel();
+  }
+
+  async refreshCarryoverDecisionPanel() {
+    const panel = document.getElementById('carryover-decision-panel');
+    const description = document.getElementById('carryover-decision-description');
+    const list = document.getElementById('carryover-decision-list');
+    panel?.classList.add('hidden');
+    this.pendingCarryoverPreview = null;
+
+    if (!this.backend.configured || !this.isSupervisor || !this.pendingUpload?.result) return;
+    const operationDate = document.getElementById('study-operation-date')?.value;
+    if (!operationDate) return;
+
+    const requestId = (this.carryoverPreviewRequestId || 0) + 1;
+    this.carryoverPreviewRequestId = requestId;
+    try {
+      const pending = await this.backend.getPendingCarryoverSummary({
+        operationDate,
+        module: this.currentModule
+      });
+      if (requestId !== this.carryoverPreviewRequestId || !pending) return;
+
+      const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+      })[char]);
+      this.pendingCarryoverPreview = pending;
+      if (description) {
+        description.textContent = `Quedaron ${pending.pendingCount} auditoría${pending.pendingCount === 1 ? '' : 's'} pendiente${pending.pendingCount === 1 ? '' : 's'} de la jornada ${pending.previousOperationDate}. Elige qué hacer antes de cargar esta base.`;
+      }
+      if (list) {
+        list.innerHTML = pending.pendingSummary.map(item => `
+          <div class="carryover-summary-item">
+            <span>👤 ${escapeHtml(item.validator_name || 'Sin asignar')}</span>
+            <strong>${Number(item.count || 0)} pendientes</strong>
+          </div>
+        `).join('');
+      }
+      panel?.classList.remove('hidden');
+    } catch (error) {
+      console.error('No fue posible consultar los pendientes de la jornada anterior:', error);
+    }
   }
 
   async confirmStudyUpload() {
     const studyName = this.currentScope?.study?.name || this.currentProject || 'Chile';
     const opDate = document.getElementById('study-operation-date')?.value || new Date().toISOString().split('T')[0];
     const modal = document.getElementById('modal-select-study');
-    modal?.classList.add('hidden');
 
     if (!this.pendingUpload || !this.pendingUpload.result) {
       this.currentProject = studyName;
@@ -2309,6 +2351,30 @@ class ValidaFlowApp {
       this.showToast(`Estudio establecido en: ${studyName}`, 'info');
       return;
     }
+
+    let carryoverAction = 'carry';
+    let pendingCarryover = null;
+    if (this.backend.configured && this.isSupervisor) {
+      try {
+        pendingCarryover = await this.backend.getPendingCarryoverSummary({
+          operationDate: opDate,
+          module: this.currentModule
+        });
+      } catch (error) {
+        this.showToast(error.message || 'No fue posible consultar los pendientes de la jornada anterior.', 'error');
+        return;
+      }
+
+      if (pendingCarryover) {
+        carryoverAction = document.querySelector('input[name="carryover-decision"]:checked')?.value || '';
+        if (!['carry', 'discard'].includes(carryoverAction)) {
+          this.showToast('Elige si deseas sumar o cerrar los pendientes de la jornada anterior antes de cargar la nueva base.', 'warning');
+          return;
+        }
+      }
+    }
+
+    modal?.classList.add('hidden');
 
     const { result } = this.pendingUpload;
 
@@ -2344,7 +2410,8 @@ class ValidaFlowApp {
           module: this.currentModule,
           operationDate: opDate,
           fileName: this.pendingUpload.fileName,
-          validators: this.validators
+          validators: this.validators,
+          carryoverAction
         });
         this.auditHistoryByModule[this.currentModule] = null;
         this.validatorHistoryLoaded = false;
@@ -2353,7 +2420,12 @@ class ValidaFlowApp {
         const carriedCount = Number(activatedBatch?.carried_over_count || 0);
         const finalCount = Number(activatedBatch?.row_count || result.audits.length);
         this.showToast(`¡Nueva jornada guardada con ${finalCount} auditorías para ${studyName} (${opDate})!`, 'success');
-        this.showCarryoverSummary(activatedBatch);
+        if (carryoverAction === 'discard' && pendingCarryover) {
+          this.showToast(`Se cerraron ${pendingCarryover.pendingCount} pendientes de la jornada ${pendingCarryover.previousOperationDate} sin asignarlos a esta nueva base.`, 'info');
+        } else {
+          this.showCarryoverSummary(activatedBatch);
+        }
+        this.pendingCarryoverPreview = null;
       } catch (error) {
         console.error('Error importando la jornada en Supabase:', error);
         this.showToast(error.message || 'No fue posible guardar la nueva jornada en Supabase.', 'error');

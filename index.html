@@ -1742,6 +1742,27 @@
           </div>
         </div>
 
+        <section id="carryover-decision-panel" class="hidden" aria-live="polite" style="margin-top:1rem; border:1px solid rgba(245, 158, 11, 0.42); background:rgba(255, 247, 237, 0.72); border-radius:12px; padding:1rem;">
+          <div style="display:flex; align-items:flex-start; gap:0.65rem;">
+            <span style="font-size:1.2rem;">⏳</span>
+            <div>
+              <strong style="color:var(--dn-navy);">Pendientes de la jornada anterior</strong>
+              <p id="carryover-decision-description" class="form-help" style="margin:0.25rem 0 0;"></p>
+            </div>
+          </div>
+          <div id="carryover-decision-list" class="carryover-summary-list" style="margin-top:0.75rem;"></div>
+          <div style="display:grid; gap:0.6rem; margin-top:0.85rem;">
+            <label class="admin-study-check-option" style="align-items:flex-start;">
+              <input type="radio" name="carryover-decision" value="carry" />
+              <span><strong>Sumar a la base de esta nueva jornada</strong><small>Se conservan el validador y la trazabilidad de origen.</small></span>
+            </label>
+            <label class="admin-study-check-option" style="align-items:flex-start;">
+              <input type="radio" name="carryover-decision" value="discard" />
+              <span><strong>Cerrar sin arrastrar pendientes</strong><small>No se asignarán mañana; la jornada anterior quedará disponible en el histórico.</small></span>
+            </label>
+          </div>
+        </section>
+
       </div>
 
       <div class="modal-footer">
