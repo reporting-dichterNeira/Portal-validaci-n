@@ -663,7 +663,9 @@ class ValidaFlowApp {
   async loadAdministratorPanel() {
     if (this.currentRole !== 'admin') return;
     try {
-      this.adminData = await this.backend.loadAdministration();
+      const selectedDate = document.getElementById('admin-productivity-date')?.value
+        || this.toLocalDateInputValue(new Date());
+      this.adminData = await this.backend.loadAdministration({ operationDate: selectedDate });
       this.renderAdministratorPanel();
     } catch (error) {
       this.showToast(error.message || 'No fue posible cargar la administración.', 'error');
@@ -739,6 +741,123 @@ class ValidaFlowApp {
       tbody.querySelectorAll('.btn-admin-delete-supervisor').forEach(button => {
         button.addEventListener('click', () => this.deleteAdminSupervisor(button.dataset.supervisorId));
       });
+    }
+    this.renderAdministratorProductivity();
+  }
+
+  refreshAdministratorProductivity() {
+    this.loadAdministratorPanel();
+  }
+
+  renderAdministratorProductivity() {
+    const panel = document.getElementById('admin-productivity-panel');
+    if (!panel || !this.adminData) return;
+
+    const {
+      studies = [],
+      supervisors = [],
+      validators = [],
+      batches = [],
+      audits = [],
+      operationDate = this.toLocalDateInputValue(new Date())
+    } = this.adminData;
+    const dateInput = document.getElementById('admin-productivity-date');
+    if (dateInput && !dateInput.value) dateInput.value = operationDate;
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[char]);
+    const studyById = new Map(studies.map(item => [item.id, item]));
+    const supervisorById = new Map(supervisors.map(item => [item.id, item]));
+    const validatorById = new Map(validators.map(item => [item.id, item]));
+    const auditsByBatch = new Map();
+    const auditsByValidator = new Map();
+    audits.forEach(audit => {
+      if (!auditsByBatch.has(audit.batch_id)) auditsByBatch.set(audit.batch_id, []);
+      auditsByBatch.get(audit.batch_id).push(audit);
+      if (audit.assigned_validator_id) {
+        if (!auditsByValidator.has(audit.assigned_validator_id)) auditsByValidator.set(audit.assigned_validator_id, []);
+        auditsByValidator.get(audit.assigned_validator_id).push(audit);
+      }
+    });
+
+    const totalRows = audits.length;
+    const completedRows = audits.filter(audit => audit.status === 'completada').length;
+    const inProgressRows = audits.filter(audit => audit.status === 'en_progreso').length;
+    const activeValidatorIds = [...auditsByValidator.entries()]
+      .filter(([, assigned]) => assigned.some(audit => ['en_progreso', 'completada'].includes(audit.status)))
+      .map(([validatorId]) => validatorId);
+    const percentage = total => totalRows ? Math.round((total / totalRows) * 100) : 0;
+    const number = value => new Intl.NumberFormat('es-CO').format(value || 0);
+    const formatDateTime = value => value
+      ? new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
+      : '—';
+    const displayDate = new Intl.DateTimeFormat('es-CO', {
+      weekday: 'long', day: 'numeric', month: 'long'
+    }).format(new Date(`${operationDate}T12:00:00`));
+
+    const setText = (id, value) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value;
+    };
+    setText('admin-productivity-date-label', displayDate);
+    setText('admin-productivity-batches', number(batches.length));
+    setText('admin-productivity-uploaded', number(batches.reduce((total, batch) => total + Number(batch.row_count || 0), 0)));
+    setText('admin-productivity-active-validators', number(activeValidatorIds.length));
+    setText('admin-productivity-completed', number(completedRows));
+    setText('admin-productivity-progress', `${percentage(completedRows)}%`);
+    setText('admin-productivity-in-progress', number(inProgressRows));
+
+    const batchBody = document.getElementById('admin-productivity-batches-tbody');
+    if (batchBody) {
+      batchBody.innerHTML = batches.length ? batches.map(batch => {
+        const batchAudits = auditsByBatch.get(batch.id) || [];
+        const batchCompleted = batchAudits.filter(audit => audit.status === 'completada').length;
+        const batchProgress = batchAudits.length ? Math.round((batchCompleted / batchAudits.length) * 100) : 0;
+        const study = studyById.get(batch.study_id);
+        const supervisor = supervisorById.get(batch.created_by);
+        const moduleLabel = batch.module === 'blocking' ? 'Bloqueantes' : 'Smart';
+        return `<tr>
+          <td><strong>${escapeHtml(study?.name || 'Sin estudio')}</strong></td>
+          <td><span class="badge badge-info">${moduleLabel}</span></td>
+          <td>${escapeHtml(supervisor?.display_name || 'Equipo administrador')}</td>
+          <td><span class="admin-file-name" title="${escapeHtml(batch.source_filename || '')}">${escapeHtml(batch.source_filename || 'Carga sin archivo')}</span><small>${number(batch.row_count)} registros · ${formatDateTime(batch.activated_at || batch.created_at)}</small></td>
+          <td><strong>${number(batchCompleted)} / ${number(batchAudits.length)}</strong><div class="admin-progress-track"><span style="width:${batchProgress}%"></span></div></td>
+          <td><span class="badge ${batch.status === 'active' ? 'badge-success' : 'badge-secondary'}">${batch.status === 'active' ? 'Activa' : 'Histórica'}</span></td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="6" class="text-center text-muted">No hay bases cargadas para esta fecha.</td></tr>';
+    }
+
+    const validatorRows = [...auditsByValidator.entries()]
+      .map(([validatorId, assigned]) => {
+        const validator = validatorById.get(validatorId);
+        const completed = assigned.filter(audit => audit.status === 'completada').length;
+        const inProgress = assigned.filter(audit => audit.status === 'en_progreso').length;
+        const lastActivity = assigned
+          .filter(audit => audit.started_at || audit.completed_at)
+          .map(audit => audit.completed_at || audit.started_at)
+          .sort()
+          .at(-1);
+        return { validatorId, validator, assigned, completed, inProgress, lastActivity };
+      })
+      .sort((a, b) => (b.completed + b.inProgress) - (a.completed + a.inProgress)
+        || String(a.validator?.name || '').localeCompare(String(b.validator?.name || ''), 'es'));
+    const validatorBody = document.getElementById('admin-productivity-validators-tbody');
+    if (validatorBody) {
+      validatorBody.innerHTML = validatorRows.length ? validatorRows.map(item => {
+        const total = item.assigned.length;
+        const progress = total ? Math.round((item.completed / total) * 100) : 0;
+        const state = item.inProgress ? 'En validación' : item.completed ? 'Con actividad' : 'Sin iniciar';
+        const stateClass = item.inProgress ? 'badge-info' : item.completed ? 'badge-success' : 'badge-secondary';
+        return `<tr>
+          <td><strong>${escapeHtml(item.validator?.name || item.validatorId)}</strong><small>${escapeHtml(item.validator?.code || 'Sin código')}</small></td>
+          <td>${escapeHtml(studyById.get(item.validator?.study_id)?.name || item.validator?.study || '—')}</td>
+          <td><strong>${number(total)}</strong></td>
+          <td>${number(item.completed)}</td>
+          <td>${number(item.inProgress)}</td>
+          <td><strong>${progress}%</strong><div class="admin-progress-track"><span style="width:${progress}%"></span></div></td>
+          <td><span class="badge ${stateClass}">${state}</span><small>${formatDateTime(item.lastActivity)}</small></td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="7" class="text-center text-muted">Aún no hay auditorías asignadas en las cargas de esta fecha.</td></tr>';
     }
   }
 

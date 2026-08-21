@@ -15,7 +15,7 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=31.0" />
+  <link rel="stylesheet" href="css/styles.css?v=32.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -541,6 +541,58 @@
           <div class="stat-card"><div class="stat-icon-wrapper icon-blue">🛡️</div><div class="stat-details"><span class="stat-label">Supervisores</span><span class="stat-value" id="admin-count-supervisors">0</span></div></div>
           <div class="stat-card"><div class="stat-icon-wrapper icon-purple">📚</div><div class="stat-details"><span class="stat-label">Estudios disponibles</span><span class="stat-value" id="admin-count-studies">4</span></div></div>
         </div>
+
+        <section class="glass-panel admin-productivity-panel" id="admin-productivity-panel" aria-live="polite">
+          <div class="section-header admin-productivity-header">
+            <div>
+              <div class="corporate-badge">Seguimiento operativo diario</div>
+              <h2>Productividad de la jornada</h2>
+              <p>Visibilidad de cargas, avance de las auditorías y actividad de los validadores.</p>
+            </div>
+            <div class="admin-productivity-filter">
+              <label for="admin-productivity-date">Fecha de operación</label>
+              <div>
+                <input type="date" id="admin-productivity-date" class="form-control" />
+                <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdministratorProductivity()">Actualizar</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-productivity-date-line">
+            <span>Resumen de <strong id="admin-productivity-date-label">hoy</strong></span>
+            <span><strong id="admin-productivity-in-progress">0</strong> auditorías en validación</span>
+          </div>
+
+          <div class="stats-grid admin-productivity-stats">
+            <div class="stat-card"><div class="stat-icon-wrapper icon-blue">📥</div><div class="stat-details"><span class="stat-label">Bases cargadas</span><span class="stat-value" id="admin-productivity-batches">0</span></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-purple">🧾</div><div class="stat-details"><span class="stat-label">Registros cargados</span><span class="stat-value" id="admin-productivity-uploaded">0</span></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-cyan">🟢</div><div class="stat-details"><span class="stat-label">Validadores activos</span><span class="stat-value" id="admin-productivity-active-validators">0</span></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-emerald">✅</div><div class="stat-details"><span class="stat-label">Auditorías validadas</span><span class="stat-value" id="admin-productivity-completed">0</span></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-orange">📈</div><div class="stat-details"><span class="stat-label">Avance de jornada</span><span class="stat-value" id="admin-productivity-progress">0%</span></div></div>
+          </div>
+
+          <div class="admin-productivity-grid">
+            <section class="admin-productivity-table-card">
+              <div class="panel-header"><div><h3>📁 Bases cargadas</h3><p class="panel-desc">Quién cargó cada base y su avance actual.</p></div></div>
+              <div class="table-responsive">
+                <table class="data-table admin-productivity-table">
+                  <thead><tr><th>Estudio</th><th>Módulo</th><th>Responsable</th><th>Archivo y carga</th><th>Validadas</th><th>Estado</th></tr></thead>
+                  <tbody id="admin-productivity-batches-tbody"><tr><td colspan="6" class="text-center text-muted">Cargando productividad...</td></tr></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="admin-productivity-table-card">
+              <div class="panel-header"><div><h3>👥 Actividad de validadores</h3><p class="panel-desc">Un validador se considera activo cuando inició o completó una auditoría de la jornada.</p></div></div>
+              <div class="table-responsive">
+                <table class="data-table admin-productivity-table">
+                  <thead><tr><th>Validador</th><th>Estudio</th><th>Asignadas</th><th>Validadas</th><th>En curso</th><th>Avance</th><th>Actividad</th></tr></thead>
+                  <tbody id="admin-productivity-validators-tbody"><tr><td colspan="7" class="text-center text-muted">Cargando productividad...</td></tr></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
 
         <div class="admin-setup-grid">
           <section class="glass-panel admin-setup-card">
@@ -2329,6 +2381,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=32.0"></script>
+  <script type="module" src="js/app.js?v=33.0"></script>
 </body>
 </html>
