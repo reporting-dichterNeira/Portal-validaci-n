@@ -839,8 +839,22 @@ class ValidaFlowApp {
     setText('admin-productivity-uploaded', number(batches.reduce((total, batch) => total + Number(batch.row_count || 0), 0)));
     setText('admin-productivity-active-validators', number(activeValidatorIds.length));
     setText('admin-productivity-completed', number(completedRows));
-    setText('admin-productivity-progress', `${percentage(completedRows)}%`);
+    const completedPercentage = percentage(completedRows);
+    setText('admin-productivity-progress', `${completedPercentage}%`);
     setText('admin-productivity-in-progress', number(inProgressRows));
+    setText('admin-speedometer-completed', number(completedRows));
+    setText('admin-speedometer-total', number(totalRows));
+    setText('admin-speedometer-percent', `${completedPercentage}%`);
+    const speedometer = document.getElementById('admin-speedometer');
+    const speedometerPath = document.getElementById('admin-speedometer-progress-path');
+    if (speedometer) {
+      speedometer.style.setProperty('--needle-rotation', `${-90 + (completedPercentage * 1.8)}deg`);
+      speedometer.setAttribute(
+        'aria-label',
+        `${completedPercentage}% de auditorías validadas: ${completedRows} de ${totalRows}`
+      );
+    }
+    if (speedometerPath) speedometerPath.setAttribute('stroke-dasharray', `${completedPercentage} 100`);
 
     const batchBody = document.getElementById('admin-productivity-batches-tbody');
     if (batchBody) {

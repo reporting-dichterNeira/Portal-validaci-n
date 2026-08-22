@@ -594,6 +594,26 @@
             <div class="stat-card"><div class="stat-icon-wrapper icon-orange">📈</div><div class="stat-details"><span class="stat-label">Avance de jornada</span><span class="stat-value" id="admin-productivity-progress">0%</span></div></div>
           </div>
 
+          <section class="admin-speedometer-card" aria-labelledby="admin-speedometer-title">
+            <div class="admin-speedometer-copy">
+              <span class="corporate-badge">Avance en tiempo real</span>
+              <h3 id="admin-speedometer-title">Velocímetro de validación</h3>
+              <p>Del total cargado para esta jornada, estas son las auditorías que ya fueron terminadas.</p>
+              <div class="admin-speedometer-summary"><strong id="admin-speedometer-completed">0</strong><span>validadas de <strong id="admin-speedometer-total">0</strong> auditorías</span></div>
+            </div>
+            <div class="admin-speedometer" id="admin-speedometer" role="img" aria-label="0 por ciento de auditorías validadas" style="--needle-rotation: -90deg;">
+              <svg viewBox="0 0 220 132" aria-hidden="true">
+                <path class="admin-speedometer-track" d="M20 112 A90 90 0 0 1 200 112" pathLength="100"></path>
+                <path class="admin-speedometer-progress" id="admin-speedometer-progress-path" d="M20 112 A90 90 0 0 1 200 112" pathLength="100" stroke-dasharray="0 100"></path>
+              </svg>
+              <span class="admin-speedometer-mark admin-speedometer-mark-start">0%</span>
+              <span class="admin-speedometer-mark admin-speedometer-mark-end">100%</span>
+              <span class="admin-speedometer-needle" aria-hidden="true"></span>
+              <span class="admin-speedometer-hub" aria-hidden="true"></span>
+              <div class="admin-speedometer-reading"><strong id="admin-speedometer-percent">0%</strong><span>validado</span></div>
+            </div>
+          </section>
+
           <div class="admin-productivity-grid">
             <section class="admin-productivity-table-card">
               <div class="panel-header"><div><h3>📁 Bases cargadas</h3><p class="panel-desc">Quién cargó cada base y su avance actual.</p></div></div>
@@ -2475,6 +2495,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=40.0"></script>
+  <script type="module" src="js/app.js?v=41.0"></script>
 </body>
 </html>

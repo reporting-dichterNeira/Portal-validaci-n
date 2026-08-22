@@ -3309,6 +3309,134 @@ a {
   font-size: 1.55rem;
 }
 
+.admin-speedometer-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  padding: 1.2rem 1.4rem;
+  margin: 0 0 1.25rem;
+  border: 1px solid rgba(0, 114, 206, 0.2);
+  border-radius: 14px;
+  background: linear-gradient(112deg, rgba(0, 114, 206, 0.08), rgba(20, 184, 166, 0.06));
+}
+
+.admin-speedometer-copy h3 {
+  margin: 0.45rem 0 0.3rem;
+  color: var(--dn-navy);
+}
+
+.admin-speedometer-copy p {
+  margin: 0;
+  color: var(--text-secondary);
+  max-width: 520px;
+}
+
+.admin-speedometer-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  margin-top: 0.9rem;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+}
+
+.admin-speedometer-summary > strong {
+  color: var(--dn-blue);
+  font-size: 1.7rem;
+  line-height: 1;
+}
+
+.admin-speedometer-summary span strong {
+  color: var(--dn-navy);
+}
+
+.admin-speedometer {
+  position: relative;
+  width: 245px;
+  min-width: 245px;
+  height: 148px;
+}
+
+.admin-speedometer svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.admin-speedometer-track,
+.admin-speedometer-progress {
+  fill: none;
+  stroke-linecap: round;
+  stroke-width: 15;
+}
+
+.admin-speedometer-track {
+  stroke: rgba(43, 68, 112, 0.16);
+}
+
+.admin-speedometer-progress {
+  stroke: var(--dn-blue);
+  filter: drop-shadow(0 3px 3px rgba(0, 114, 206, 0.2));
+  transition: stroke-dasharray 0.45s ease;
+}
+
+.admin-speedometer-needle {
+  position: absolute;
+  left: calc(50% - 2px);
+  bottom: 22px;
+  width: 4px;
+  height: 69px;
+  border-radius: 999px;
+  background: var(--dn-navy);
+  box-shadow: 0 1px 4px rgba(8, 25, 58, 0.3);
+  transform: rotate(var(--needle-rotation));
+  transform-origin: center bottom;
+  transition: transform 0.45s ease;
+}
+
+.admin-speedometer-hub {
+  position: absolute;
+  left: calc(50% - 9px);
+  bottom: 13px;
+  width: 18px;
+  height: 18px;
+  border: 4px solid #fff;
+  border-radius: 50%;
+  background: var(--dn-navy);
+  box-shadow: 0 1px 5px rgba(8, 25, 58, 0.28);
+}
+
+.admin-speedometer-reading {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  transform: translateX(-50%);
+  display: grid;
+  text-align: center;
+  line-height: 1.1;
+}
+
+.admin-speedometer-reading strong {
+  color: var(--dn-navy);
+  font-size: 1.55rem;
+}
+
+.admin-speedometer-reading span,
+.admin-speedometer-mark {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.admin-speedometer-mark {
+  position: absolute;
+  bottom: 6px;
+}
+
+.admin-speedometer-mark-start { left: 20px; }
+.admin-speedometer-mark-end { right: 15px; }
+
 .admin-productivity-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3403,6 +3531,16 @@ a {
 
   .admin-productivity-stats .stat-value {
     font-size: 1.25rem;
+  }
+
+  .admin-speedometer-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.75rem;
+  }
+
+  .admin-speedometer {
+    align-self: center;
   }
 }
 
