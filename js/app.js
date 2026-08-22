@@ -2119,6 +2119,9 @@ class ValidaFlowApp {
       const status = result.status;
       const tipificacion = result.tipificacion || '—';
       const observaciones = result.observaciones || '—';
+      const decisionTime = result.decisionAt
+        ? formatNicaraguaDateTime(result.decisionAt)
+        : (status ? 'Sin registro histórico' : '—');
 
       let decisionBadgeHtml = '';
       if (status === 'aplica') {
@@ -2138,6 +2141,7 @@ class ValidaFlowApp {
           <td>${decisionBadgeHtml}</td>
           <td>${status === 'no_aplica' ? `<span class="tipif-tag">${tipificacion}</span>` : '—'}</td>
           <td>${observaciones !== '—' ? `<span class="obs-tag">"${observaciones}"</span>` : '—'}</td>
+          <td>${decisionTime}</td>
         </tr>
       `;
     }).join('');
@@ -2231,6 +2235,7 @@ class ValidaFlowApp {
                     <th>¿Aplicó? (Decisión)</th>
                     <th>Tipificación del Rechazo</th>
                     <th>Observaciones Registradas</th>
+                    <th>Hora de Respuesta Final<br>(Nicaragua)</th>
                   </tr>
                 </thead>
                 <tbody>

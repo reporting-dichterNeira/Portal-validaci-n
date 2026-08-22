@@ -646,7 +646,12 @@ export class ValidatorUI {
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].status = 'aplica';
         audit.validationResults[kpiName].tipificacion = '';
-        audit.validationResults[kpiName].updatedAt = new Date().toISOString();
+        const decisionAt = new Date().toISOString();
+        // This is deliberately separate from updatedAt: observations can be
+        // edited later, but the PDV history must retain when the validator
+        // last clicked the final decision for this specific alert.
+        audit.validationResults[kpiName].decisionAt = decisionAt;
+        audit.validationResults[kpiName].updatedAt = decisionAt;
         this.markCurrentAuditUnsaved(audit);
         this.app.saveState();
       });
@@ -669,7 +674,9 @@ export class ValidatorUI {
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].status = 'no_aplica';
         audit.validationResults[kpiName].tipificacion = tipifSelect?.value || '';
-        audit.validationResults[kpiName].updatedAt = new Date().toISOString();
+        const decisionAt = new Date().toISOString();
+        audit.validationResults[kpiName].decisionAt = decisionAt;
+        audit.validationResults[kpiName].updatedAt = decisionAt;
         this.markCurrentAuditUnsaved(audit);
         this.app.saveState();
       });
@@ -782,18 +789,24 @@ export class ValidatorUI {
       const obsTextarea = card.querySelector(`#obs_${index}`);
 
       if (radioAplica?.checked) {
+        const previous = audit.validationResults[kpiName] || {};
         audit.validationResults[kpiName] = {
+          ...previous,
           status: 'aplica',
           tipificacion: '',
           observaciones: obsTextarea?.value.trim() || '',
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          decisionAt: previous.decisionAt || null
         };
       } else if (radioNoAplica?.checked) {
+        const previous = audit.validationResults[kpiName] || {};
         audit.validationResults[kpiName] = {
+          ...previous,
           status: 'no_aplica',
           tipificacion: tipifSelect?.value || '',
           observaciones: obsTextarea?.value.trim() || '',
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
+          decisionAt: previous.decisionAt || null
         };
       } else if (radioDuda?.checked) {
         const prev = audit.validationResults[kpiName] || {};
