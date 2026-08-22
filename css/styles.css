@@ -3313,37 +3313,39 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 2rem;
-  padding: 1.2rem 1.4rem;
-  margin: 0 0 1.25rem;
+  gap: 1.25rem;
+  padding: 0.85rem 1rem;
+  margin: 0 0 1rem;
   border: 1px solid rgba(0, 114, 206, 0.2);
   border-radius: 14px;
   background: linear-gradient(112deg, rgba(0, 114, 206, 0.08), rgba(20, 184, 166, 0.06));
 }
 
 .admin-speedometer-copy h3 {
-  margin: 0.45rem 0 0.3rem;
+  margin: 0.3rem 0 0.2rem;
+  font-size: 1.05rem;
   color: var(--dn-navy);
 }
 
 .admin-speedometer-copy p {
   margin: 0;
   color: var(--text-secondary);
-  max-width: 520px;
+  max-width: 440px;
+  font-size: 0.84rem;
 }
 
 .admin-speedometer-summary {
   display: flex;
   align-items: baseline;
   gap: 0.45rem;
-  margin-top: 0.9rem;
+  margin-top: 0.55rem;
   color: var(--text-secondary);
-  font-size: 0.92rem;
+  font-size: 0.82rem;
 }
 
 .admin-speedometer-summary > strong {
   color: var(--dn-blue);
-  font-size: 1.7rem;
+  font-size: 1.35rem;
   line-height: 1;
 }
 
@@ -3353,9 +3355,9 @@ a {
 
 .admin-speedometer {
   position: relative;
-  width: 245px;
-  min-width: 245px;
-  height: 148px;
+  width: 180px;
+  min-width: 180px;
+  height: 108px;
 }
 
 .admin-speedometer svg {
@@ -3384,9 +3386,9 @@ a {
 .admin-speedometer-needle {
   position: absolute;
   left: calc(50% - 2px);
-  bottom: 22px;
+  bottom: 16px;
   width: 4px;
-  height: 69px;
+  height: 51px;
   border-radius: 999px;
   background: var(--dn-navy);
   box-shadow: 0 1px 4px rgba(8, 25, 58, 0.3);
@@ -3398,10 +3400,10 @@ a {
 .admin-speedometer-hub {
   position: absolute;
   left: calc(50% - 9px);
-  bottom: 13px;
-  width: 18px;
-  height: 18px;
-  border: 4px solid #fff;
+  bottom: 9px;
+  width: 15px;
+  height: 15px;
+  border: 3px solid #fff;
   border-radius: 50%;
   background: var(--dn-navy);
   box-shadow: 0 1px 5px rgba(8, 25, 58, 0.28);
@@ -3410,7 +3412,7 @@ a {
 .admin-speedometer-reading {
   position: absolute;
   left: 50%;
-  bottom: 30px;
+  bottom: 21px;
   transform: translateX(-50%);
   display: grid;
   text-align: center;
@@ -3419,23 +3421,23 @@ a {
 
 .admin-speedometer-reading strong {
   color: var(--dn-navy);
-  font-size: 1.55rem;
+  font-size: 1.2rem;
 }
 
 .admin-speedometer-reading span,
 .admin-speedometer-mark {
   color: var(--text-secondary);
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   font-weight: 700;
 }
 
 .admin-speedometer-mark {
   position: absolute;
-  bottom: 6px;
+  bottom: 3px;
 }
 
-.admin-speedometer-mark-start { left: 20px; }
-.admin-speedometer-mark-end { right: 15px; }
+.admin-speedometer-mark-start { left: 15px; }
+.admin-speedometer-mark-end { right: 10px; }
 
 .admin-productivity-grid {
   display: grid;
