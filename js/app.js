@@ -6,8 +6,8 @@
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, seedSampleValidations } from './sample-data.js?v=21.0';
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
-import { ValidatorUI } from './validator-ui.js?v=31.0';
-import { SupabaseBackend } from './supabase-backend.js?v=36.0';
+import { ValidatorUI } from './validator-ui.js?v=32.0';
+import { SupabaseBackend } from './supabase-backend.js?v=37.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -1181,7 +1181,18 @@ class ValidaFlowApp {
     const audit = syncTarget?.audit || (validatorUI.currentAuditId
       ? (source || []).find(a => String(a.id) === String(validatorUI.currentAuditId))
       : null);
-    if (audit) await this.backend.saveAuditProgress(audit, module);
+    if (!audit) return null;
+    const savedAudit = await this.backend.saveAuditProgress(audit, module);
+    if (!savedAudit) return null;
+
+    // The database is the authority for audit timing.  Apply its returned
+    // values to both the queued snapshot and the live audit before any screen
+    // displays or exports the timestamps.
+    Object.assign(audit, savedAudit);
+    const liveAudit = (source || []).find(item => String(item.id) === String(savedAudit.id));
+    if (liveAudit && liveAudit !== audit) Object.assign(liveAudit, savedAudit);
+    this.saveState();
+    return savedAudit;
   }
 
   async refreshFromBackend() {
@@ -2114,6 +2125,21 @@ class ValidaFlowApp {
     const statusBadgeClass = isCompleted ? 'decision-aplica' : audit.validationStatus === 'en_progreso' ? 'decision-no-aplica' : 'decision-pendiente';
     const statusText = isCompleted ? '✓ VALIDADA Y COMPLETADA' : audit.validationStatus === 'en_progreso' ? 'EN PROCESO' : 'PENDIENTE DE VALIDAR';
 
+    const timingStart = audit.startedAt ? new Date(audit.startedAt) : null;
+    const timingEnd = audit.completedAt ? new Date(audit.completedAt) : null;
+    const calculatedDurationSeconds = timingStart && timingEnd
+      && !Number.isNaN(timingStart.getTime())
+      && !Number.isNaN(timingEnd.getTime())
+      && timingEnd.getTime() >= timingStart.getTime()
+      ? Math.round((timingEnd.getTime() - timingStart.getTime()) / 1000)
+      : null;
+    const timingIsInconsistent = timingStart && timingEnd && calculatedDurationSeconds === null;
+    const durationDisplay = timingIsInconsistent
+      ? '<span class="text-danger">Tiempos pendientes de sincronización</span>'
+      : (calculatedDurationSeconds !== null
+        ? `<strong>${calculatedDurationSeconds} segundos</strong>`
+        : (audit.durationSeconds ? `<strong>${audit.durationSeconds} segundos</strong>` : '—'));
+
     const kpisRows = (audit.kpis || []).map((kpi, index) => {
       const result = (audit.validationResults || {})[kpi.name] || {};
       const status = result.status;
@@ -2206,7 +2232,7 @@ class ValidaFlowApp {
                 </div>
                 <div class="field-item">
                   <span class="field-label">Tiempo de Revisión</span>
-                  <span class="field-value">${audit.durationSeconds ? `<strong>${audit.durationSeconds} segundos</strong>` : '—'}</span>
+                  <span class="field-value">${durationDisplay}</span>
                 </div>
                 <div class="field-item">
                   <span class="field-label">Inicio de validación (Nicaragua)</span>

@@ -477,8 +477,9 @@ export class SupabaseBackend {
           p_external_id: String(audit.id),
           ...progress
         });
-    const { error } = await request;
+    const { data, error } = await request;
     if (error) throw error;
+    return Array.isArray(data) ? (data[0] || null) : data;
   }
 
   async saveAuditProgress(audit, module) {
@@ -494,7 +495,8 @@ export class SupabaseBackend {
 
     await this.ensureFreshSessionForWrite();
     try {
-      await this.requestAuditProgressSave(audit, module, progress);
+      const saved = await this.requestAuditProgressSave(audit, module, progress);
+      return saved ? mapAudit(saved) : null;
     } catch (error) {
       if (!isExpiredJwtError(error)) throw error;
 
@@ -502,7 +504,8 @@ export class SupabaseBackend {
       // Recreate only this validator's anonymous session and retry the exact
       // same audit once, never silently dropping the captured form values.
       await this.restoreValidatorSession();
-      await this.requestAuditProgressSave(audit, module, progress);
+      const saved = await this.requestAuditProgressSave(audit, module, progress);
+      return saved ? mapAudit(saved) : null;
     }
   }
 

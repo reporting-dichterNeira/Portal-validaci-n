@@ -905,10 +905,11 @@ export class ValidatorUI {
 
     try {
       // Do not navigate until Supabase confirms that this exact audit was saved.
-      await this.app.syncStateAcrossTabs(
+      const savedAudit = await this.app.syncStateAcrossTabs(
         { audit, module: this.currentModule },
         { suppressErrorToast: true }
       );
+      if (savedAudit) Object.assign(audit, savedAudit);
     } catch (error) {
       Object.assign(audit, previousProgress);
       this.app.saveState();
