@@ -4,10 +4,11 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, seedSampleValidations } from './sample-data.js?v=21.0';
-import { ExcelParser } from './excel-parser.js?v=22.0';
+import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
-import { ValidatorUI } from './validator-ui.js?v=30.0';
-import { SupabaseBackend } from './supabase-backend.js?v=35.0';
+import { ValidatorUI } from './validator-ui.js?v=31.0';
+import { SupabaseBackend } from './supabase-backend.js?v=36.0';
+import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
 const SUPERVISOR_MODULES = {
@@ -560,10 +561,10 @@ class ValidaFlowApp {
     if (audit.completedAt) {
       const d = new Date(audit.completedAt);
       if (!isNaN(d.getTime())) {
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        return getNicaraguaDateKey(d);
       }
     }
-    return new Date().toISOString().split('T')[0];
+    return getNicaraguaDateKey(new Date());
   }
 
   loadState() {
@@ -824,9 +825,7 @@ class ValidaFlowApp {
       .map(([validatorId]) => validatorId);
     const percentage = total => totalRows ? Math.round((total / totalRows) * 100) : 0;
     const number = value => new Intl.NumberFormat('es-CO').format(value || 0);
-    const formatDateTime = value => value
-      ? new Intl.DateTimeFormat('es-CO', { hour: '2-digit', minute: '2-digit' }).format(new Date(value))
-      : '—';
+    const formatDateTime = value => formatNicaraguaDateTime(value, '—');
     const displayDate = new Intl.DateTimeFormat('es-CO', {
       weekday: 'long', day: 'numeric', month: 'long'
     }).format(new Date(`${operationDate}T12:00:00`));
@@ -2206,8 +2205,12 @@ class ValidaFlowApp {
                   <span class="field-value">${audit.durationSeconds ? `<strong>${audit.durationSeconds} segundos</strong>` : '—'}</span>
                 </div>
                 <div class="field-item">
-                  <span class="field-label">Fecha/Hora de Validación</span>
-                  <span class="field-value">${audit.completedAt ? new Date(audit.completedAt).toLocaleString('es-CO') : '<span class="text-warning">Pendiente</span>'}</span>
+                  <span class="field-label">Inicio de validación (Nicaragua)</span>
+                  <span class="field-value">${formatNicaraguaDateTime(audit.startedAt, 'Pendiente')}</span>
+                </div>
+                <div class="field-item">
+                  <span class="field-label">Fin de validación (Nicaragua)</span>
+                  <span class="field-value">${formatNicaraguaDateTime(audit.completedAt, 'Pendiente')}</span>
                 </div>
                 <div class="field-item" style="grid-column: span 2;">
                   <span class="field-label">KPIs Asignados a Revisión</span>
@@ -3844,7 +3847,7 @@ class ValidaFlowApp {
     const dateLabel = document.getElementById('commercial-dossier-date-label');
     if (scopeBadge) scopeBadge.textContent = `Estudios: ${studyLabel}`;
     if (dateLabel) {
-      const todayStr = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+      const todayStr = formatNicaraguaDate(new Date());
       dateLabel.textContent = `Emisión: ${todayStr} • Protocolo de Calidad dichter & neira`;
     }
 
@@ -3940,7 +3943,7 @@ class ValidaFlowApp {
     setEl('dossier-stat-universe-editadas-pct', `${pctNoAplicaUniverse}% del universo (${pctAlertasEditadas}% de alertas)`);
 
     // POPULAR DOCUMENTO GERENCIAL EXCLUSIVO PARA IMPRESIÓN/PDF
-    const todayStr = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' });
+    const todayStr = formatNicaraguaDate(new Date());
     setEl('print-meta-date', todayStr);
     setEl('print-meta-scope', studyLabel);
 
@@ -4167,8 +4170,7 @@ class ValidaFlowApp {
     capture.appendChild(source.cloneNode(true));
     document.body.appendChild(capture);
 
-    const today = new Date();
-    const dateStamp = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const dateStamp = getNicaraguaDateKey(new Date());
     this.showToast('Generando tu PDF… la descarga iniciará automáticamente.', 'info');
 
     try {
@@ -4393,9 +4395,7 @@ class ValidaFlowApp {
     }
 
     container.innerHTML = filtered.map(q => {
-      const formattedDate = new Date(q.dudaCreatedAt).toLocaleDateString('es-ES', {
-        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
-      });
+      const formattedDate = formatNicaraguaDateTime(q.dudaCreatedAt, 'Sin fecha');
 
       return `
         <div class="query-card-item ${q.isResolved ? 'status-resolved' : 'status-pending'}">
@@ -4615,8 +4615,7 @@ class ValidaFlowApp {
   // HISTÓRICO SEMANAL AGREGADO POR VALIDADOR
   // ==========================================
   toLocalDateInputValue(date) {
-    const value = date instanceof Date ? date : new Date(date);
-    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+    return getNicaraguaDateKey(date);
   }
 
   initValidatorHistoryModule() {
@@ -4785,9 +4784,7 @@ class ValidaFlowApp {
     const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
     }[char]));
-    const formatActivity = value => value
-      ? new Date(value).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
-      : 'Sin actividad';
+    const formatActivity = value => formatNicaraguaDateTime(value, 'Sin actividad');
 
     container.innerHTML = `
       <table class="validator-history-table">
@@ -5399,13 +5396,16 @@ class ValidaFlowApp {
 
   exportMultiSheetExcel() {
     const auditsToExport = this.getFilteredAuditsForReports();
-    ExcelParser.exportMultiSheetDailyExcel(auditsToExport, this.validators);
+    ExcelParser.exportDailyAndConsolidatedExcel(auditsToExport, this.validators);
     this.showToast('Descargando libro Excel con hojas día a día...', 'success');
   }
 
   exportExecutiveExcel() {
     const auditsToExport = this.getFilteredAuditsForReports();
-    ExcelParser.exportExecutiveExcel(auditsToExport, this.validators);
+    const studyLabel = this.selectedStudies.includes('ALL')
+      ? 'Todos los Estudios'
+      : this.selectedStudies.join(', ');
+    ExcelParser.exportExecutiveExcel(auditsToExport, studyLabel);
     this.showToast('Descargando Informe Ejecutivo de Comité...', 'success');
   }
 

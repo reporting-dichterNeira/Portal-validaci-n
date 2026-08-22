@@ -2,7 +2,17 @@
  * Módulo de procesamiento y exportación de archivos Excel / CSV
  */
 
+import { formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
+
 export class ExcelParser {
+  static getTimingExportFields(audit) {
+    return {
+      'Inicio de validación (Hora Nicaragua)': formatNicaraguaDateTime(audit.startedAt, 'Pendiente'),
+      'Fin de validación (Hora Nicaragua)': formatNicaraguaDateTime(audit.completedAt, 'Pendiente'),
+      'Tiempo de revisión (seg)': Number.isFinite(audit.durationSeconds) ? audit.durationSeconds : '—'
+    };
+  }
+
   /**
    * Parsea un texto CSV considerando delimitadores comunes (;, ,, \t)
    * y maneja correctamente comillas y saltos de línea.
@@ -454,8 +464,8 @@ export class ExcelParser {
         'Auditor': audit.usuario,
         'Validador Asignado': validador ? validador.name : 'Sin asignar',
         'Código Validador': validador ? validador.code : '',
-        'Estado Validación': audit.validationStatus.toUpperCase(),
-        'Fecha Finalización': audit.completedAt ? new Date(audit.completedAt).toLocaleString('es-CO') : '',
+        'Estado Validación': (audit.validationStatus || 'pendiente').toUpperCase(),
+        ...this.getTimingExportFields(audit),
         'KPIs a Revisar (Total)': kpisParaRevisar.length
       };
 
@@ -548,8 +558,7 @@ export class ExcelParser {
           'Validador Asignado': validador ? validador.name : 'Sin asignar',
           'Código Validador': validador ? validador.code : '',
           'Estado Validación': (audit.validationStatus || 'pendiente').toUpperCase(),
-          'Tiempo (seg)': audit.durationSeconds || '—',
-          'Fecha/Hora Validación': audit.completedAt ? new Date(audit.completedAt).toLocaleString('es-CO') : 'Pendiente',
+          ...this.getTimingExportFields(audit),
           'Total KPIs a Revisar': kpisParaRevisar.length
         };
 
@@ -575,8 +584,7 @@ export class ExcelParser {
     uniqueAudits.forEach(audit => {
       let dateKey = 'Sin_Fecha_Validacion';
       if (audit.completedAt) {
-        const d = new Date(audit.completedAt);
-        dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        dateKey = getNicaraguaDateKey(audit.completedAt) || dateKey;
       } else if (audit.fecha) {
         dateKey = audit.fecha.replace(/\//g, '-');
       }
@@ -645,8 +653,7 @@ export class ExcelParser {
       if (operationDate) return this.cleanDateOnly(operationDate) === targetDateKey;
 
       if (audit.completedAt) {
-        const d = new Date(audit.completedAt);
-        const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const k = getNicaraguaDateKey(audit.completedAt);
         return k === targetDateKey;
       }
       return false;
@@ -674,8 +681,7 @@ export class ExcelParser {
         'Validador Responsable': validador ? validador.name : 'Sin asignar',
         'Código Validador': validador ? validador.code : '',
         'Estado': (audit.validationStatus || 'pendiente').toUpperCase(),
-        'Tiempo (seg)': audit.durationSeconds || '—',
-        'Fecha/Hora Validación': audit.completedAt ? new Date(audit.completedAt).toLocaleString('es-CO') : 'Pendiente'
+        ...this.getTimingExportFields(audit)
       };
 
       kpisParaRevisar.forEach(kpi => {
@@ -765,7 +771,7 @@ export class ExcelParser {
     // 1. Hoja Resumen Ejecutivo
     const execSummaryRows = [
       { 'Indicador Ejecutivo': 'Empresa', 'Valor': 'dichter & neira' },
-      { 'Indicador Ejecutivo': 'Fecha de Generación', 'Valor': new Date().toLocaleString('es-CO') },
+      { 'Indicador Ejecutivo': 'Fecha de Generación (Hora Nicaragua)', 'Valor': formatNicaraguaDateTime(new Date()) },
       { 'Indicador Ejecutivo': 'Segmentación / Estudios', 'Valor': studyLabel },
       { 'Indicador Ejecutivo': 'Total Auditorías Auditadas', 'Valor': totalAudits },
       { 'Indicador Ejecutivo': 'Auditorías Completadas', 'Valor': completedAudits },
@@ -825,6 +831,18 @@ export class ExcelParser {
       });
     const wsReasons = XLSX.utils.json_to_sheet(reasonRows);
     XLSX.utils.book_append_sheet(wb, wsReasons, 'Causas_No_Aplica');
+
+    const timingRows = uniqueAudits.map(audit => ({
+      'ID Auditoría': audit.id,
+      'ID PDV': audit.idPDV || '',
+      'Estudio / Canal': audit.estudio || audit.modelo || audit.canal || '',
+      'Validador': audit._validatorName || audit.assignedValidatorId || 'Sin asignar',
+      'Código validador': audit._validatorCode || '',
+      'Estado': (audit.validationStatus || 'pendiente').toUpperCase(),
+      ...this.getTimingExportFields(audit)
+    }));
+    const wsTiming = XLSX.utils.json_to_sheet(timingRows);
+    XLSX.utils.book_append_sheet(wb, wsTiming, 'Trazabilidad_Tiempos');
 
     XLSX.writeFile(wb, filename);
   }

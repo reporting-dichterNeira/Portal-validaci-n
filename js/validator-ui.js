@@ -2,6 +2,8 @@
  * Módulo de la interfaz y flujo del Validador
  */
 
+import { formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
+
 export class ValidatorUI {
   constructor(app) {
     this.app = app;
@@ -219,10 +221,10 @@ export class ValidatorUI {
   }
 
   async loadProductivity() {
-    const today = new Date();
+    const today = new Date(`${getNicaraguaDateKey(new Date())}T12:00:00Z`);
     const from = new Date(today);
-    from.setFullYear(today.getFullYear() - 5);
-    const toDate = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    from.setUTCFullYear(today.getUTCFullYear() - 5);
+    const toDate = date => getNicaraguaDateKey(date);
 
     try {
       const rows = this.app.backend.configured
@@ -575,6 +577,14 @@ export class ValidatorUI {
           <span class="meta-item-label">Auditor de Campo</span>
           <span class="meta-item-value">${audit.usuario || 'N/A'}</span>
         </div>
+        <div class="meta-item">
+          <span class="meta-item-label">Inicio de validación (Nicaragua)</span>
+          <span class="meta-item-value">${formatNicaraguaDateTime(audit.startedAt, 'Aún no iniciada')}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-item-label">Fin de validación (Nicaragua)</span>
+          <span class="meta-item-value">${formatNicaraguaDateTime(audit.completedAt, 'Pendiente')}</span>
+        </div>
       </div>
 
       <!-- Sección de Validación de KPIs -->
@@ -850,9 +860,8 @@ export class ValidatorUI {
       durationSeconds: audit.durationSeconds
     };
     const now = new Date();
-    const dateOnly = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const dateOnly = getNicaraguaDateKey(now);
     audit.fechaValidacion = dateOnly;
-    audit.fecha = dateOnly;
 
     if (audit.startedAt) {
       const diffMs = now.getTime() - new Date(audit.startedAt).getTime();
