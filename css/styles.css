@@ -818,6 +818,11 @@ a {
   justify-content: center;
 }
 
+.btn-reassign-validator {
+  width: 100%;
+  justify-content: center;
+}
+
 .val-stats-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

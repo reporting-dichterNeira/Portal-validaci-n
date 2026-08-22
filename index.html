@@ -1705,6 +1705,39 @@
     </div>
   </div>
 
+  <!-- MODAL: REASIGNAR AUDITORÍAS PENDIENTES ENTRE VALIDADORES -->
+  <div class="modal-overlay hidden" id="modal-reassign-pending-audits">
+    <div class="modal-card modal-card-md">
+      <div class="modal-header">
+        <div>
+          <span class="corporate-badge-sm">dichter & neira • Gestión de asignación</span>
+          <h3>Reasignar auditorías pendientes</h3>
+        </div>
+        <button class="btn-close-modal" id="btn-close-reassign-pending" type="button" aria-label="Cerrar">✕</button>
+      </div>
+
+      <div class="modal-body">
+        <p class="modal-desc" id="reassign-pending-summary">—</p>
+        <div class="assigned-study-upload-card" style="margin: 0.9rem 0;">
+          <span class="assigned-study-upload-label">Alcance protegido</span>
+          <strong>Solo se moverán las auditorías pendientes</strong>
+          <span>Las terminadas, las que están en progreso y las asignaciones de los demás validadores no cambian.</span>
+        </div>
+        <div class="form-group">
+          <label for="reassign-pending-target">Asignar a validador activo</label>
+          <select id="reassign-pending-target" class="form-select">
+            <option value="">Selecciona un validador</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-reassign-pending" type="button">Cancelar</button>
+        <button class="btn btn-primary" id="btn-confirm-reassign-pending" type="button">Reasignar pendientes</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: CONFIRMAR CARGA DIARIA AL ESTUDIO ASIGNADO -->
   <div class="modal-overlay hidden" id="modal-select-study">
     <div class="modal-card modal-card-lg">

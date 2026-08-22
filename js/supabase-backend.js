@@ -514,6 +514,22 @@ export class SupabaseBackend {
     return mapValidator(data);
   }
 
+  async reassignPendingAudits({ sourceValidatorId, targetValidatorId, module }) {
+    this.ensureConfigured();
+    const { data, error } = await this.client.rpc('reassign_pending_audits', {
+      p_study_id: this.currentScope?.study?.id || null,
+      p_module: module,
+      p_source_validator_id: sourceValidatorId,
+      p_target_validator_id: targetValidatorId
+    });
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    return {
+      reassignedCount: Number(result?.reassigned_count || 0),
+      activeBatchId: result?.active_batch_id || null
+    };
+  }
+
   async deleteAudits(module, study = null) {
     this.ensureConfigured();
     const { error } = await this.client.rpc('archive_active_batches', {

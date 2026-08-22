@@ -120,6 +120,7 @@ class ValidaFlowApp {
     this.initStudyFilter();
     this.initDailyReportsModule();
     this.initValidatorHistoryModule();
+    this.initReassignPendingAuditsModal();
     this.validatorUI = new ValidatorUI(this);
     this.validatorUI.populateQuickSelect(this.validators);
 
@@ -2910,12 +2911,17 @@ class ValidaFlowApp {
             </div>
           </div>
 
-          <div class="val-progress-bar-wrap">
-            <div class="val-progress-bar-fill" style="width: ${val.percentProgress}%"></div>
-          </div>
-          <button class="btn btn-sm ${isActive ? 'btn-outline' : 'btn-primary'} btn-toggle-validator" data-id="${val.id}" data-active="${isActive}">
-            ${isActive ? '⏸ Desactivar' : '▶ Activar'}
-          </button>
+           <div class="val-progress-bar-wrap">
+             <div class="val-progress-bar-fill" style="width: ${val.percentProgress}%"></div>
+           </div>
+           ${projectAudits.filter(audit => audit.assignedValidatorId === val.id && this.isPendingAudit(audit)).length ? `
+             <button class="btn btn-sm btn-secondary btn-reassign-validator" data-id="${val.id}">
+               ↪ Reasignar pendientes
+             </button>
+           ` : ''}
+           <button class="btn btn-sm ${isActive ? 'btn-outline' : 'btn-primary'} btn-toggle-validator" data-id="${val.id}" data-active="${isActive}">
+             ${isActive ? '⏸ Desactivar' : '▶ Activar'}
+           </button>
         </div>
       `;
     }).join('');
@@ -2936,6 +2942,123 @@ class ValidaFlowApp {
         await this.toggleValidatorActive(btn.dataset.id, btn.dataset.active === 'true', btn);
       });
     });
+
+    container.querySelectorAll('.btn-reassign-validator').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.openReassignPendingAuditsModal(btn.dataset.id);
+      });
+    });
+  }
+
+  initReassignPendingAuditsModal() {
+    const modal = document.getElementById('modal-reassign-pending-audits');
+    const close = () => modal?.classList.add('hidden');
+    document.getElementById('btn-close-reassign-pending')?.addEventListener('click', close);
+    document.getElementById('btn-cancel-reassign-pending')?.addEventListener('click', close);
+    document.getElementById('btn-confirm-reassign-pending')?.addEventListener('click', () => this.confirmReassignPendingAudits());
+  }
+
+  openReassignPendingAuditsModal(sourceValidatorId) {
+    const modal = document.getElementById('modal-reassign-pending-audits');
+    if (!modal) return;
+    const source = this.validators.find(validator => validator.id === sourceValidatorId);
+    const pendingAudits = this.getAuditsForCurrentProject().filter(
+      audit => audit.assignedValidatorId === sourceValidatorId && this.isPendingAudit(audit)
+    );
+    const targets = this.getValidatorsForCurrentProject()
+      .filter(validator => validator.id !== sourceValidatorId)
+      .sort((a, b) => a.name.localeCompare(b.name, 'es'));
+
+    if (!source || !pendingAudits.length) {
+      this.showToast('Este validador ya no tiene auditorías pendientes para reasignar.', 'info');
+      this.renderAdminView();
+      return;
+    }
+    if (!targets.length) {
+      this.showToast('Activa o registra otro validador antes de reasignar estas auditorías.', 'warning');
+      return;
+    }
+
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[char]);
+    const summary = document.getElementById('reassign-pending-summary');
+    const select = document.getElementById('reassign-pending-target');
+    if (summary) {
+      summary.textContent = `${source.name} tiene ${pendingAudits.length} auditoría${pendingAudits.length === 1 ? '' : 's'} pendiente${pendingAudits.length === 1 ? '' : 's'} en ${this.currentProject}.`;
+    }
+    if (select) {
+      select.innerHTML = `<option value="">Selecciona un validador</option>${targets.map(target => (
+        `<option value="${escapeHtml(target.id)}">${escapeHtml(target.code)} · ${escapeHtml(target.name)}</option>`
+      )).join('')}`;
+    }
+    modal.dataset.sourceValidatorId = sourceValidatorId;
+    modal.dataset.pendingCount = String(pendingAudits.length);
+    modal.classList.remove('hidden');
+    select?.focus();
+  }
+
+  async confirmReassignPendingAudits() {
+    const modal = document.getElementById('modal-reassign-pending-audits');
+    const select = document.getElementById('reassign-pending-target');
+    const button = document.getElementById('btn-confirm-reassign-pending');
+    const sourceValidatorId = modal?.dataset.sourceValidatorId;
+    const targetValidatorId = select?.value;
+    const source = this.validators.find(validator => validator.id === sourceValidatorId);
+    const target = this.validators.find(validator => validator.id === targetValidatorId);
+    const pendingAudits = this.getAuditsForCurrentProject().filter(
+      audit => audit.assignedValidatorId === sourceValidatorId && this.isPendingAudit(audit)
+    );
+
+    if (!source || !target || !pendingAudits.length) {
+      this.showToast('Selecciona un validador destino válido con auditorías pendientes disponibles.', 'warning');
+      return;
+    }
+
+    const originalLabel = button?.innerHTML;
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Reasignando…';
+    }
+
+    try {
+      let reassignedCount = pendingAudits.length;
+      if (this.backend.configured && this.isSupervisor) {
+        const result = await this.backend.reassignPendingAudits({
+          sourceValidatorId,
+          targetValidatorId,
+          module: this.currentModule
+        });
+        reassignedCount = result.reassignedCount;
+        await this.refreshFromBackend();
+        this.channel?.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
+      } else {
+        pendingAudits.forEach(audit => { audit.assignedValidatorId = targetValidatorId; });
+        if (this.currentModule === 'blocking') this.blockingAudits = this.audits;
+        else this.smartAudits = this.audits;
+        await this.syncStateAcrossTabs();
+        this.renderAdminView();
+        this.renderAlertsView();
+        this.renderReportsView();
+      }
+
+      modal?.classList.add('hidden');
+      this.showToast(
+        reassignedCount
+          ? `${reassignedCount} auditoría${reassignedCount === 1 ? '' : 's'} pendiente${reassignedCount === 1 ? '' : 's'} de ${source.name} fueron asignadas a ${target.name}.`
+          : 'No había auditorías pendientes para mover; la asignación pudo haber cambiado en otra sesión.',
+        reassignedCount ? 'success' : 'info'
+      );
+    } catch (error) {
+      console.error('No fue posible reasignar auditorías pendientes:', error);
+      this.showToast(error.message || 'No fue posible reasignar las auditorías pendientes.', 'error');
+    } finally {
+      if (button?.isConnected) {
+        button.disabled = false;
+        button.innerHTML = originalLabel;
+      }
+    }
   }
 
   renderAuditsPreviewTable() {
@@ -3120,6 +3243,9 @@ class ValidaFlowApp {
       audit => audit.assignedValidatorId === id && audit.validationStatus === 'en_progreso'
     ).length;
     const pendingCount = projectAudits.filter(audit => this.isPendingAudit(audit)).length;
+    const validatorPendingCount = projectAudits.filter(
+      audit => audit.assignedValidatorId === id && this.isPendingAudit(audit)
+    ).length;
 
     if (!willBeActive && inProgressCount > 0) {
       this.showToast(
@@ -3151,7 +3277,12 @@ class ValidaFlowApp {
         validator.isActive = willBeActive;
       }
 
-      const redistribution = this.redistributePendingAudits();
+      // Reactivating keeps the agreed equitable redistribution. When a
+      // validator was first emptied with the manual reassignment control,
+      // deactivation must leave every other assignment exactly as it is.
+      const redistribution = willBeActive || validatorPendingCount > 0
+        ? this.redistributePendingAudits()
+        : { pendingCount: 0, activeValidators: this.getValidatorsForCurrentProject(), totalKpis: 0 };
       this.saveState();
       await this.syncStateAcrossTabs();
       this.renderAdminView();
@@ -4011,17 +4142,18 @@ class ValidaFlowApp {
     const capture = document.createElement('section');
     capture.className = 'commercial-dossier-modal';
     capture.style.cssText = [
-      'position:fixed',
-      'left:-12000px',
+      'position:absolute',
+      'left:0',
       'top:0',
-      'z-index:-1',
+      'z-index:2147483647',
       'width:1050px',
       'max-width:none',
       'height:auto',
       'max-height:none',
       'overflow:visible',
       'padding:0',
-      'background:#FFFFFF'
+      'background:#FFFFFF',
+      'pointer-events:none'
     ].join(';');
     capture.innerHTML = `
       <header style="padding:1.25rem 1.75rem; background:#FFFFFF; border-bottom:2px solid #E0EFFF; display:flex; align-items:center; gap:1rem;">
@@ -4041,6 +4173,14 @@ class ValidaFlowApp {
 
     try {
       await document.fonts?.ready;
+      await Promise.all([...capture.querySelectorAll('img')].map(image => (
+        image.complete
+          ? Promise.resolve()
+          : new Promise(resolve => {
+              image.addEventListener('load', resolve, { once: true });
+              image.addEventListener('error', resolve, { once: true });
+            })
+      )));
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       await window.html2pdf()
         .set({
