@@ -395,10 +395,20 @@ export class SupabaseBackend {
       });
       await this.upsertAudits(audits, module, batch.id);
 
-      const { data: activated, error: activateError } = await this.client.rpc('activate_upload_batch', {
+      let { data: activated, error: activateError } = await this.client.rpc('activate_upload_batch', {
         p_batch_id: batch.id,
         p_carryover_action: carryoverAction
       });
+
+      // Keep the current upload flow available while a project is being
+      // upgraded: the prior RPC accepted only p_batch_id.  Retrying with that
+      // contract is safe because the first call cannot resolve to the older
+      // function, so it has not changed the draft batch.
+      if (activateError && /activate_upload_batch|function.*not found|could not find/i.test(activateError.message || '')) {
+        ({ data: activated, error: activateError } = await this.client.rpc('activate_upload_batch', {
+          p_batch_id: batch.id
+        }));
+      }
       if (activateError) throw activateError;
       return Array.isArray(activated) ? activated[0] : activated;
     } catch (error) {

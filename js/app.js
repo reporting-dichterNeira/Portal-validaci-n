@@ -2365,8 +2365,15 @@ class ValidaFlowApp {
           module: this.currentModule
         });
       } catch (error) {
-        this.showToast(error.message || 'No fue posible consultar los pendientes de la jornada anterior.', 'error');
-        return;
+        const message = String(error?.message || '');
+        const isPendingFeatureUnavailable = /get_pending_carryover_summary|function.*not found|could not find/i.test(message);
+        if (!isPendingFeatureUnavailable) {
+          this.showToast(error.message || 'No fue posible consultar los pendientes de la jornada anterior.', 'error');
+          return;
+        }
+        // The new carry-over migration is intentionally additive.  Until it
+        // has been applied, preserve the existing, working upload process.
+        console.warn('La función de pendientes todavía no está disponible; se usará la carga estándar.');
       }
 
       if (pendingCarryover) {
