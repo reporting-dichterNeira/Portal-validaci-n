@@ -4181,120 +4181,198 @@ class ValidaFlowApp {
   }
 
   async exportCommercialPDF() {
-    if (typeof window.html2pdf !== 'function') {
+    const JsPDF = window.jspdf?.jsPDF;
+    if (typeof JsPDF !== 'function') {
       this.showToast('No fue posible cargar el generador de PDF. Verifica la conexión e intenta nuevamente.', 'error');
       return;
     }
 
-    // Actualiza las métricas sin abrir la vista previa ni el diálogo de impresión.
+    // El informe se compone directamente con jsPDF. Así no depende de una
+    // captura HTML/canvas, que en algunos equipos devolvía una página en blanco.
     this.openCommercialReportPreview(false);
-    const source = document.getElementById('commercial-printable-content');
+    const source = document.getElementById('executive-report-print-container');
     if (!source) {
       this.showToast('No fue posible preparar el informe para descargar.', 'error');
       return;
     }
 
-    const capture = document.createElement('section');
-    capture.className = 'commercial-dossier-modal pdf-export-capture';
-    capture.style.cssText = [
-      'position:absolute',
-      'left:0',
-      'top:0',
-      'z-index:2147483647',
-      'width:1050px',
-      'max-width:none',
-      'height:auto',
-      'max-height:none',
-      'overflow:visible',
-      'padding:0',
-      'background:#FFFFFF',
-      'pointer-events:none'
-    ].join(';');
-    capture.innerHTML = `
-      <header style="padding:1.25rem 1.75rem; background:#FFFFFF; border-bottom:2px solid #E0EFFF; display:flex; align-items:center; gap:1rem;">
-        <img src="assets/dn-logo-color.png" alt="dichter & neira" style="height:38px; width:auto; object-fit:contain;" />
-        <div>
-          <strong style="display:block; color:#002B49; font-size:1.25rem;">Informe Gerencial de Calidad & Eficiencia de Alertas</strong>
-          <span style="color:#64748B; font-size:0.85rem;">dichter & neira • ValidaFlow</span>
-        </div>
-      </header>
-    `;
-    // html2canvas toma una captura fuera del flujo de impresión. El modal puede
-    // estar oculto al descargar directamente, por lo que copiamos sus estilos
-    // calculados al clon y evitamos que el PDF herede un `display: none`.
-    const report = source.cloneNode(true);
-    const sourceNodes = [source, ...source.querySelectorAll('*')];
-    const reportNodes = [report, ...report.querySelectorAll('*')];
-    sourceNodes.forEach((sourceNode, index) => {
-      const reportNode = reportNodes[index];
-      if (!(sourceNode instanceof HTMLElement) || !(reportNode instanceof HTMLElement)) return;
-
-      const computed = window.getComputedStyle(sourceNode);
-      for (const property of computed) {
-        reportNode.style.setProperty(property, computed.getPropertyValue(property), computed.getPropertyPriority(property));
-      }
-    });
-    report.removeAttribute('id');
-    report.style.setProperty('display', 'flex', 'important');
-    report.style.setProperty('visibility', 'visible', 'important');
-    report.style.setProperty('opacity', '1', 'important');
-    report.style.setProperty('width', '1050px', 'important');
-    report.style.setProperty('max-width', 'none', 'important');
-    report.style.setProperty('height', 'auto', 'important');
-    report.style.setProperty('max-height', 'none', 'important');
-    report.style.setProperty('overflow', 'visible', 'important');
-    report.style.setProperty('box-sizing', 'border-box', 'important');
-    capture.appendChild(report);
-    document.body.appendChild(capture);
-
     const dateStamp = getNicaraguaDateKey(new Date());
     this.showToast('Generando tu PDF… la descarga iniciará automáticamente.', 'info');
 
     try {
-      await document.fonts?.ready;
-      await Promise.all([...capture.querySelectorAll('img')].map(image => (
-        image.complete
-          ? Promise.resolve()
-          : new Promise(resolve => {
-              image.addEventListener('load', resolve, { once: true });
-              image.addEventListener('error', resolve, { once: true });
-            })
-      )));
-      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      const pdfWorker = window.html2pdf()
-        .set({
-          margin: [8, 8, 8, 8],
-          filename: `informe-ejecutivo-validaflow-${dateStamp}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, backgroundColor: '#FFFFFF', logging: false },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] }
-        })
-        .from(capture);
+      const cleanText = (value) => String(value || '—')
+        .replace(/\p{Extended_Pictographic}/gu, '')
+        .replace(/[•–—]/g, '-')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const textOf = (id, fallback = '—') => cleanText(document.getElementById(id)?.textContent || fallback);
+      const tableRows = (id) => [...document.querySelectorAll(`#${id} tr`)].map(row => (
+        [...row.querySelectorAll('td')].map(cell => cleanText(cell.textContent))
+      ));
 
-      await pdfWorker.toCanvas();
-      const canvas = await pdfWorker.get('canvas');
-      const probe = document.createElement('canvas');
-      probe.width = 120;
-      probe.height = Math.max(1, Math.round((canvas.height / canvas.width) * probe.width));
-      const probeContext = probe.getContext('2d', { willReadFrequently: true });
-      probeContext.drawImage(canvas, 0, 0, probe.width, probe.height);
-      const pixels = probeContext.getImageData(0, 0, probe.width, probe.height).data;
-      let visiblePixels = 0;
-      for (let index = 0; index < pixels.length; index += 4) {
-        if (pixels[index] < 245 || pixels[index + 1] < 245 || pixels[index + 2] < 245) visiblePixels += 1;
-      }
-      if (visiblePixels < 25) {
-        throw new Error('La captura del informe no contenía información visible.');
-      }
+      const pdf = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const margin = 12;
+      const contentWidth = pageWidth - (margin * 2);
+      let y = 17;
+      const ensureSpace = (height) => {
+        if (y + height <= pageHeight - 16) return;
+        pdf.addPage();
+        y = 17;
+      };
+      const writeLines = (value, x, maxWidth, lineHeight = 4.2) => {
+        const lines = pdf.splitTextToSize(cleanText(value), maxWidth);
+        ensureSpace(lines.length * lineHeight + 2);
+        pdf.text(lines, x, y);
+        y += lines.length * lineHeight;
+      };
+      const sectionTitle = (title, subtitle = '') => {
+        ensureSpace(16);
+        pdf.setDrawColor(0, 86, 145);
+        pdf.setLineWidth(0.8);
+        pdf.line(margin, y - 4, margin, y + 5);
+        pdf.setTextColor(0, 43, 73);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(11);
+        pdf.text(cleanText(title), margin + 3, y);
+        y += 5;
+        if (subtitle) {
+          pdf.setTextColor(100, 116, 139);
+          pdf.setFont('helvetica', 'normal');
+          pdf.setFontSize(7.5);
+          writeLines(subtitle, margin + 3, contentWidth - 3, 3.3);
+        }
+        y += 2;
+      };
+      const drawTable = (headers, rows, widths) => {
+        const rowData = rows.length ? rows : [headers.map((_, index) => index === 0 ? 'Sin registros para el filtro seleccionado.' : '')];
+        const drawRow = (cells, header = false) => {
+          pdf.setFont('helvetica', header ? 'bold' : 'normal');
+          pdf.setFontSize(header ? 6.8 : 6.5);
+          const lineSets = cells.map((cell, index) => pdf.splitTextToSize(cleanText(cell), widths[index] - 3));
+          const height = Math.max(7, ...lineSets.map(lines => lines.length * 3.1 + 3));
+          ensureSpace(height + 1);
+          let x = margin;
+          lineSets.forEach((lines, index) => {
+            pdf.setFillColor(header ? 0 : 248, header ? 43 : 250, header ? 73 : 252);
+            pdf.setDrawColor(203, 213, 225);
+            pdf.rect(x, y, widths[index], height, 'FD');
+            pdf.setTextColor(header ? 255 : 30, header ? 255 : 41, header ? 255 : 59);
+            pdf.text(lines, x + 1.5, y + 3.5);
+            x += widths[index];
+          });
+          y += height;
+        };
+        drawRow(headers, true);
+        rowData.forEach(row => drawRow(headers.map((_, index) => row[index] || ''), false));
+        y += 4;
+      };
 
-      await pdfWorker.save();
+      const scope = textOf('print-meta-scope');
+      const reportDate = textOf('print-meta-date', formatNicaraguaDate(new Date()));
+      pdf.setFillColor(0, 43, 73);
+      pdf.rect(0, 0, pageWidth, 9, 'F');
+      pdf.setTextColor(0, 43, 73);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(15);
+      pdf.text('dichter & neira', margin, y);
+      pdf.setFontSize(7.5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 116, 139);
+      pdf.text(`Informe ejecutivo confidencial - ${reportDate}`, margin, y + 5);
+      y += 15;
+
+      pdf.setFillColor(241, 245, 249);
+      pdf.roundedRect(margin, y, contentWidth, 17, 2, 2, 'F');
+      pdf.setTextColor(0, 43, 73);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(13);
+      pdf.text('INFORME GERENCIAL DE CALIDAD, ALERTAS Y AUDITORÍA EN PDV', margin + 4, y + 7);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(71, 85, 105);
+      pdf.text(`Alcance: ${scope}`, margin + 4, y + 12);
+      y += 24;
+
+      sectionTitle('1. Resumen ejecutivo', 'Métricas consolidadas del proceso de validación y control de calidad.');
+      const kpis = [
+        ['Auditorías evaluadas', textOf('print-kpi-audits')],
+        ['Falsos positivos filtrados', textOf('print-kpi-false-positives')],
+        ['Precisión de alertas', textOf('print-kpi-precision')],
+        ['SLA promedio', textOf('print-kpi-sla')],
+        ['Universo evaluado', textOf('print-kpi-universe-total')]
+      ];
+      const kpiWidth = contentWidth / kpis.length;
+      kpis.forEach(([label, value], index) => {
+        const x = margin + (index * kpiWidth);
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(203, 213, 225);
+        pdf.roundedRect(x, y, kpiWidth - 2, 18, 1.5, 1.5, 'FD');
+        pdf.setTextColor(0, 43, 73);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(11);
+        pdf.text(value, x + (kpiWidth - 2) / 2, y + 7, { align: 'center' });
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(6.2);
+        pdf.setTextColor(71, 85, 105);
+        pdf.text(pdf.splitTextToSize(label, kpiWidth - 5), x + (kpiWidth - 2) / 2, y + 12, { align: 'center' });
+      });
+      y += 25;
+
+      sectionTitle('2. Universo de medición y edición humana');
+      drawTable(
+        ['Categoría', 'Total', '% universo', 'Interpretación'],
+        [
+          ['Conforme sin alerta', textOf('print-tbl-sin-alerta-count'), textOf('print-tbl-sin-alerta-pct'), 'Puntos que cumplieron los criterios directos de canal.'],
+          ['Alerta confirmada', textOf('print-tbl-aplica-count'), textOf('print-tbl-aplica-pct'), 'Desviaciones reales que requieren plan de acción.'],
+          ['Alerta editada', textOf('print-tbl-editadas-count'), textOf('print-tbl-editadas-pct'), 'Falsos positivos rectificados antes de entregar la información al cliente.']
+        ],
+        [43, 22, 27, 94]
+      );
+
+      sectionTitle('3. Benchmark por estudio y canal');
+      drawTable(
+        ['Estudio', 'Aud.', 'Alertas', 'Aplica', 'No aplica', 'Precisión', 'Efectividad'],
+        tableRows('print-benchmark-tbody'),
+        [32, 16, 20, 18, 22, 24, 54]
+      );
+
+      sectionTitle('4. Variables y causas principales');
+      drawTable(['#', 'Variable / KPI', 'Alertas', '% confirmación'], tableRows('print-top-kpis-tbody'), [12, 92, 32, 50]);
+      drawTable(['Motivo de descarte', 'Casos', '% descarte'], tableRows('print-reasons-tbody'), [112, 32, 42]);
+
+      sectionTitle('5. Conclusiones y plan de acción');
+      const recommendations = [...source.querySelectorAll('#print-recommendations-content .print-rec-item')];
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(30, 41, 59);
+      recommendations.forEach((recommendation, index) => {
+        const text = cleanText(recommendation.textContent);
+        pdf.setFont('helvetica', 'bold');
+        ensureSpace(11);
+        pdf.text(`${index + 1}.`, margin, y);
+        pdf.setFont('helvetica', 'normal');
+        writeLines(text.replace(/^\d+\.\s*/, ''), margin + 5, contentWidth - 5, 4.2);
+        y += 2;
+      });
+
+      const pageCount = pdf.getNumberOfPages();
+      for (let page = 1; page <= pageCount; page++) {
+        pdf.setPage(page);
+        pdf.setDrawColor(203, 213, 225);
+        pdf.line(margin, pageHeight - 10, pageWidth - margin, pageHeight - 10);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(6.5);
+        pdf.setTextColor(100, 116, 139);
+        pdf.text('ValidaFlow - Intelligence & Quality Control', margin, pageHeight - 6);
+        pdf.text(`Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
+      }
+      pdf.save(`informe-ejecutivo-validaflow-${dateStamp}.pdf`);
       this.showToast('PDF descargado correctamente.', 'success');
     } catch (error) {
       console.error('No fue posible generar el PDF ejecutivo:', error);
       this.showToast('No fue posible generar el PDF. Intenta nuevamente.', 'error');
-    } finally {
-      capture.remove();
     }
   }
 
