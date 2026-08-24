@@ -4202,6 +4202,7 @@ class ValidaFlowApp {
     try {
       const cleanText = (value) => String(value || '—')
         .replace(/\p{Extended_Pictographic}/gu, '')
+        .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, '')
         .replace(/[•–—]/g, '-')
         .replace(/\s+/g, ' ')
         .trim();
@@ -4245,9 +4246,9 @@ class ValidaFlowApp {
         }
         y += 2;
       };
-      const drawTable = (headers, rows, widths) => {
+      const drawTable = (headers, rows, widths, options = {}) => {
         const rowData = rows.length ? rows : [headers.map((_, index) => index === 0 ? 'Sin registros para el filtro seleccionado.' : '')];
-        const drawRow = (cells, header = false) => {
+        const drawRow = (cells, header = false, rowIndex = 0) => {
           pdf.setFont('helvetica', header ? 'bold' : 'normal');
           pdf.setFontSize(header ? 6.8 : 6.5);
           const lineSets = cells.map((cell, index) => pdf.splitTextToSize(cleanText(cell), widths[index] - 3));
@@ -4255,28 +4256,36 @@ class ValidaFlowApp {
           ensureSpace(height + 1);
           let x = margin;
           lineSets.forEach((lines, index) => {
-            pdf.setFillColor(header ? 0 : 248, header ? 43 : 250, header ? 73 : 252);
+            const cellStyle = header ? null : options.cellStyle?.(cells, index, rowIndex);
+            const fill = cellStyle?.fill || (header ? [0, 43, 73] : [248, 250, 252]);
+            const color = cellStyle?.color || (header ? [255, 255, 255] : [30, 41, 59]);
+            pdf.setFillColor(...fill);
             pdf.setDrawColor(203, 213, 225);
             pdf.rect(x, y, widths[index], height, 'FD');
-            pdf.setTextColor(header ? 255 : 30, header ? 255 : 41, header ? 255 : 59);
+            pdf.setTextColor(...color);
+            if (!header && cellStyle?.bold) pdf.setFont('helvetica', 'bold');
             pdf.text(lines, x + 1.5, y + 3.5);
+            if (!header && cellStyle?.bold) pdf.setFont('helvetica', 'normal');
             x += widths[index];
           });
           y += height;
         };
         drawRow(headers, true);
-        rowData.forEach(row => drawRow(headers.map((_, index) => row[index] || ''), false));
+        rowData.forEach((row, index) => drawRow(headers.map((_, cellIndex) => row[cellIndex] || ''), false, index));
         y += 4;
       };
 
       const scope = textOf('print-meta-scope');
       const reportDate = textOf('print-meta-date', formatNicaraguaDate(new Date()));
       pdf.setFillColor(0, 43, 73);
-      pdf.rect(0, 0, pageWidth, 9, 'F');
+      pdf.rect(0, 0, pageWidth, 7, 'F');
       pdf.setTextColor(0, 43, 73);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(15);
       pdf.text('dichter & neira', margin, y);
+      pdf.setTextColor(0, 195, 137);
+      pdf.setFontSize(7);
+      pdf.text('INTELLIGENCE & QUALITY CONTROL', margin, y + 3.6);
       pdf.setFontSize(7.5);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(100, 116, 139);
@@ -4284,7 +4293,9 @@ class ValidaFlowApp {
       y += 15;
 
       pdf.setFillColor(241, 245, 249);
-      pdf.roundedRect(margin, y, contentWidth, 17, 2, 2, 'F');
+      pdf.roundedRect(margin, y, contentWidth, 18, 2, 2, 'F');
+      pdf.setDrawColor(224, 239, 255);
+      pdf.roundedRect(margin, y, contentWidth, 18, 2, 2, 'S');
       pdf.setTextColor(0, 43, 73);
       pdf.setFont('helvetica', 'bold');
       pdf.setFontSize(13);
@@ -4293,23 +4304,23 @@ class ValidaFlowApp {
       pdf.setFontSize(7.5);
       pdf.setTextColor(71, 85, 105);
       pdf.text(`Alcance: ${scope}`, margin + 4, y + 12);
-      y += 24;
+      y += 25;
 
       sectionTitle('1. Resumen ejecutivo', 'Métricas consolidadas del proceso de validación y control de calidad.');
       const kpis = [
-        ['Auditorías evaluadas', textOf('print-kpi-audits')],
-        ['Falsos positivos filtrados', textOf('print-kpi-false-positives')],
-        ['Precisión de alertas', textOf('print-kpi-precision')],
-        ['SLA promedio', textOf('print-kpi-sla')],
-        ['Universo evaluado', textOf('print-kpi-universe-total')]
+        { label: 'Auditorías evaluadas', value: textOf('print-kpi-audits'), color: [0, 43, 73], fill: [248, 250, 252], border: [203, 213, 225] },
+        { label: 'Falsos positivos filtrados', value: textOf('print-kpi-false-positives'), color: [255, 63, 125], fill: [255, 240, 246], border: [255, 154, 196] },
+        { label: 'Precisión de alertas', value: textOf('print-kpi-precision'), color: [0, 86, 145], fill: [241, 248, 255], border: [184, 220, 248] },
+        { label: 'SLA promedio', value: textOf('print-kpi-sla'), color: [0, 43, 73], fill: [248, 250, 252], border: [203, 213, 225] },
+        { label: 'Universo evaluado', value: textOf('print-kpi-universe-total'), color: [0, 195, 137], fill: [240, 253, 244], border: [167, 243, 208] }
       ];
       const kpiWidth = contentWidth / kpis.length;
-      kpis.forEach(([label, value], index) => {
+      kpis.forEach(({ label, value, color, fill, border }, index) => {
         const x = margin + (index * kpiWidth);
-        pdf.setFillColor(248, 250, 252);
-        pdf.setDrawColor(203, 213, 225);
+        pdf.setFillColor(...fill);
+        pdf.setDrawColor(...border);
         pdf.roundedRect(x, y, kpiWidth - 2, 18, 1.5, 1.5, 'FD');
-        pdf.setTextColor(0, 43, 73);
+        pdf.setTextColor(...color);
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(11);
         pdf.text(value, x + (kpiWidth - 2) / 2, y + 7, { align: 'center' });
@@ -4321,6 +4332,23 @@ class ValidaFlowApp {
       y += 25;
 
       sectionTitle('2. Universo de medición y edición humana');
+      const progressValues = [
+        parseFloat(textOf('print-tbl-sin-alerta-pct')) || 0,
+        parseFloat(textOf('print-tbl-aplica-pct')) || 0,
+        parseFloat(textOf('print-tbl-editadas-pct')) || 0
+      ];
+      const totalProgress = Math.max(1, progressValues.reduce((total, value) => total + value, 0));
+      const progressColors = [[0, 195, 137], [0, 86, 145], [255, 63, 125]];
+      let progressX = margin;
+      progressValues.forEach((value, index) => {
+        const width = contentWidth * (value / totalProgress);
+        if (width > 0) {
+          pdf.setFillColor(...progressColors[index]);
+          pdf.roundedRect(progressX, y, width, 3.2, 1.6, 1.6, 'F');
+        }
+        progressX += width;
+      });
+      y += 6;
       drawTable(
         ['Categoría', 'Total', '% universo', 'Interpretación'],
         [
@@ -4328,14 +4356,30 @@ class ValidaFlowApp {
           ['Alerta confirmada', textOf('print-tbl-aplica-count'), textOf('print-tbl-aplica-pct'), 'Desviaciones reales que requieren plan de acción.'],
           ['Alerta editada', textOf('print-tbl-editadas-count'), textOf('print-tbl-editadas-pct'), 'Falsos positivos rectificados antes de entregar la información al cliente.']
         ],
-        [43, 22, 27, 94]
+        [43, 22, 27, 94],
+        {
+          cellStyle: (_, column, row) => {
+            const colors = [[0, 165, 78], [0, 86, 145], [255, 63, 125]];
+            return row === 0 || row === 1 || row === 2
+              ? (column === 0 || column === 1 || column === 2 ? { color: colors[row], bold: true } : null)
+              : null;
+          }
+        }
       );
 
       sectionTitle('3. Benchmark por estudio y canal');
       drawTable(
         ['Estudio', 'Aud.', 'Alertas', 'Aplica', 'No aplica', 'Precisión', 'Efectividad'],
         tableRows('print-benchmark-tbody'),
-        [32, 16, 20, 18, 22, 24, 54]
+        [32, 16, 20, 18, 22, 24, 54],
+        {
+          cellStyle: (_, column) => {
+            if (column === 3) return { color: [0, 165, 78], bold: true };
+            if (column === 4) return { color: [255, 63, 125], bold: true };
+            if (column === 5) return { color: [0, 86, 145], bold: true };
+            return null;
+          }
+        }
       );
 
       sectionTitle('4. Variables y causas principales');
