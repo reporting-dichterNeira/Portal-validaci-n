@@ -4508,6 +4508,104 @@ a {
   background: #FAFAFB;
 }
 
+/* La vista previa debe caber siempre dentro de la ventana. El informe se
+   desplaza solo en el cuerpo, mientras las acciones para descargar o cerrar
+   permanecen disponibles arriba y abajo. */
+#modal-commercial-report-preview {
+  padding: 0.75rem;
+}
+
+#modal-commercial-report-preview .commercial-dossier-modal {
+  width: min(1050px, calc(100vw - 1.5rem));
+  max-height: calc(100dvh - 1.5rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#modal-commercial-report-preview .commercial-dossier-modal-header,
+#modal-commercial-report-preview .commercial-dossier-footer {
+  flex: 0 0 auto;
+}
+
+#modal-commercial-report-preview .commercial-dossier-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+#modal-commercial-report-preview .btn-close-modal {
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 0.5rem;
+  flex: 0 0 auto;
+}
+
+#modal-commercial-report-preview .btn-close-modal:hover,
+#modal-commercial-report-preview .btn-close-modal:focus-visible {
+  background: #F1F5F9;
+  color: var(--dn-navy);
+  outline: 2px solid var(--dn-blue-light);
+  outline-offset: 2px;
+}
+
+@media (max-width: 680px) {
+  #modal-commercial-report-preview .commercial-dossier-modal {
+    width: calc(100vw - 1rem);
+    max-height: calc(100dvh - 1rem);
+  }
+
+  #modal-commercial-report-preview .commercial-dossier-modal-header {
+    padding: 0.8rem 0.9rem;
+    gap: 0.6rem;
+  }
+
+  #modal-commercial-report-preview .commercial-dossier-header-brand {
+    min-width: 0;
+    gap: 0.55rem;
+  }
+
+  #modal-commercial-report-preview .commercial-dossier-header-brand h3 {
+    font-size: 0.95rem !important;
+  }
+
+  #modal-commercial-report-preview .dossier-brand-logo {
+    height: 28px;
+  }
+
+  #modal-commercial-report-preview .dossier-header-actions .btn {
+    display: none;
+  }
+
+  #modal-commercial-report-preview .commercial-dossier-body {
+    padding: 0.9rem;
+  }
+
+  #modal-commercial-report-preview .commercial-dossier-footer {
+    padding: 0.7rem 0.9rem;
+  }
+
+  #modal-commercial-report-preview .commercial-dossier-footer > span {
+    display: none;
+  }
+
+  #modal-commercial-report-preview .commercial-dossier-footer > div {
+    width: 100%;
+    gap: 0.4rem !important;
+    flex-wrap: wrap;
+  }
+
+  #modal-commercial-report-preview .commercial-dossier-footer .btn {
+    flex: 1 1 31%;
+    padding: 0.55rem 0.4rem;
+    font-size: 0.7rem;
+  }
+}
+
 .commercial-dossier-modal-header {
   background: #FFFFFF;
   border-bottom: 2px solid var(--dn-blue-light);
