@@ -4211,16 +4211,18 @@ class ValidaFlowApp {
         [...row.querySelectorAll('td')].map(cell => cleanText(cell.textContent))
       ));
 
-      const pdf = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-      const pageWidth = 210;
-      const pageHeight = 297;
-      const margin = 12;
+      // El dossier es un tablero ancho. El formato horizontal conserva la
+      // composición de la vista previa y evita que las tablas se amontonen.
+      const pdf = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+      const pageWidth = 297;
+      const pageHeight = 210;
+      const margin = 10;
       const contentWidth = pageWidth - (margin * 2);
-      let y = 17;
+      let y = 15;
       const ensureSpace = (height) => {
-        if (y + height <= pageHeight - 16) return;
+        if (y + height <= pageHeight - 15) return;
         pdf.addPage();
-        y = 17;
+        y = 15;
       };
       const writeLines = (value, x, maxWidth, lineHeight = 4.2) => {
         const lines = pdf.splitTextToSize(cleanText(value), maxWidth);
@@ -4245,6 +4247,31 @@ class ValidaFlowApp {
           writeLines(subtitle, margin + 3, contentWidth - 3, 3.3);
         }
         y += 2;
+      };
+      const drawMetricCards = (cards, height = 27) => {
+        ensureSpace(height + 3);
+        const cardWidth = (contentWidth - ((cards.length - 1) * 3)) / cards.length;
+        cards.forEach(({ label, value, description = '', color, fill, border }, index) => {
+          const x = margin + index * (cardWidth + 3);
+          pdf.setFillColor(...fill);
+          pdf.setDrawColor(...border);
+          pdf.roundedRect(x, y, cardWidth, height, 2, 2, 'FD');
+          pdf.setTextColor(...color);
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(height > 24 ? 13 : 11);
+          pdf.text(cleanText(value), x + cardWidth / 2, y + 10, { align: 'center' });
+          pdf.setFont('helvetica', 'bold');
+          pdf.setFontSize(6.3);
+          pdf.setTextColor(37, 55, 99);
+          pdf.text(pdf.splitTextToSize(cleanText(label), cardWidth - 5), x + cardWidth / 2, y + 16, { align: 'center' });
+          if (description) {
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(5.8);
+            pdf.setTextColor(100, 116, 139);
+            pdf.text(pdf.splitTextToSize(cleanText(description), cardWidth - 5), x + cardWidth / 2, y + 21, { align: 'center' });
+          }
+        });
+        y += height + 4;
       };
       const drawTable = (headers, rows, widths, options = {}) => {
         const rowData = rows.length ? rows : [headers.map((_, index) => index === 0 ? 'Sin registros para el filtro seleccionado.' : '')];
@@ -4281,7 +4308,7 @@ class ValidaFlowApp {
       pdf.rect(0, 0, pageWidth, 7, 'F');
       pdf.setTextColor(0, 43, 73);
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(15);
+      pdf.setFontSize(14);
       pdf.text('dichter & neira', margin, y);
       pdf.setTextColor(0, 195, 137);
       pdf.setFontSize(7);
@@ -4289,8 +4316,8 @@ class ValidaFlowApp {
       pdf.setFontSize(7.5);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(100, 116, 139);
-      pdf.text(`Informe ejecutivo confidencial - ${reportDate}`, margin, y + 5);
-      y += 15;
+      pdf.text(`Informe ejecutivo confidencial - ${reportDate}`, margin, y + 8);
+      y += 16;
 
       pdf.setFillColor(241, 245, 249);
       pdf.roundedRect(margin, y, contentWidth, 18, 2, 2, 'F');
@@ -4304,7 +4331,20 @@ class ValidaFlowApp {
       pdf.setFontSize(7.5);
       pdf.setTextColor(71, 85, 105);
       pdf.text(`Alcance: ${scope}`, margin + 4, y + 12);
-      y += 25;
+      y += 24;
+
+      pdf.setFillColor(240, 249, 255);
+      pdf.setDrawColor(186, 230, 253);
+      pdf.roundedRect(margin, y, contentWidth, 13, 2, 2, 'FD');
+      pdf.setTextColor(0, 43, 73);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setFontSize(8.2);
+      pdf.text('Garantía de Calidad y Verificación de Auditorías', margin + 4, y + 5);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(6.5);
+      pdf.setTextColor(71, 85, 105);
+      pdf.text('El 100% de las auditorías y alertas cuenta con revisión humana y trazabilidad de ValidaFlow.', margin + 4, y + 9);
+      y += 18;
 
       sectionTitle('1. Resumen ejecutivo', 'Métricas consolidadas del proceso de validación y control de calidad.');
       const kpis = [
@@ -4314,22 +4354,7 @@ class ValidaFlowApp {
         { label: 'SLA promedio', value: textOf('print-kpi-sla'), color: [0, 43, 73], fill: [248, 250, 252], border: [203, 213, 225] },
         { label: 'Universo evaluado', value: textOf('print-kpi-universe-total'), color: [0, 195, 137], fill: [240, 253, 244], border: [167, 243, 208] }
       ];
-      const kpiWidth = contentWidth / kpis.length;
-      kpis.forEach(({ label, value, color, fill, border }, index) => {
-        const x = margin + (index * kpiWidth);
-        pdf.setFillColor(...fill);
-        pdf.setDrawColor(...border);
-        pdf.roundedRect(x, y, kpiWidth - 2, 18, 1.5, 1.5, 'FD');
-        pdf.setTextColor(...color);
-        pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(11);
-        pdf.text(value, x + (kpiWidth - 2) / 2, y + 7, { align: 'center' });
-        pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(6.2);
-        pdf.setTextColor(71, 85, 105);
-        pdf.text(pdf.splitTextToSize(label, kpiWidth - 5), x + (kpiWidth - 2) / 2, y + 12, { align: 'center' });
-      });
-      y += 25;
+      drawMetricCards(kpis, 22);
 
       sectionTitle('2. Universo de medición y edición humana');
       const progressValues = [
@@ -4349,23 +4374,12 @@ class ValidaFlowApp {
         progressX += width;
       });
       y += 6;
-      drawTable(
-        ['Categoría', 'Total', '% universo', 'Interpretación'],
-        [
-          ['Conforme sin alerta', textOf('print-tbl-sin-alerta-count'), textOf('print-tbl-sin-alerta-pct'), 'Puntos que cumplieron los criterios directos de canal.'],
-          ['Alerta confirmada', textOf('print-tbl-aplica-count'), textOf('print-tbl-aplica-pct'), 'Desviaciones reales que requieren plan de acción.'],
-          ['Alerta editada', textOf('print-tbl-editadas-count'), textOf('print-tbl-editadas-pct'), 'Falsos positivos rectificados antes de entregar la información al cliente.']
-        ],
-        [43, 22, 27, 94],
-        {
-          cellStyle: (_, column, row) => {
-            const colors = [[0, 165, 78], [0, 86, 145], [255, 63, 125]];
-            return row === 0 || row === 1 || row === 2
-              ? (column === 0 || column === 1 || column === 2 ? { color: colors[row], bold: true } : null)
-              : null;
-          }
-        }
-      );
+      drawMetricCards([
+        { label: 'Universo Medible', value: textOf('print-kpi-universe-total'), description: textOf('print-kpi-universe-desc'), color: [37, 55, 99], fill: [248, 250, 252], border: [203, 213, 225] },
+        { label: 'Sin Alerta (Conformes)', value: textOf('print-tbl-sin-alerta-count'), description: `${textOf('print-tbl-sin-alerta-pct')} del universo`, color: [0, 165, 78], fill: [240, 253, 244], border: [167, 243, 208] },
+        { label: 'Alertas Válidas', value: textOf('print-tbl-aplica-count'), description: `${textOf('print-tbl-aplica-pct')} del universo`, color: [0, 86, 145], fill: [241, 248, 255], border: [184, 220, 248] },
+        { label: 'Alertas Editadas (No Aplica)', value: textOf('print-tbl-editadas-count'), description: `${textOf('print-tbl-editadas-pct')} del universo`, color: [255, 63, 125], fill: [255, 240, 246], border: [255, 154, 196] }
+      ], 25);
 
       sectionTitle('3. Benchmark por estudio y canal');
       drawTable(
@@ -4392,13 +4406,23 @@ class ValidaFlowApp {
       pdf.setFontSize(8.5);
       pdf.setTextColor(30, 41, 59);
       recommendations.forEach((recommendation, index) => {
-        const text = cleanText(recommendation.textContent);
+        const text = cleanText(recommendation.textContent).replace(/^\d+\.\s*/, '');
+        const lines = pdf.splitTextToSize(text, contentWidth - 11);
+        const cardHeight = Math.max(15, lines.length * 4.1 + 8);
+        ensureSpace(cardHeight + 3);
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(203, 213, 225);
+        pdf.roundedRect(margin, y, contentWidth, cardHeight, 1.5, 1.5, 'FD');
+        pdf.setFillColor(index === 1 ? 0 : 0, index === 1 ? 86 : 195, index === 1 ? 145 : 137);
+        pdf.rect(margin, y, 2, cardHeight, 'F');
+        pdf.setTextColor(0, 43, 73);
         pdf.setFont('helvetica', 'bold');
-        ensureSpace(11);
-        pdf.text(`${index + 1}.`, margin, y);
+        pdf.setFontSize(7.4);
+        pdf.text(`${index + 1}.`, margin + 5, y + 5);
         pdf.setFont('helvetica', 'normal');
-        writeLines(text.replace(/^\d+\.\s*/, ''), margin + 5, contentWidth - 5, 4.2);
-        y += 2;
+        pdf.setFontSize(7.3);
+        pdf.text(lines, margin + 9, y + 5);
+        y += cardHeight + 3;
       });
 
       const pageCount = pdf.getNumberOfPages();
