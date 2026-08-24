@@ -4195,7 +4195,7 @@ class ValidaFlowApp {
     }
 
     const capture = document.createElement('section');
-    capture.className = 'commercial-dossier-modal';
+    capture.className = 'commercial-dossier-modal pdf-export-capture';
     capture.style.cssText = [
       'position:absolute',
       'left:0',
@@ -4219,7 +4219,32 @@ class ValidaFlowApp {
         </div>
       </header>
     `;
-    capture.appendChild(source.cloneNode(true));
+    // html2canvas toma una captura fuera del flujo de impresión. El modal puede
+    // estar oculto al descargar directamente, por lo que copiamos sus estilos
+    // calculados al clon y evitamos que el PDF herede un `display: none`.
+    const report = source.cloneNode(true);
+    const sourceNodes = [source, ...source.querySelectorAll('*')];
+    const reportNodes = [report, ...report.querySelectorAll('*')];
+    sourceNodes.forEach((sourceNode, index) => {
+      const reportNode = reportNodes[index];
+      if (!(sourceNode instanceof HTMLElement) || !(reportNode instanceof HTMLElement)) return;
+
+      const computed = window.getComputedStyle(sourceNode);
+      for (const property of computed) {
+        reportNode.style.setProperty(property, computed.getPropertyValue(property), computed.getPropertyPriority(property));
+      }
+    });
+    report.removeAttribute('id');
+    report.style.setProperty('display', 'flex', 'important');
+    report.style.setProperty('visibility', 'visible', 'important');
+    report.style.setProperty('opacity', '1', 'important');
+    report.style.setProperty('width', '1050px', 'important');
+    report.style.setProperty('max-width', 'none', 'important');
+    report.style.setProperty('height', 'auto', 'important');
+    report.style.setProperty('max-height', 'none', 'important');
+    report.style.setProperty('overflow', 'visible', 'important');
+    report.style.setProperty('box-sizing', 'border-box', 'important');
+    capture.appendChild(report);
     document.body.appendChild(capture);
 
     const dateStamp = getNicaraguaDateKey(new Date());
@@ -4236,7 +4261,7 @@ class ValidaFlowApp {
             })
       )));
       await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      await window.html2pdf()
+      const pdfWorker = window.html2pdf()
         .set({
           margin: [8, 8, 8, 8],
           filename: `informe-ejecutivo-validaflow-${dateStamp}.pdf`,
@@ -4245,8 +4270,25 @@ class ValidaFlowApp {
           jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
           pagebreak: { mode: ['css', 'legacy'] }
         })
-        .from(capture)
-        .save();
+        .from(capture);
+
+      await pdfWorker.toCanvas();
+      const canvas = await pdfWorker.get('canvas');
+      const probe = document.createElement('canvas');
+      probe.width = 120;
+      probe.height = Math.max(1, Math.round((canvas.height / canvas.width) * probe.width));
+      const probeContext = probe.getContext('2d', { willReadFrequently: true });
+      probeContext.drawImage(canvas, 0, 0, probe.width, probe.height);
+      const pixels = probeContext.getImageData(0, 0, probe.width, probe.height).data;
+      let visiblePixels = 0;
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index] < 245 || pixels[index + 1] < 245 || pixels[index + 2] < 245) visiblePixels += 1;
+      }
+      if (visiblePixels < 25) {
+        throw new Error('La captura del informe no contenía información visible.');
+      }
+
+      await pdfWorker.save();
       this.showToast('PDF descargado correctamente.', 'success');
     } catch (error) {
       console.error('No fue posible generar el PDF ejecutivo:', error);
