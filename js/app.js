@@ -1440,17 +1440,26 @@ class ValidaFlowApp {
   async updateUserAccessFromRow(supervisorId, button) {
     const user = this.adminData.supervisors.find(item => item.id === supervisorId);
     const roleInput = document.getElementById(`admin-row-role-${supervisorId}`);
-    const userRole = roleInput?.value || '';
-    if (!user || !['supervisor', 'visualizer', 'commercial'].includes(userRole)) return;
-    if (user.role === userRole) {
-      this.showToast('El usuario ya tiene asignado ese portal.', 'info');
-      return;
-    }
+    const selectedAccess = roleInput?.value || '';
+    if (!user || !['supervisor', 'commercial'].includes(selectedAccess)) return;
     const assignments = Array.isArray(this.adminData.assignments)
       ? this.adminData.assignments.filter(item => item.supervisor_id === user.id)
       : [];
     const studyIds = assignments.map(item => item.study_id).filter(Boolean);
     const module = assignments[0]?.module || '';
+    const userRole = selectedAccess === 'commercial'
+      ? 'commercial'
+      : user.role === 'supervisor'
+        ? 'supervisor'
+        : user.role === 'visualizer'
+          ? 'visualizer'
+          : studyIds.length && SUPERVISOR_MODULES[module]
+            ? 'supervisor'
+            : 'visualizer';
+    if (user.role === userRole) {
+      this.showToast('El usuario ya tiene asignado ese acceso.', 'info');
+      return;
+    }
     if (userRole === 'supervisor' && (!studyIds.length || !SUPERVISOR_MODULES[module])) {
       this.showToast('Este usuario no tiene un alcance operativo guardado. Usa la opción de crear supervisor para definir estudios y tipo de alertas.', 'warning');
       return;
