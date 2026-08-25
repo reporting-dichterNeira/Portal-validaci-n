@@ -591,12 +591,13 @@ class ValidaFlowApp {
 
       this.isSupervisor = this.currentRole === 'supervisor';
       modalLogin?.classList.add('hidden');
+      const enteredFromVisualizations = this.pendingStaffRole === 'visualizer';
       this.showView(this.currentRole === 'admin'
         ? 'administrator'
-        : this.isVisualizationRole()
+        : enteredFromVisualizations || this.isVisualizationRole()
           ? 'visualizations'
           : 'supervisor-hub');
-      const sessionLabel = this.currentRole === 'admin' ? 'Administrador' : this.currentRole === 'commercial' ? 'Comercial' : this.currentRole === 'visualizer' ? 'Visualizaciones' : 'Supervisor';
+      const sessionLabel = this.currentRole === 'admin' ? 'Administrador' : enteredFromVisualizations ? 'Operaciones' : this.currentRole === 'commercial' ? 'Comercial' : this.currentRole === 'visualizer' ? 'Visualizaciones' : 'Supervisor';
       this.showToast(`Sesión de ${sessionLabel} iniciada.`, 'success');
     } catch (error) {
       this.isSupervisor = false;
