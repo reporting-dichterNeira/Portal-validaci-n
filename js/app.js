@@ -186,7 +186,7 @@ class ValidaFlowApp {
   }
 
   canUseExternalAnalysis() {
-    return ['admin', 'visualizer'].includes(this.currentRole);
+    return ['admin', 'supervisor', 'visualizer'].includes(this.currentRole);
   }
 
   mountVisualizationContent() {
@@ -199,14 +199,18 @@ class ValidaFlowApp {
     move('admin-productivity-panel', 'visualization-pane-overview');
     move('admin-alerts-analysis-sheet', 'visualization-pane-alerts');
     move('admin-editions-analysis-sheet', 'visualization-pane-editions');
-    const reports = document.getElementById('tab-reports');
-    const metricsPane = document.getElementById('visualization-pane-metrics');
-    if (reports && metricsPane) {
-      reports.classList.remove('tab-content-pane', 'active');
-      reports.classList.add('visualization-reports-content');
-      metricsPane.appendChild(reports);
-    }
     this.visualizationsMounted = true;
+  }
+
+  moveReportsContent(targetId) {
+    const reports = document.getElementById('tab-reports');
+    const target = document.getElementById(targetId);
+    if (!reports || !target) return;
+    const isVisualizationPortal = targetId === 'visualization-pane-metrics';
+    reports.classList.toggle('tab-content-pane', !isVisualizationPortal);
+    reports.classList.toggle('visualization-reports-content', isVisualizationPortal);
+    if (isVisualizationPortal) reports.classList.remove('active');
+    if (reports.parentElement !== target) target.appendChild(reports);
   }
 
   prepareVisualizationPortal() {
@@ -253,6 +257,7 @@ class ValidaFlowApp {
     } else if (target === 'alerts' || target === 'editions') {
       await this.refreshAdminExternalAnalysis();
     } else {
+      this.moveReportsContent('visualization-pane-metrics');
       this.renderReportsView();
       this.renderDailyReportsView();
       this.ensureHistoricalReportsLoaded();
@@ -4945,6 +4950,12 @@ class ValidaFlowApp {
   // ==========================================
   switchSupervisorTab(targetTab) {
     this.currentTab = targetTab;
+    if (targetTab === 'reports') {
+      this.moveReportsContent('private-supervisor-view');
+      document.getElementById('btn-subtab-operational')?.classList.remove('hidden');
+      document.getElementById('btn-subtab-executive')?.classList.add('hidden');
+      this.switchReportsSubtab('operational');
+    }
     const tabBtns = document.querySelectorAll('#supervisor-nav-tabs .nav-tab-btn');
     const tabPanes = document.querySelectorAll('#private-supervisor-view .tab-content-pane');
 
