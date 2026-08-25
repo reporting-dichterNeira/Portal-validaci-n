@@ -384,6 +384,16 @@
               Acceso Administrador ⚙️
             </button>
           </div>
+
+          <!-- Opción 4: Visualizaciones -->
+          <div class="portal-choice-card portal-card-visualizations" id="choice-btn-visualizations" onclick="window.app?.handleVisualizationPortalClick()">
+            <div class="portal-card-icon-wrap icon-emerald"><span class="portal-icon">📈</span></div>
+            <div class="portal-card-tag">Acceso de consulta</div>
+            <h2 class="portal-card-title">Portal de Visualizaciones</h2>
+            <p class="portal-card-desc">Consulta indicadores, avances, ediciones, exportaciones y reportes ejecutivos desde un solo lugar.</p>
+            <div class="portal-card-features"><div class="feat-item">✓ Seguimiento operativo</div><div class="feat-item">✓ Reportería y exportaciones</div></div>
+            <button class="btn btn-primary btn-glow btn-block" id="btn-enter-visualizations-portal" onclick="event.stopPropagation(); window.app?.handleVisualizationPortalClick()">Abrir Visualizaciones 📈</button>
+          </div>
         </div>
 
         <div style="text-align: center;">
@@ -557,14 +567,6 @@
             <button class="btn btn-outline btn-sm" onclick="window.app?.logoutSupervisor()">Cerrar Sesión 🚪</button>
           </div>
 
-          <div class="portal-choice-card portal-card-visualizations" id="choice-btn-visualizations" onclick="window.app?.handleVisualizationPortalClick()">
-            <div class="portal-card-icon-wrap icon-emerald"><span class="portal-icon">📈</span></div>
-            <div class="portal-card-tag">Acceso de consulta</div>
-            <h2 class="portal-card-title">Portal de Visualizaciones</h2>
-            <p class="portal-card-desc">Consulta indicadores, avances, ediciones, exportaciones y reportes ejecutivos desde un solo lugar.</p>
-            <div class="portal-card-features"><div class="feat-item">✓ Seguimiento operativo</div><div class="feat-item">✓ Reportería y exportaciones</div></div>
-            <button class="btn btn-primary btn-glow btn-block" id="btn-enter-visualizations-portal" onclick="event.stopPropagation(); window.app?.handleVisualizationPortalClick()">Abrir Visualizaciones 📈</button>
-          </div>
         </div>
 
         <div id="admin-core-content">
