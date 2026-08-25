@@ -862,7 +862,7 @@ class ValidaFlowApp {
           <td>${supervisor.role === 'supervisor' ? `<div class="admin-study-badges">${studiesHtml}</div>${moduleLabels.map(label => `<small>${escapeHtml(label)}</small>`).join(' ')}` : 'Acceso global de consulta'}</td>
           <td><span class="badge ${supervisor.is_active ? 'badge-success' : 'badge-warning'}">${supervisor.is_active ? 'Activo' : 'Inactivo'}</span></td>
           <td><div class="admin-supervisor-actions">
-            <button class="btn btn-outline btn-sm btn-admin-change-access" type="button" data-supervisor-id="${supervisor.id}">↔ Cambiar acceso</button>
+            <button class="btn btn-outline btn-sm btn-admin-change-access" type="button" data-supervisor-id="${supervisor.id}" onclick="window.app?.openAdminUserAccessModal('${supervisor.id}')">↔ Cambiar acceso</button>
             <button class="btn btn-outline btn-sm btn-admin-reset-password" type="button" data-supervisor-id="${supervisor.id}">🔑 Nueva contraseña</button>
             <button class="btn btn-ghost btn-sm text-danger btn-admin-delete-supervisor" type="button" data-supervisor-id="${supervisor.id}">🗑️ Eliminar</button>
           </div></td>
@@ -870,9 +870,6 @@ class ValidaFlowApp {
       }).join('') : '<tr><td colspan="6" class="text-center text-muted">Aún no hay supervisores creados.</td></tr>';
       tbody.querySelectorAll('.btn-admin-reset-password').forEach(button => {
         button.addEventListener('click', () => this.resetAdminSupervisorPassword(button.dataset.supervisorId));
-      });
-      tbody.querySelectorAll('.btn-admin-change-access').forEach(button => {
-        button.addEventListener('click', () => this.openAdminUserAccessModal(button.dataset.supervisorId));
       });
       tbody.querySelectorAll('.btn-admin-delete-supervisor').forEach(button => {
         button.addEventListener('click', () => this.deleteAdminSupervisor(button.dataset.supervisorId));
@@ -1390,27 +1387,36 @@ class ValidaFlowApp {
 
   openAdminUserAccessModal(supervisorId) {
     const user = this.adminData.supervisors.find(item => item.id === supervisorId);
-    if (!user) return;
+    if (!user) {
+      this.showToast('No fue posible identificar el usuario. Actualiza la página e inténtalo de nuevo.', 'warning');
+      return;
+    }
     const modal = document.getElementById('modal-admin-user-access');
     const userId = document.getElementById('admin-access-user-id');
     const role = document.getElementById('admin-access-role');
     const description = document.getElementById('admin-user-access-description');
     const catalog = document.getElementById('admin-access-study-catalog');
     const module = document.getElementById('admin-access-module');
-    const assignments = this.adminData.assignments.filter(item => item.supervisor_id === user.id);
+    if (!modal) {
+      this.showToast('No se encontró la ventana para cambiar el acceso. Actualiza la página.', 'error');
+      return;
+    }
+    const assignments = Array.isArray(this.adminData.assignments)
+      ? this.adminData.assignments.filter(item => item.supervisor_id === user.id)
+      : [];
     const assignedStudyIds = new Set(assignments.map(item => item.study_id));
     if (userId) userId.value = user.id;
     if (role) role.value = user.role || 'visualizer';
     if (description) description.textContent = `Define el portal de ${user.display_name || user.username}. Al pasar a supervisión se solicita el alcance operativo.`;
     if (catalog) {
-      catalog.innerHTML = this.adminData.studies
+      catalog.innerHTML = (Array.isArray(this.adminData.studies) ? this.adminData.studies : [])
         .filter(study => study.is_active !== false)
         .map(study => `<label class="admin-study-check-option"><input type="checkbox" value="${study.id}" ${assignedStudyIds.has(study.id) ? 'checked' : ''} /><span><strong>${escapeHtml(study.name)}</strong></span></label>`)
         .join('') || '<span class="text-muted">No hay estudios disponibles.</span>';
     }
     if (module) module.value = assignments[0]?.module || '';
     this.toggleAdminAccessScope();
-    modal?.classList.remove('hidden');
+    modal.classList.remove('hidden');
   }
 
   closeAdminUserAccessModal() {
