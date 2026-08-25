@@ -3359,6 +3359,19 @@ a {
   font-size: 1.55rem;
 }
 
+.admin-access-scope {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid color-mix(in srgb, var(--dn-blue) 24%, var(--border-color));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--dn-blue) 4%, var(--surface-color));
+}
+
+.admin-access-scope.hidden {
+  display: none;
+}
+
 .admin-speedometer-card {
   display: flex;
   align-items: center;

@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=41.0" />
+  <link rel="stylesheet" href="css/styles.css?v=42.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -662,12 +662,12 @@
               </select>
               <small class="form-help" id="admin-user-role-help">Incluye seguimiento, cruces, ediciones y métricas operacionales.</small>
             </div>
-            <div class="form-group" id="admin-supervisor-module-group">
+            <div class="form-group" id="admin-user-password-group">
               <label for="admin-supervisor-password">Contraseña temporal</label>
               <div class="admin-password-row"><input type="text" id="admin-supervisor-password" class="form-control" autocomplete="new-password" /><button class="btn btn-outline" type="button" onclick="window.app?.generateTemporaryPassword()">Generar</button></div>
               <small class="form-help">Mínimo 12 caracteres con mayúscula, minúscula, número y símbolo.</small>
             </div>
-            <div class="form-group">
+            <div class="form-group" id="admin-supervisor-module-group">
               <label for="admin-supervisor-module">Tipo de alertas</label>
               <select id="admin-supervisor-module" class="form-select">
                 <option value="">Selecciona un tipo de alertas</option>
@@ -1754,6 +1754,51 @@
   </footer>
 
   <!-- ======================================================== -->
+  <!-- MODAL: CAMBIAR ACCESO DE USUARIO                        -->
+  <!-- ======================================================== -->
+  <div class="modal-overlay hidden" id="modal-admin-user-access" role="dialog" aria-modal="true" aria-labelledby="admin-user-access-title">
+    <div class="modal-card modal-card-md admin-user-access-modal">
+      <div class="modal-header">
+        <div>
+          <span class="corporate-badge-sm">Administración</span>
+          <h3 id="admin-user-access-title">Cambiar acceso de usuario</h3>
+        </div>
+        <button class="btn-close-modal" type="button" onclick="window.app?.closeAdminUserAccessModal()" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc" id="admin-user-access-description">Selecciona el portal al que tendrá acceso este usuario.</p>
+        <input type="hidden" id="admin-access-user-id" />
+        <div class="form-group">
+          <label for="admin-access-role">Portal asignado</label>
+          <select id="admin-access-role" class="form-select" onchange="window.app?.toggleAdminAccessScope()">
+            <option value="supervisor">Portal de Supervisión · operativo</option>
+            <option value="visualizer">Portal de Visualizaciones · operativo</option>
+            <option value="commercial">Portal Comercial · Comité Ejecutivo</option>
+          </select>
+        </div>
+        <div class="admin-access-scope hidden" id="admin-access-scope">
+          <div class="form-group">
+            <span class="form-label">Estudios para supervisión</span>
+            <div id="admin-access-study-catalog" class="admin-study-checklist" role="group" aria-label="Estudios del supervisor"></div>
+          </div>
+          <div class="form-group">
+            <label for="admin-access-module">Tipo de alertas</label>
+            <select id="admin-access-module" class="form-select">
+              <option value="">Selecciona un tipo de alertas</option>
+              <option value="smart">Validación Smart</option>
+              <option value="blocking">Alertas Bloqueantes</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" type="button" onclick="window.app?.closeAdminUserAccessModal()">Cancelar</button>
+        <button class="btn btn-primary btn-glow" type="button" onclick="window.app?.saveAdminUserAccess()">Guardar acceso</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
   <!-- MODAL: LOGIN DEL SUPERVISOR                              -->
   <!-- ======================================================== -->
   <div class="modal-overlay hidden" id="modal-supervisor-login">
@@ -2603,6 +2648,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=48.0"></script>
+  <script type="module" src="js/app.js?v=49.0"></script>
 </body>
 </html>

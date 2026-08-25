@@ -793,6 +793,10 @@ export class SupabaseBackend {
     return this.manageSupervisor({ action: 'reset_password', supervisorId, password });
   }
 
+  async updatePortalUserAccess({ supervisorId, userRole, studyIds = [], module = null }) {
+    return this.manageSupervisor({ action: 'update_access', supervisorId, userRole, studyIds, module });
+  }
+
   async deleteSupervisor({ supervisorId }) {
     return this.manageSupervisor({ action: 'delete', supervisorId });
   }

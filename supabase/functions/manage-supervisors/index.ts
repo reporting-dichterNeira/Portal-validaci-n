@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
   const supervisorId = String(body.supervisorId ?? body.userId ?? '').trim();
   const password = String(body.password ?? '');
 
-  if (action === 'reset_password' || action === 'delete') {
+  if (action === 'reset_password' || action === 'delete' || action === 'update_access') {
     if (!uuidPattern.test(supervisorId)) return json({ error: 'INVALID_USER_ID' }, 400);
 
     const { data: supervisor, error: supervisorError } = await adminClient
@@ -85,6 +85,70 @@ Deno.serve(async (req) => {
       const { error: updateError } = await adminClient.auth.admin.updateUserById(supervisorId, { password });
       if (updateError) return json({ error: 'PASSWORD_UPDATE_FAILED', detail: updateError.message }, 409);
       return json({ user: { id: supervisor.id, username: supervisor.username, role: supervisor.role } });
+    }
+
+    if (action === 'update_access') {
+      const userRole = String(body.userRole ?? '').trim().toLowerCase();
+      const rawStudyIds = Array.isArray(body.studyIds) ? body.studyIds : [body.studyId];
+      const studyIds = [...new Set(rawStudyIds.map(value => String(value ?? '').trim()).filter(Boolean))];
+      const module = String(body.module ?? '').trim().toLowerCase();
+      if (!['supervisor', 'visualizer', 'commercial'].includes(userRole)) {
+        return json({ error: 'INVALID_USER_ROLE' }, 400);
+      }
+
+      let internalCountry: { id: string } | null = null;
+      if (userRole === 'supervisor') {
+        if (studyIds.length < 1 || studyIds.length > 4 || studyIds.some(id => !uuidPattern.test(id))) {
+          return json({ error: 'STUDY_REQUIRED' }, 400);
+        }
+        if (!allowedModules.has(module)) return json({ error: 'MODULE_REQUIRED' }, 400);
+        const results = await Promise.all([
+          adminClient.from('studies').select('id, name').in('id', studyIds).eq('is_active', true),
+          adminClient.from('countries').select('id').eq('code', internalCountryCode).eq('is_active', true).maybeSingle(),
+        ]);
+        const studies = results[0].data || [];
+        internalCountry = results[1].data;
+        if (results[0].error
+          || studies.length !== studyIds.length
+          || studies.some(study => !allowedStudyNames.has(String(study.name).toLowerCase()))) {
+          return json({ error: 'INVALID_STUDY' }, 400);
+        }
+        if (results[1].error || !internalCountry) {
+          return json({ error: 'INTERNAL_SCOPE_NOT_CONFIGURED' }, 500);
+        }
+      }
+
+      const { error: removeAssignmentsError } = await adminClient
+        .from('supervisor_assignments')
+        .delete()
+        .eq('supervisor_id', supervisorId);
+      if (removeAssignmentsError) return json({ error: 'ASSIGNMENT_UPDATE_FAILED', detail: removeAssignmentsError.message }, 409);
+
+      if (userRole === 'supervisor') {
+        const assignments = studyIds.map(studyId => ({
+          supervisor_id: supervisorId,
+          study_id: studyId,
+          country_id: internalCountry!.id,
+          module,
+          created_by: userData.user.id,
+        }));
+        const { error: assignmentError } = await adminClient.from('supervisor_assignments').insert(assignments);
+        if (assignmentError) return json({ error: 'ASSIGNMENT_UPDATE_FAILED', detail: assignmentError.message }, 409);
+      }
+
+      const { data: authLookup, error: authLookupError } = await adminClient.auth.admin.getUserById(supervisorId);
+      if (authLookupError || !authLookup.user) return json({ error: 'AUTH_USER_LOOKUP_FAILED', detail: authLookupError?.message }, 409);
+      const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(supervisorId, {
+        app_metadata: { ...(authLookup.user.app_metadata || {}), role: userRole },
+      });
+      if (authUpdateError) return json({ error: 'AUTH_ROLE_UPDATE_FAILED', detail: authUpdateError.message }, 409);
+
+      const { error: profileUpdateError } = await adminClient
+        .from('profiles')
+        .update({ role: userRole })
+        .eq('id', supervisorId);
+      if (profileUpdateError) return json({ error: 'PROFILE_ROLE_UPDATE_FAILED', detail: profileUpdateError.message }, 409);
+      return json({ user: { id: supervisor.id, username: supervisor.username, role: userRole } });
     }
 
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(supervisorId);

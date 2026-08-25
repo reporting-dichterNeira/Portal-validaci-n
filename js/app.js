@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=32.0';
-import { SupabaseBackend } from './supabase-backend.js?v=39.0';
+import { SupabaseBackend } from './supabase-backend.js?v=40.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -862,6 +862,7 @@ class ValidaFlowApp {
           <td>${supervisor.role === 'supervisor' ? `<div class="admin-study-badges">${studiesHtml}</div>${moduleLabels.map(label => `<small>${escapeHtml(label)}</small>`).join(' ')}` : 'Acceso global de consulta'}</td>
           <td><span class="badge ${supervisor.is_active ? 'badge-success' : 'badge-warning'}">${supervisor.is_active ? 'Activo' : 'Inactivo'}</span></td>
           <td><div class="admin-supervisor-actions">
+            <button class="btn btn-outline btn-sm btn-admin-change-access" type="button" data-supervisor-id="${supervisor.id}">↔ Cambiar acceso</button>
             <button class="btn btn-outline btn-sm btn-admin-reset-password" type="button" data-supervisor-id="${supervisor.id}">🔑 Nueva contraseña</button>
             <button class="btn btn-ghost btn-sm text-danger btn-admin-delete-supervisor" type="button" data-supervisor-id="${supervisor.id}">🗑️ Eliminar</button>
           </div></td>
@@ -869,6 +870,9 @@ class ValidaFlowApp {
       }).join('') : '<tr><td colspan="6" class="text-center text-muted">Aún no hay supervisores creados.</td></tr>';
       tbody.querySelectorAll('.btn-admin-reset-password').forEach(button => {
         button.addEventListener('click', () => this.resetAdminSupervisorPassword(button.dataset.supervisorId));
+      });
+      tbody.querySelectorAll('.btn-admin-change-access').forEach(button => {
+        button.addEventListener('click', () => this.openAdminUserAccessModal(button.dataset.supervisorId));
       });
       tbody.querySelectorAll('.btn-admin-delete-supervisor').forEach(button => {
         button.addEventListener('click', () => this.deleteAdminSupervisor(button.dataset.supervisorId));
@@ -1382,6 +1386,67 @@ class ValidaFlowApp {
     if (role) role.value = 'supervisor';
     this.toggleAdminUserScope();
     return this.createAdminUser();
+  }
+
+  openAdminUserAccessModal(supervisorId) {
+    const user = this.adminData.supervisors.find(item => item.id === supervisorId);
+    if (!user) return;
+    const modal = document.getElementById('modal-admin-user-access');
+    const userId = document.getElementById('admin-access-user-id');
+    const role = document.getElementById('admin-access-role');
+    const description = document.getElementById('admin-user-access-description');
+    const catalog = document.getElementById('admin-access-study-catalog');
+    const module = document.getElementById('admin-access-module');
+    const assignments = this.adminData.assignments.filter(item => item.supervisor_id === user.id);
+    const assignedStudyIds = new Set(assignments.map(item => item.study_id));
+    if (userId) userId.value = user.id;
+    if (role) role.value = user.role || 'visualizer';
+    if (description) description.textContent = `Define el portal de ${user.display_name || user.username}. Al pasar a supervisión se solicita el alcance operativo.`;
+    if (catalog) {
+      catalog.innerHTML = this.adminData.studies
+        .filter(study => study.is_active !== false)
+        .map(study => `<label class="admin-study-check-option"><input type="checkbox" value="${study.id}" ${assignedStudyIds.has(study.id) ? 'checked' : ''} /><span><strong>${escapeHtml(study.name)}</strong></span></label>`)
+        .join('') || '<span class="text-muted">No hay estudios disponibles.</span>';
+    }
+    if (module) module.value = assignments[0]?.module || '';
+    this.toggleAdminAccessScope();
+    modal?.classList.remove('hidden');
+  }
+
+  closeAdminUserAccessModal() {
+    document.getElementById('modal-admin-user-access')?.classList.add('hidden');
+  }
+
+  toggleAdminAccessScope() {
+    const role = document.getElementById('admin-access-role')?.value || 'visualizer';
+    document.getElementById('admin-access-scope')?.classList.toggle('hidden', role !== 'supervisor');
+  }
+
+  async saveAdminUserAccess() {
+    const supervisorId = document.getElementById('admin-access-user-id')?.value || '';
+    const user = this.adminData.supervisors.find(item => item.id === supervisorId);
+    const userRole = document.getElementById('admin-access-role')?.value || 'visualizer';
+    const studyIds = [...document.querySelectorAll('#admin-access-study-catalog input[type="checkbox"]:checked')].map(input => input.value);
+    const module = document.getElementById('admin-access-module')?.value || '';
+    if (!user || !['supervisor', 'visualizer', 'commercial'].includes(userRole)) return;
+    if (userRole === 'supervisor' && !studyIds.length) {
+      this.showToast('Selecciona al menos un estudio para el acceso de supervisión.', 'warning');
+      return;
+    }
+    if (userRole === 'supervisor' && !SUPERVISOR_MODULES[module]) {
+      this.showToast('Selecciona el tipo de alertas que operará el supervisor.', 'warning');
+      return;
+    }
+    if (!confirm(`¿Guardar el acceso de ${user.display_name}? ${userRole === 'commercial' ? 'Solo verá Comité Ejecutivo.' : userRole === 'visualizer' ? 'Verá el Portal de Visualizaciones.' : 'Tendrá acceso operativo de supervisión.'}`)) return;
+    try {
+      await this.backend.updatePortalUserAccess({ supervisorId, userRole, studyIds, module });
+      this.closeAdminUserAccessModal();
+      await this.loadAdministratorPanel();
+      this.showToast(`Acceso actualizado para ${user.username}.`, 'success');
+    } catch (error) {
+      const message = String(error.message || 'No fue posible actualizar el acceso.');
+      this.showToast(message === 'STUDY_REQUIRED' ? 'Selecciona los estudios para el supervisor.' : message === 'MODULE_REQUIRED' ? 'Selecciona el tipo de alertas.' : message, 'error');
+    }
   }
 
   async resetAdminSupervisorPassword(supervisorId) {
