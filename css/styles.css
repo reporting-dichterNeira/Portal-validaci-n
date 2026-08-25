@@ -7106,7 +7106,17 @@ body.dark-theme {
 
 /* Administración queda enfocada en la creación y mantenimiento de usuarios. */
 #admin-core-content > .admin-stats-grid,
-#admin-core-content > .admin-danger-zone { display: none; }
+#admin-core-content > .admin-productivity-panel { display: none; }
+
+.admin-export-delete-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.8rem; }
+.admin-export-delete-item { display: flex; justify-content: space-between; align-items: center; gap: 0.9rem; padding: 0.9rem; border: 1px solid rgba(220, 53, 69, 0.22); border-radius: var(--radius-md); background: color-mix(in srgb, var(--dn-magenta) 3%, var(--surface-card)); }
+.admin-export-delete-item strong, .admin-export-delete-item small { display: block; }
+.admin-export-delete-item small { margin-top: 0.25rem; color: var(--text-secondary); font-size: 0.76rem; }
+
+@media (max-width: 720px) {
+  .admin-export-delete-grid { grid-template-columns: 1fr; }
+  .admin-export-delete-item { align-items: flex-start; flex-direction: column; }
+}
 
 .visualization-console { max-width: 1520px; }
 .visualization-tabs { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0 0 1.35rem; padding: 0.55rem; background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: var(--shadow-sm); }

@@ -709,7 +709,7 @@
         <section class="glass-panel admin-setup-card admin-danger-zone">
           <div class="section-header">
             <div>
-              <h2>🗂️ Eliminar una carga del histórico</h2>
+              <h2>🗂️ Eliminar una base cargada</h2>
               <p>Si se subió un archivo equivocado, elimínalo junto con todas las auditorías que contiene.</p>
             </div>
           </div>
@@ -721,6 +721,26 @@
             <button class="btn btn-outline text-danger" id="btn-admin-delete-historical-batch" type="button" onclick="window.app?.deleteHistoricalBatch()">🗑️ Eliminar archivo y contenido</button>
           </div>
           <small class="form-help">Acción irreversible. Si eliges una carga activa, también dejará de estar disponible para los validadores.</small>
+        </section>
+
+        <section class="glass-panel admin-setup-card admin-danger-zone">
+          <div class="section-header">
+            <div>
+              <h2>🧾 Eliminar exports de análisis</h2>
+              <p>Elimina los datos normalizados de un export de alertas o ediciones cargado por error o para pruebas.</p>
+            </div>
+          </div>
+          <div class="admin-export-delete-grid">
+            <div class="admin-export-delete-item">
+              <div><strong>Export de alertas</strong><small id="admin-delete-alerts-import-detail">Cargando información…</small></div>
+              <button class="btn btn-outline text-danger" id="btn-admin-delete-alerts-import" type="button" onclick="window.app?.deleteAdminExternalAnalysis('alerts')">🗑️ Eliminar alertas</button>
+            </div>
+            <div class="admin-export-delete-item">
+              <div><strong>Export de ediciones</strong><small id="admin-delete-editions-import-detail">Cargando información…</small></div>
+              <button class="btn btn-outline text-danger" id="btn-admin-delete-editions-import" type="button" onclick="window.app?.deleteAdminExternalAnalysis('editions')">🗑️ Eliminar ediciones</button>
+            </div>
+          </div>
+          <small class="form-help">Para confirmar cada borrado se solicitará una frase. No se eliminan las auditorías operativas desde este bloque.</small>
         </section>
 
         <section class="glass-panel admin-setup-card admin-danger-zone">
@@ -2650,6 +2670,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=57.0"></script>
+  <script type="module" src="js/app.js?v=58.0"></script>
 </body>
 </html>

@@ -685,7 +685,7 @@ export class SupabaseBackend {
     const selectedDate = cleanDate(operationDate) || new Date().toISOString().slice(0, 10);
     const [studies, profiles, assignments, validators, batches] = await Promise.all([
       this.client.from('studies').select('id, name, description, is_active').order('name'),
-      this.client.from('profiles').select('id, username, display_name, role, is_active').in('role', ['supervisor', 'visualizer', 'commercial']).order('display_name'),
+      this.client.from('profiles').select('id, username, display_name, role, is_active').in('role', ['admin', 'supervisor', 'visualizer', 'commercial']).order('display_name'),
       this.client.from('supervisor_assignments').select('id, supervisor_id, study_id, country_id, module').order('created_at'),
       this.client.from('validators').select('id, code, name, study, study_id, is_active').order('is_active', { ascending: false }).order('name'),
       this.client
@@ -707,7 +707,10 @@ export class SupabaseBackend {
     if (audits.error) throw audits.error;
     return {
       studies: studies.data || [],
-      supervisors: profiles.data || [],
+      // Administrators are included only to resolve the author of a batch;
+      // they must not appear in the editable list of portal users.
+      supervisors: (profiles.data || []).filter(profile => profile.role !== 'admin'),
+      batchCreators: profiles.data || [],
       assignments: assignments.data || [],
       validators: validators.data || [],
       batches: batches.data || [],
@@ -749,6 +752,38 @@ export class SupabaseBackend {
     if (importError) throw importError;
   }
 
+  async loadAdminAnalysisImports() {
+    this.ensureConfigured();
+    const { data, error } = await this.client
+      .from('admin_analysis_imports')
+      .select('dataset_type, source_filename, row_count, imported_at')
+      .order('dataset_type');
+    if (error) throw error;
+    return data || [];
+  }
+
+  async deleteAdminAnalysisImport(datasetType) {
+    this.ensureConfigured();
+    const table = datasetType === 'alerts'
+      ? 'admin_alert_export_records'
+      : datasetType === 'editions'
+        ? 'admin_edit_export_records'
+        : null;
+    if (!table) throw new Error('Tipo de export no válido.');
+
+    const { error: recordsError } = await this.client
+      .from(table)
+      .delete()
+      .gt('id', 0);
+    if (recordsError) throw recordsError;
+
+    const { error: importError } = await this.client
+      .from('admin_analysis_imports')
+      .delete()
+      .eq('dataset_type', datasetType);
+    if (importError) throw importError;
+  }
+
   async loadAllAdminAnalysisRows(table, columns) {
     const rows = [];
     const pageSize = 1000;
@@ -768,14 +803,13 @@ export class SupabaseBackend {
 
   async loadAdminExternalAnalysis() {
     this.ensureConfigured();
-    const [importsResult, alertRecords, editRecords] = await Promise.all([
-      this.client.from('admin_analysis_imports').select('dataset_type, source_filename, row_count, imported_at').order('dataset_type'),
+    const [imports, alertRecords, editRecords] = await Promise.all([
+      this.loadAdminAnalysisImports(),
       this.loadAllAdminAnalysisRows('admin_alert_export_records', 'audit_external_id, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, country, channel, city, auditor, audit_date, wave, study'),
       this.loadAllAdminAnalysisRows('admin_edit_export_records', 'audit_external_id, study, country, audit_status, wave, modifications_count, status_changes_count, first_validation_started_at, first_validation_completed_at, first_validator, last_validation_started_at, last_validation_completed_at, last_validator')
     ]);
-    if (importsResult.error) throw importsResult.error;
     return {
-      imports: importsResult.data || [],
+      imports,
       alertRecords,
       editRecords
     };

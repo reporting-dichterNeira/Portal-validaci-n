@@ -805,12 +805,14 @@ class ValidaFlowApp {
     try {
       const selectedDate = document.getElementById('admin-productivity-date')?.value
         || this.toLocalDateInputValue(new Date());
-      const administration = await this.backend.loadAdministration({ operationDate: selectedDate });
-      const historicalBatches = isAdmin && !visualOnly
-        ? await this.backend.loadHistoricalUploadBatches()
-        : [];
+      const [administration, historicalBatches, externalImports] = await Promise.all([
+        this.backend.loadAdministration({ operationDate: selectedDate }),
+        isAdmin && !visualOnly ? this.backend.loadHistoricalUploadBatches() : Promise.resolve([]),
+        isAdmin && !visualOnly ? this.backend.loadAdminAnalysisImports() : Promise.resolve([])
+      ]);
       this.adminData = administration;
       this.historicalBatches = historicalBatches;
+      this.adminExternalImports = externalImports;
       this.renderAdministratorPanel();
     } catch (error) {
       this.showToast(error.message || 'No fue posible cargar la administración.', 'error');
@@ -900,8 +902,76 @@ class ValidaFlowApp {
       });
     }
     this.renderAdministratorProductivity();
-    if (this.currentRole === 'admin') this.renderHistoricalBatchDeletionOptions();
-    if (this.currentRole === 'admin') this.toggleAdminUserScope();
+    if (this.currentRole === 'admin') {
+      this.renderHistoricalBatchDeletionOptions();
+      this.renderAdminExternalImportDeletionOptions();
+      this.toggleAdminUserScope();
+    }
+  }
+
+  renderAdminExternalImportDeletionOptions() {
+    const imports = this.adminExternalImports || [];
+    const number = value => new Intl.NumberFormat('es-CO').format(Number(value || 0));
+    const describe = (datasetType, fallback) => {
+      const item = imports.find(entry => entry.dataset_type === datasetType);
+      if (!item) return fallback;
+      return `${item.source_filename || 'Archivo sin nombre'} · ${number(item.row_count)} registros · ${formatNicaraguaDateTime(item.imported_at, 'fecha no disponible')}`;
+    };
+    const alertImport = imports.find(entry => entry.dataset_type === 'alerts');
+    const editionImport = imports.find(entry => entry.dataset_type === 'editions');
+    const alertDetail = document.getElementById('admin-delete-alerts-import-detail');
+    const editionDetail = document.getElementById('admin-delete-editions-import-detail');
+    const alertButton = document.getElementById('btn-admin-delete-alerts-import');
+    const editionButton = document.getElementById('btn-admin-delete-editions-import');
+    if (alertDetail) alertDetail.textContent = describe('alerts', 'No hay export de alertas guardado.');
+    if (editionDetail) editionDetail.textContent = describe('editions', 'No hay export de ediciones guardado.');
+    if (alertButton) alertButton.disabled = !alertImport;
+    if (editionButton) editionButton.disabled = !editionImport;
+  }
+
+  async deleteAdminExternalAnalysis(datasetType) {
+    if (this.currentRole !== 'admin') {
+      this.showToast('Esta acción requiere una sesión administrativa.', 'error');
+      return;
+    }
+    const importInfo = (this.adminExternalImports || []).find(item => item.dataset_type === datasetType);
+    if (!importInfo) {
+      this.showToast('No hay una carga guardada de este tipo para eliminar.', 'warning');
+      return;
+    }
+    const typeLabel = datasetType === 'alerts' ? 'export de alertas' : 'export de ediciones';
+    const confirmation = `ELIMINAR ${datasetType === 'alerts' ? 'ALERTAS' : 'EDICIONES'}`;
+    const confirmed = confirm(
+      `¿Eliminar permanentemente el ${typeLabel} “${importInfo.source_filename || 'sin nombre'}”?\n\n` +
+      `Se borrarán ${Number(importInfo.row_count || 0).toLocaleString('es-CO')} registros normalizados y no se podrán recuperar.`
+    );
+    if (!confirmed) return;
+    const phrase = prompt(`Para confirmar, escribe exactamente: ${confirmation}`);
+    if (phrase !== confirmation) {
+      this.showToast('La frase no coincide. No se eliminó ningún export.', 'warning');
+      return;
+    }
+    const buttonId = datasetType === 'alerts' ? 'btn-admin-delete-alerts-import' : 'btn-admin-delete-editions-import';
+    const button = document.getElementById(buttonId);
+    const originalLabel = button?.textContent;
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Eliminando…';
+    }
+    try {
+      await this.backend.deleteAdminAnalysisImport(datasetType);
+      this.adminExternalImports = (this.adminExternalImports || []).filter(item => item.dataset_type !== datasetType);
+      this.adminExternalAnalysis = null;
+      this.renderAdminExternalImportDeletionOptions();
+      this.showToast(`Se eliminó el ${typeLabel} y sus registros guardados.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible eliminar el export.', 'error');
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalLabel || 'Eliminar export';
+      }
+    }
   }
 
   renderHistoricalBatchDeletionOptions() {
@@ -1161,6 +1231,7 @@ class ValidaFlowApp {
     const {
       studies = [],
       supervisors = [],
+      batchCreators = supervisors,
       validators = [],
       batches = [],
       audits = [],
@@ -1172,7 +1243,7 @@ class ValidaFlowApp {
       '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
     })[char]);
     const studyById = new Map(studies.map(item => [item.id, item]));
-    const supervisorById = new Map(supervisors.map(item => [item.id, item]));
+    const supervisorById = new Map(batchCreators.map(item => [item.id, item]));
     const validatorById = new Map(validators.map(item => [item.id, item]));
     const auditsByBatch = new Map();
     const auditsByValidator = new Map();
@@ -1236,7 +1307,7 @@ class ValidaFlowApp {
         return `<tr>
           <td><strong>${escapeHtml(study?.name || 'Sin estudio')}</strong></td>
           <td><span class="badge badge-info">${moduleLabel}</span></td>
-          <td>${escapeHtml(supervisor?.display_name || 'Equipo administrador')}</td>
+          <td><strong>${escapeHtml(supervisor?.display_name || 'Equipo administrador')}</strong><small>Usuario: ${escapeHtml(supervisor?.username || 'administrador')}</small></td>
           <td><span class="admin-file-name" title="${escapeHtml(batch.source_filename || '')}">${escapeHtml(batch.source_filename || 'Carga sin archivo')}</span><small>${number(batch.row_count)} registros · ${formatDateTime(batch.activated_at || batch.created_at)}</small></td>
           <td><strong>${number(batchCompleted)} / ${number(batchAudits.length)}</strong><div class="admin-progress-track"><span style="width:${batchProgress}%"></span></div></td>
           <td><span class="badge ${batch.status === 'active' ? 'badge-success' : 'badge-secondary'}">${batch.status === 'active' ? 'Activa' : 'Histórica'}</span></td>
