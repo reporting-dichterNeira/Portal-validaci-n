@@ -65,31 +65,31 @@ Deno.serve(async (req) => {
   }
 
   const action = String(body.action ?? 'create');
-  const supervisorId = String(body.supervisorId ?? '').trim();
+  const supervisorId = String(body.supervisorId ?? body.userId ?? '').trim();
   const password = String(body.password ?? '');
 
   if (action === 'reset_password' || action === 'delete') {
-    if (!uuidPattern.test(supervisorId)) return json({ error: 'INVALID_SUPERVISOR_ID' }, 400);
+    if (!uuidPattern.test(supervisorId)) return json({ error: 'INVALID_USER_ID' }, 400);
 
     const { data: supervisor, error: supervisorError } = await adminClient
       .from('profiles')
       .select('id, username, display_name, role')
       .eq('id', supervisorId)
-      .eq('role', 'supervisor')
+      .in('role', ['supervisor', 'visualizer', 'commercial'])
       .maybeSingle();
     if (supervisorError) return json({ error: 'SUPERVISOR_LOOKUP_FAILED', detail: supervisorError.message }, 500);
-    if (!supervisor) return json({ error: 'SUPERVISOR_NOT_FOUND' }, 404);
+    if (!supervisor) return json({ error: 'USER_NOT_FOUND' }, 404);
 
     if (action === 'reset_password') {
       if (!isStrongPassword(password)) return json({ error: 'WEAK_PASSWORD' }, 400);
       const { error: updateError } = await adminClient.auth.admin.updateUserById(supervisorId, { password });
       if (updateError) return json({ error: 'PASSWORD_UPDATE_FAILED', detail: updateError.message }, 409);
-      return json({ supervisor: { id: supervisor.id, username: supervisor.username } });
+      return json({ user: { id: supervisor.id, username: supervisor.username, role: supervisor.role } });
     }
 
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(supervisorId);
     if (deleteError) return json({ error: 'DELETE_SUPERVISOR_FAILED', detail: deleteError.message }, 409);
-    return json({ deleted: true, supervisor: { id: supervisor.id, username: supervisor.username } });
+    return json({ deleted: true, user: { id: supervisor.id, username: supervisor.username, role: supervisor.role } });
   }
 
   if (action !== 'create') return json({ error: 'INVALID_ACTION' }, 400);
@@ -99,29 +99,40 @@ Deno.serve(async (req) => {
   const rawStudyIds = Array.isArray(body.studyIds) ? body.studyIds : [body.studyId];
   const studyIds = [...new Set(rawStudyIds.map(value => String(value ?? '').trim()).filter(Boolean))];
   const module = String(body.module ?? '').trim().toLowerCase();
+  const userRole = String(body.userRole ?? 'supervisor').trim().toLowerCase();
 
   if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) {
     return json({ error: 'INVALID_USERNAME' }, 400);
   }
   if (displayName.length < 3) return json({ error: 'INVALID_DISPLAY_NAME' }, 400);
   if (!isStrongPassword(password)) return json({ error: 'WEAK_PASSWORD' }, 400);
-  if (studyIds.length < 1 || studyIds.length > 4 || studyIds.some(id => !uuidPattern.test(id))) {
-    return json({ error: 'STUDY_REQUIRED' }, 400);
+  if (!['supervisor', 'visualizer', 'commercial'].includes(userRole)) {
+    return json({ error: 'INVALID_USER_ROLE' }, 400);
   }
-  if (!allowedModules.has(module)) return json({ error: 'MODULE_REQUIRED' }, 400);
+  if (userRole === 'supervisor') {
+    if (studyIds.length < 1 || studyIds.length > 4 || studyIds.some(id => !uuidPattern.test(id))) {
+      return json({ error: 'STUDY_REQUIRED' }, 400);
+    }
+    if (!allowedModules.has(module)) return json({ error: 'MODULE_REQUIRED' }, 400);
+  }
 
-  const [{ data: studies, error: studyError }, { data: internalCountry, error: countryError }] = await Promise.all([
-    adminClient.from('studies').select('id, name').in('id', studyIds).eq('is_active', true),
-    adminClient.from('countries').select('id').eq('code', internalCountryCode).eq('is_active', true).maybeSingle(),
-  ]);
-  if (studyError
-    || !studies
-    || studies.length !== studyIds.length
-    || studies.some(study => !allowedStudyNames.has(String(study.name).toLowerCase()))) {
-    return json({ error: 'INVALID_STUDY' }, 400);
-  }
-  if (countryError || !internalCountry) {
-    return json({ error: 'INTERNAL_SCOPE_NOT_CONFIGURED' }, 500);
+  let studies: Array<{ id: string; name: string }> = [];
+  let internalCountry: { id: string } | null = null;
+  if (userRole === 'supervisor') {
+    const results = await Promise.all([
+      adminClient.from('studies').select('id, name').in('id', studyIds).eq('is_active', true),
+      adminClient.from('countries').select('id').eq('code', internalCountryCode).eq('is_active', true).maybeSingle(),
+    ]);
+    studies = results[0].data || [];
+    internalCountry = results[1].data;
+    if (results[0].error
+      || studies.length !== studyIds.length
+      || studies.some(study => !allowedStudyNames.has(String(study.name).toLowerCase()))) {
+      return json({ error: 'INVALID_STUDY' }, 400);
+    }
+    if (results[1].error || !internalCountry) {
+      return json({ error: 'INTERNAL_SCOPE_NOT_CONFIGURED' }, 500);
+    }
   }
 
   const email = `${username}@portal-validacion.local`;
@@ -129,7 +140,7 @@ Deno.serve(async (req) => {
     email,
     password,
     email_confirm: true,
-    app_metadata: { role: 'supervisor' },
+    app_metadata: { role: userRole },
   });
 
   if (createError || !created.user) {
@@ -140,7 +151,7 @@ Deno.serve(async (req) => {
   const userId = created.user.id;
   const { error: profileError } = await adminClient.from('profiles').insert({
     id: userId,
-    role: 'supervisor',
+    role: userRole,
     username,
     display_name: displayName,
     is_active: true,
@@ -151,22 +162,24 @@ Deno.serve(async (req) => {
     return json({ error: 'CREATE_PROFILE_FAILED', detail: profileError.message }, 409);
   }
 
-  const assignments = studyIds.map(studyId => ({
-    supervisor_id: userId,
-    study_id: studyId,
-    country_id: internalCountry.id,
-    module,
-    created_by: userData.user.id,
-  }));
-  const { error: assignmentError } = await adminClient.from('supervisor_assignments').insert(assignments);
+  if (userRole === 'supervisor') {
+    const assignments = studyIds.map(studyId => ({
+      supervisor_id: userId,
+      study_id: studyId,
+      country_id: internalCountry!.id,
+      module,
+      created_by: userData.user.id,
+    }));
+    const { error: assignmentError } = await adminClient.from('supervisor_assignments').insert(assignments);
 
-  if (assignmentError) {
-    await adminClient.from('profiles').delete().eq('id', userId);
-    await adminClient.auth.admin.deleteUser(userId);
-    return json({ error: 'CREATE_ASSIGNMENT_FAILED', detail: assignmentError.message }, 409);
+    if (assignmentError) {
+      await adminClient.from('profiles').delete().eq('id', userId);
+      await adminClient.auth.admin.deleteUser(userId);
+      return json({ error: 'CREATE_ASSIGNMENT_FAILED', detail: assignmentError.message }, 409);
+    }
   }
 
   return json({
-    supervisor: { id: userId, username, displayName, studyIds, module },
+    user: { id: userId, username, displayName, role: userRole, studyIds, module },
   }, 201);
 });

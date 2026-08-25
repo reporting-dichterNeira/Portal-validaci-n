@@ -3546,6 +3546,134 @@ a {
   }
 }
 
+/* Hojas de análisis de exportables para el Administrador */
+.admin-analysis-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.admin-analysis-tab {
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  color: var(--dn-navy);
+  border-radius: 999px;
+  padding: 0.6rem 0.95rem;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-analysis-tab.active {
+  background: var(--dn-navy);
+  border-color: var(--dn-navy);
+  color: #fff;
+  box-shadow: 0 6px 14px rgba(0, 43, 73, 0.18);
+}
+
+.admin-analysis-sheet {
+  margin-top: 1rem;
+  padding: 1.3rem;
+}
+
+.admin-analysis-header {
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.admin-analysis-upload {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.85rem;
+  border: 1px dashed var(--dn-blue-light);
+  border-radius: var(--radius-md);
+  background: rgba(0, 86, 145, 0.035);
+  margin: 1rem 0 0.35rem;
+}
+
+.admin-analysis-upload .form-control {
+  min-width: 0;
+}
+
+.admin-analysis-stats {
+  margin: 1.15rem 0;
+}
+
+.admin-analysis-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.admin-analysis-grid-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.admin-analysis-card {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-elevated);
+  padding: 1rem;
+}
+
+.admin-analysis-card h3 {
+  color: var(--dn-navy);
+  font-size: 0.98rem;
+  margin: 0 0 0.75rem;
+}
+
+.admin-analysis-table-card {
+  margin-top: 1rem;
+}
+
+.admin-analysis-table {
+  min-width: 940px;
+}
+
+.admin-analysis-ranking {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.admin-analysis-ranking-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border-left: 3px solid var(--dn-blue);
+}
+
+.admin-analysis-ranking-row strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-analysis-ranking-row span {
+  color: var(--dn-blue);
+  font-weight: 800;
+}
+
+.icon-magenta { background: rgba(230, 0, 126, 0.13); color: #E6007E; }
+
+@media (max-width: 900px) {
+  .admin-analysis-grid,
+  .admin-analysis-grid-two { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 640px) {
+  .admin-analysis-sheet { padding: 0.85rem; }
+  .admin-analysis-upload { flex-direction: column; align-items: stretch; }
+  .admin-analysis-tabs { gap: 0.4rem; }
+  .admin-analysis-tab { font-size: 0.78rem; padding: 0.5rem 0.65rem; }
+}
+
 /* ==========================================================================
    DAILY BREAKDOWN & DOWNLOADS (NEW)
    ========================================================================== */
@@ -6894,6 +7022,28 @@ body.dark-theme {
   border-color: rgba(102, 178, 255, 0.35);
   background: rgba(20, 91, 170, 0.2);
   color: #EAF4FF;
+}
+
+/* Portal de Visualizaciones */
+.portal-card-visualizations { border-top-color: var(--dn-emerald); }
+
+/* Administración queda enfocada en la creación y mantenimiento de usuarios. */
+#admin-core-content > .admin-stats-grid,
+#admin-core-content > .admin-danger-zone { display: none; }
+
+.visualization-console { max-width: 1520px; }
+.visualization-tabs { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0 0 1.35rem; padding: 0.55rem; background: var(--surface-card); border: 1px solid var(--border-color); border-radius: 14px; box-shadow: var(--shadow-sm); }
+.visualization-tab { border: 0; border-radius: 10px; padding: 0.7rem 0.9rem; cursor: pointer; color: var(--text-secondary); background: transparent; font: 700 0.86rem/1.2 var(--font-body); transition: background 0.2s ease, color 0.2s ease; }
+.visualization-tab:hover, .visualization-tab.active { background: var(--dn-blue-light); color: var(--dn-navy); }
+.visualization-tab[data-visualization-tab="committee"].active { background: #f2eaff; color: var(--dn-purple); }
+.visualization-pane { display: none; }
+.visualization-pane.active { display: block; }
+.visualization-pane > .admin-productivity-panel, .visualization-pane > .admin-analysis-sheet { margin-bottom: 0; }
+.visualization-reports-content { display: block; }
+
+@media (max-width: 760px) {
+  .visualization-tabs { display: grid; grid-template-columns: 1fr 1fr; }
+  .visualization-tab { min-height: 48px; font-size: 0.78rem; }
 }
 
 

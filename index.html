@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=38.0" />
+  <link rel="stylesheet" href="css/styles.css?v=40.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -281,10 +281,6 @@
           <span class="tab-icon">⏱️</span>
           <span class="tab-label">Calidad & Tiempos</span>
           <span class="badge-alert-count hidden" id="nav-alerts-badge">0</span>
-        </button>
-        <button class="nav-tab-btn" data-tab="reports" role="tab" onclick="window.switchSupervisorTab('reports')">
-          <span class="tab-icon">📈</span>
-          <span class="tab-label">Métricas & Reportes</span>
         </button>
       </nav>
 
@@ -560,8 +556,18 @@
             </div>
             <button class="btn btn-outline btn-sm" onclick="window.app?.logoutSupervisor()">Cerrar Sesión 🚪</button>
           </div>
+
+          <div class="portal-choice-card portal-card-visualizations" id="choice-btn-visualizations" onclick="window.app?.handleVisualizationPortalClick()">
+            <div class="portal-card-icon-wrap icon-emerald"><span class="portal-icon">📈</span></div>
+            <div class="portal-card-tag">Acceso de consulta</div>
+            <h2 class="portal-card-title">Portal de Visualizaciones</h2>
+            <p class="portal-card-desc">Consulta indicadores, avances, ediciones, exportaciones y reportes ejecutivos desde un solo lugar.</p>
+            <div class="portal-card-features"><div class="feat-item">✓ Seguimiento operativo</div><div class="feat-item">✓ Reportería y exportaciones</div></div>
+            <button class="btn btn-primary btn-glow btn-block" id="btn-enter-visualizations-portal" onclick="event.stopPropagation(); window.app?.handleVisualizationPortalClick()">Abrir Visualizaciones 📈</button>
+          </div>
         </div>
 
+        <div id="admin-core-content">
         <div class="stats-grid admin-stats-grid">
           <div class="stat-card"><div class="stat-icon-wrapper icon-blue">🛡️</div><div class="stat-details"><span class="stat-label">Supervisores</span><span class="stat-value" id="admin-count-supervisors">0</span></div></div>
           <div class="stat-card"><div class="stat-icon-wrapper icon-purple">📚</div><div class="stat-details"><span class="stat-label">Estudios disponibles</span><span class="stat-value" id="admin-count-studies">4</span></div></div>
@@ -639,7 +645,8 @@
           </div>
         </section>
 
-        <div class="admin-setup-grid">
+        <div id="admin-user-management">
+        <div class="admin-setup-grid" id="admin-supervisor-scope">
           <section class="glass-panel admin-setup-card">
             <div class="section-header"><div><h2>1. Seleccionar estudios</h2><p>Marca todos los estudios que deseas asignar al próximo supervisor.</p></div></div>
             <div class="form-group">
@@ -653,11 +660,20 @@
         </div>
 
         <section class="glass-panel admin-setup-card admin-supervisor-card">
-          <div class="section-header"><div><h2>2. Crear supervisor y asignar alcance</h2><p>El usuario podrá alternar únicamente entre los estudios seleccionados y conservará un tipo de alertas asignado.</p></div></div>
+          <div class="section-header"><div><h2>Crear usuario de acceso</h2><p>Define si accederá a la operación, a las visualizaciones o únicamente al Comité Ejecutivo.</p></div></div>
           <div class="admin-form-grid">
             <div class="form-group"><label for="admin-supervisor-name">Nombre</label><input id="admin-supervisor-name" class="form-control" placeholder="Nombre completo" /></div>
             <div class="form-group"><label for="admin-supervisor-username">Usuario</label><input id="admin-supervisor-username" class="form-control" placeholder="supervisor.tradicional" autocomplete="off" /></div>
             <div class="form-group">
+              <label for="admin-user-role">Tipo de acceso</label>
+              <select id="admin-user-role" class="form-select" onchange="window.app?.toggleAdminUserScope()">
+                <option value="visualizer">Visualizaciones operativas</option>
+                <option value="commercial">Comercial · solo Comité Ejecutivo</option>
+                <option value="supervisor">Supervisor operativo</option>
+              </select>
+              <small class="form-help" id="admin-user-role-help">Incluye seguimiento, cruces, ediciones y métricas operacionales.</small>
+            </div>
+            <div class="form-group" id="admin-supervisor-module-group">
               <label for="admin-supervisor-password">Contraseña temporal</label>
               <div class="admin-password-row"><input type="text" id="admin-supervisor-password" class="form-control" autocomplete="new-password" /><button class="btn btn-outline" type="button" onclick="window.app?.generateTemporaryPassword()">Generar</button></div>
               <small class="form-help">Mínimo 12 caracteres con mayúscula, minúscula, número y símbolo.</small>
@@ -672,7 +688,7 @@
               <small class="form-help">Este será el único módulo visible para el supervisor.</small>
             </div>
           </div>
-          <button class="btn btn-navy btn-glow" onclick="window.app?.createAdminSupervisor()">Crear y asignar supervisor</button>
+          <button class="btn btn-navy btn-glow" onclick="window.app?.createAdminUser()" id="btn-create-admin-user">Crear usuario</button>
           <div class="admin-credential-result hidden" id="admin-credential-result" role="status" aria-live="polite">
             <div>
               <span class="admin-credential-label" id="admin-credential-title">Credenciales listas para copiar</span>
@@ -688,14 +704,15 @@
         </section>
 
         <section class="glass-panel admin-setup-card">
-          <div class="section-header"><div><h2>Supervisores registrados</h2><p>Resumen de usuarios y alcance asignado.</p></div></div>
+          <div class="section-header"><div><h2>Usuarios registrados</h2><p>Accesos operativos, de visualización y Comercial.</p></div></div>
           <div class="table-responsive">
             <table class="data-table">
-              <thead><tr><th>Nombre</th><th>Usuario</th><th>Estudio</th><th>Tipo de alertas</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <thead><tr><th>Nombre</th><th>Usuario</th><th>Acceso</th><th>Estudio</th><th>Estado</th><th>Acciones</th></tr></thead>
               <tbody id="admin-supervisors-tbody"><tr><td colspan="6" class="text-center text-muted">Cargando...</td></tr></tbody>
             </table>
           </div>
         </section>
+        </div>
 
         <section class="glass-panel admin-setup-card admin-danger-zone">
           <div class="section-header">
@@ -724,6 +741,106 @@
           <button class="btn btn-outline text-danger" id="btn-admin-purge-test-data" type="button" onclick="window.app?.purgeTestAuditData()">🧹 Eliminar datos de prueba</button>
           <small class="form-help">Requiere dos confirmaciones y solo está disponible para el administrador.</small>
         </section>
+        </div>
+
+        <section class="glass-panel admin-analysis-sheet hidden" id="admin-alerts-analysis-sheet" aria-live="polite">
+          <div class="section-header admin-analysis-header">
+            <div>
+              <div class="corporate-badge">Cruce por ID de auditoría</div>
+              <h2>Alertas con contexto de auditoría</h2>
+              <p>Carga el export de auditorías para enriquecer las alertas con auditor, PDV, país, ciudad y canal. Solo se guardan estos campos de análisis.</p>
+            </div>
+            <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis()">↻ Actualizar</button>
+          </div>
+          <div class="admin-analysis-upload">
+            <input class="form-control" type="file" id="admin-alerts-export-input" accept=".xlsx,.xls,.csv,.txt" />
+            <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminExternalAnalysis('alerts')">📥 Cargar y cruzar export</button>
+          </div>
+          <p class="form-help" id="admin-alerts-import-status">Aún no se ha cargado un export de auditorías.</p>
+
+          <div class="stats-grid admin-analysis-stats">
+            <div class="stat-card"><div class="stat-icon-wrapper icon-blue">🧾</div><div class="stat-details"><span class="stat-label">Registros útiles</span><strong class="stat-value" id="admin-alerts-source-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-magenta">🚨</div><div class="stat-details"><span class="stat-label">Auditorías con alerta</span><strong class="stat-value" id="admin-alerts-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-emerald">🔗</div><div class="stat-details"><span class="stat-label">Cruzadas con ValidaFlow</span><strong class="stat-value" id="admin-alerts-matched-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-purple">📊</div><div class="stat-details"><span class="stat-label">Tasa de cruce</span><strong class="stat-value" id="admin-alerts-match-rate">0%</strong></div></div>
+          </div>
+
+          <div class="admin-analysis-grid">
+            <section class="admin-analysis-card"><h3>👤 Auditor con más alertas</h3><div id="admin-alerts-top-auditors" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
+            <section class="admin-analysis-card"><h3>📍 Ciudades con más alertas</h3><div id="admin-alerts-top-cities" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
+            <section class="admin-analysis-card"><h3>🌎 Países con más alertas</h3><div id="admin-alerts-top-countries" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
+          </div>
+
+          <section class="admin-analysis-card admin-analysis-table-card">
+            <h3>Detalle cruzado de alertas</h3>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Alerta</th><th>Auditor</th><th>PDV</th><th>País / ciudad</th><th>Canal</th><th>Cruce ValidaFlow</th></tr></thead><tbody id="admin-alerts-analysis-tbody"><tr><td colspan="7" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
+          </section>
+        </section>
+
+        <section class="glass-panel admin-analysis-sheet hidden" id="admin-editions-analysis-sheet" aria-live="polite">
+          <div class="section-header admin-analysis-header">
+            <div>
+              <div class="corporate-badge">Cruce por ID de auditoría</div>
+              <h2>Impacto de ediciones sobre alertas</h2>
+              <p>Carga el export de ediciones. Se relaciona únicamente con las auditorías alertadas ya cargadas para medir modificación, intensidad y responsables.</p>
+            </div>
+            <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis()">↻ Actualizar</button>
+          </div>
+          <div class="admin-analysis-upload">
+            <input class="form-control" type="file" id="admin-editions-export-input" accept=".xlsx,.xls,.csv,.txt" />
+            <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminExternalAnalysis('editions')">📥 Cargar export de ediciones</button>
+          </div>
+          <p class="form-help" id="admin-editions-import-status">Primero carga la base de alertas y luego el export de ediciones.</p>
+
+          <div class="stats-grid admin-analysis-stats">
+            <div class="stat-card"><div class="stat-icon-wrapper icon-magenta">🚨</div><div class="stat-details"><span class="stat-label">Alertas analizadas</span><strong class="stat-value" id="admin-editions-alerts-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-emerald">✓</div><div class="stat-details"><span class="stat-label">Con modificación</span><strong class="stat-value" id="admin-editions-with-changes">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-orange">—</div><div class="stat-details"><span class="stat-label">Sin modificación</span><strong class="stat-value" id="admin-editions-without-changes">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-purple">∑</div><div class="stat-details"><span class="stat-label">Promedio con edición</span><strong class="stat-value" id="admin-editions-average-changes">0.0</strong></div></div>
+          </div>
+
+          <div class="admin-analysis-grid admin-analysis-grid-two">
+            <section class="admin-analysis-card"><h3>✏️ Mayor edición por estudio</h3><div id="admin-editions-top-studies" class="admin-analysis-ranking"><span class="text-muted">Sin información cargada.</span></div></section>
+            <section class="admin-analysis-card"><h3>👤 Usuarios que terminan más ediciones</h3><div id="admin-editions-top-users" class="admin-analysis-ranking"><span class="text-muted">Sin información cargada.</span></div></section>
+          </div>
+
+          <section class="admin-analysis-card admin-analysis-table-card">
+            <h3>Auditorías alertadas y sus ediciones</h3>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Auditor</th><th>País / ciudad</th><th>Alerta</th><th>Modificaciones</th><th>Usuario última edición</th><th>Estado</th></tr></thead><tbody id="admin-editions-analysis-tbody"><tr><td colspan="7" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
+          </section>
+        </section>
+      </div>
+    </div>
+
+    <!-- ======================================================== -->
+    <!-- 3. PORTAL DE VISUALIZACIONES                             -->
+    <!-- ======================================================== -->
+    <div id="view-visualizations" class="hidden">
+      <div class="supervisor-hub-container visualization-console">
+        <div class="hub-header-row">
+          <div>
+            <div class="corporate-badge">dichter & neira • Intelligence & Quality Control</div>
+            <h1 class="hub-title">Portal de Visualizaciones</h1>
+            <p class="hub-subtitle" id="visualization-portal-subtitle">Indicadores, cruces, ediciones, exportaciones y reportes en un solo espacio.</p>
+          </div>
+          <div class="hub-user-pill">
+            <span class="hub-user-avatar">📈</span>
+            <div class="hub-user-meta"><span class="hub-user-role" id="visualization-user-role">Acceso de visualización</span><strong class="hub-user-name" id="visualization-user-name">Usuario</strong></div>
+            <button class="btn btn-outline btn-sm" onclick="window.app?.logoutSupervisor()">Cerrar Sesión 🚪</button>
+          </div>
+        </div>
+        <nav class="visualization-tabs" id="visualization-nav-tabs" aria-label="Secciones de visualización">
+          <button class="visualization-tab active" data-visualization-tab="overview" type="button" onclick="window.app?.switchVisualizationTab('overview')">📡 Seguimiento diario</button>
+          <button class="visualization-tab" data-visualization-tab="alerts" type="button" onclick="window.app?.switchVisualizationTab('alerts')">🔗 Cruce de alertas</button>
+          <button class="visualization-tab" data-visualization-tab="editions" type="button" onclick="window.app?.switchVisualizationTab('editions')">✏️ Ediciones</button>
+          <button class="visualization-tab" data-visualization-tab="metrics" type="button" onclick="window.app?.switchVisualizationTab('metrics')">📊 Métricas & exportaciones</button>
+          <button class="visualization-tab hidden" data-visualization-tab="committee" type="button" onclick="window.app?.switchVisualizationTab('committee')">👔 Comité Ejecutivo</button>
+        </nav>
+        <div class="visualization-pane active" id="visualization-pane-overview"></div>
+        <div class="visualization-pane" id="visualization-pane-alerts"></div>
+        <div class="visualization-pane" id="visualization-pane-editions"></div>
+        <div class="visualization-pane" id="visualization-pane-metrics"></div>
+        <div class="visualization-pane" id="visualization-pane-committee"></div>
       </div>
     </div>
 
@@ -2497,6 +2614,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=46.0"></script>
+  <script type="module" src="js/app.js?v=48.0"></script>
 </body>
 </html>

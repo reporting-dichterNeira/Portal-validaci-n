@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=32.0';
-import { SupabaseBackend } from './supabase-backend.js?v=37.0';
+import { SupabaseBackend } from './supabase-backend.js?v=39.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -31,7 +31,7 @@ class ValidaFlowApp {
     this.remoteRefreshTimer = null;
 
     // Estado de Navegación y Vistas Previas
-    this.currentView = 'landing'; // landing | validator | admin | supervisor-hub | supervisor-workspace
+    this.currentView = 'landing'; // landing | validator | administrator | visualizations | supervisor-hub | supervisor-workspace
     this.currentModule = 'smart'; // 'smart' (Validación Smart) | 'blocking' (Alertas Bloqueantes)
     this.currentProject = 'Chile'; // 'Chile' | 'Tradicional' | 'Moderno' | 'Lindley'
     this.currentTab = 'admin';
@@ -41,6 +41,10 @@ class ValidaFlowApp {
     this.currentAssignments = [];
     this.pendingStaffRole = 'supervisor';
     this.adminData = { countries: [], studies: [], supervisors: [], assignments: [] };
+    this.adminExternalAnalysis = { imports: [], alertRecords: [], editRecords: [], platformAuditIds: new Set() };
+    this.adminAnalysisSheet = 'core';
+    this.visualizationTab = 'overview';
+    this.visualizationsMounted = false;
     this.historicalBatches = [];
     this.validatorHistoryRows = [];
     this.validatorHistoryLoaded = false;
@@ -114,6 +118,7 @@ class ValidaFlowApp {
     this.initLandingAndHub();
     this.initSupervisorAuth();
     this.initUI();
+    this.mountVisualizationContent();
     this.initLookupModule();
     this.initQueriesModule();
     this.initAlertsModule();
@@ -172,6 +177,84 @@ class ValidaFlowApp {
   // ==========================================
   // MENÚS PREVIOS: LANDING Y HUB DE SUPERVISIÓN
   // ==========================================
+  isVisualizationRole(role = this.currentRole) {
+    return ['visualizer', 'commercial'].includes(role);
+  }
+
+  canUseExternalAnalysis() {
+    return ['admin', 'visualizer'].includes(this.currentRole);
+  }
+
+  mountVisualizationContent() {
+    if (this.visualizationsMounted) return;
+    const move = (sourceId, targetId) => {
+      const source = document.getElementById(sourceId);
+      const target = document.getElementById(targetId);
+      if (source && target) target.appendChild(source);
+    };
+    move('admin-productivity-panel', 'visualization-pane-overview');
+    move('admin-alerts-analysis-sheet', 'visualization-pane-alerts');
+    move('admin-editions-analysis-sheet', 'visualization-pane-editions');
+    const reports = document.getElementById('tab-reports');
+    const metricsPane = document.getElementById('visualization-pane-metrics');
+    if (reports && metricsPane) {
+      reports.classList.remove('tab-content-pane', 'active');
+      reports.classList.add('visualization-reports-content');
+      metricsPane.appendChild(reports);
+    }
+    this.visualizationsMounted = true;
+  }
+
+  prepareVisualizationPortal() {
+    this.mountVisualizationContent();
+    const isCommercial = this.currentRole === 'commercial';
+    const roleLabel = isCommercial ? 'Comercial · Comité Ejecutivo' : 'Visualizaciones operativas';
+    const userName = this.currentProfile?.display_name || this.currentProfile?.username || 'Usuario';
+    const nameEl = document.getElementById('visualization-user-name');
+    const roleEl = document.getElementById('visualization-user-role');
+    const subtitle = document.getElementById('visualization-portal-subtitle');
+    if (nameEl) nameEl.textContent = userName;
+    if (roleEl) roleEl.textContent = roleLabel;
+    if (subtitle) subtitle.textContent = isCommercial
+      ? 'Consulta el Informe Ejecutivo de Calidad y KPIs preparado para Comité y Comercial.'
+      : 'Indicadores, cruces, ediciones, exportaciones y reportes en un solo espacio.';
+
+    document.querySelectorAll('.visualization-tab').forEach(button => {
+      const tab = button.dataset.visualizationTab;
+      const allowed = isCommercial ? tab === 'committee' : tab !== 'committee';
+      button.classList.toggle('hidden', !allowed);
+    });
+    document.getElementById('btn-subtab-operational')?.classList.toggle('hidden', isCommercial);
+    document.getElementById('btn-subtab-executive')?.classList.toggle('hidden', !isCommercial);
+    this.switchReportsSubtab(isCommercial ? 'executive' : 'operational');
+    this.switchVisualizationTab(isCommercial ? 'committee' : this.visualizationTab || 'overview');
+  }
+
+  async switchVisualizationTab(tabId) {
+    const isCommercial = this.currentRole === 'commercial';
+    const allowedTabs = isCommercial ? ['committee'] : ['overview', 'alerts', 'editions', 'metrics'];
+    const target = allowedTabs.includes(tabId) ? tabId : allowedTabs[0];
+    this.visualizationTab = target;
+    document.querySelectorAll('.visualization-tab').forEach(button => {
+      button.classList.toggle('active', button.dataset.visualizationTab === target);
+    });
+    const visiblePane = target === 'committee' ? 'metrics' : target;
+    document.querySelectorAll('.visualization-pane').forEach(pane => {
+      const paneTab = pane.id.replace('visualization-pane-', '');
+      pane.classList.toggle('active', paneTab === visiblePane);
+    });
+
+    if (target === 'overview') {
+      await this.loadAdministratorPanel({ visualOnly: true });
+    } else if (target === 'alerts' || target === 'editions') {
+      await this.refreshAdminExternalAnalysis();
+    } else {
+      this.renderReportsView();
+      this.renderDailyReportsView();
+      this.ensureHistoricalReportsLoaded();
+    }
+  }
+
   initLandingAndHub() {
     // 0. Clic en el logo del encabezado regresa a la pantalla de inicio
     document.querySelector('.header-brand')?.addEventListener('click', () => {
@@ -315,6 +398,7 @@ class ValidaFlowApp {
     const hubView = document.getElementById('view-supervisor-hub');
     const workspaceView = document.getElementById('private-supervisor-view');
     const adminView = document.getElementById('view-administrator');
+    const visualizationsView = document.getElementById('view-visualizations');
     const navTabs = document.getElementById('supervisor-nav-tabs');
     const modeBadge = document.getElementById('header-mode-badge');
     const btnAuthText = document.getElementById('supervisor-btn-text');
@@ -325,6 +409,7 @@ class ValidaFlowApp {
     hubView?.classList.add('hidden');
     workspaceView?.classList.add('hidden');
     adminView?.classList.add('hidden');
+    visualizationsView?.classList.add('hidden');
     navTabs?.classList.add('hidden');
 
     if (viewName === 'landing') {
@@ -348,6 +433,15 @@ class ValidaFlowApp {
       }
       if (btnAuthText) btnAuthText.textContent = 'Cerrar Sesión 🚪';
       this.loadAdministratorPanel();
+    } else if (viewName === 'visualizations') {
+      visualizationsView?.classList.remove('hidden');
+      if (modeBadge) {
+        modeBadge.textContent = 'Visualizaciones';
+        modeBadge.style.background = 'var(--dn-emerald)';
+        modeBadge.style.color = '#FFFFFF';
+      }
+      if (btnAuthText) btnAuthText.textContent = 'Cerrar Sesión 🚪';
+      this.prepareVisualizationPortal();
     } else if (viewName === 'validator') {
       validatorView?.classList.remove('hidden');
       if (this.validatorUI) {
@@ -417,17 +511,30 @@ class ValidaFlowApp {
     }
   }
 
+  handleVisualizationPortalClick() {
+    if (this.isVisualizationRole()) {
+      this.showView('visualizations');
+    } else if (this.currentRole === 'supervisor') {
+      this.showToast('Crea un usuario de Visualizaciones para acceder a este portal sin permisos operativos.', 'info');
+    } else {
+      this.openStaffLogin('visualizer');
+    }
+  }
+
   openStaffLogin(role = 'supervisor') {
     this.pendingStaffRole = role;
     const isAdmin = role === 'admin';
+    const isVisualization = role === 'visualizer';
     const title = document.getElementById('staff-login-title');
     const description = document.getElementById('staff-login-description');
     const label = document.getElementById('staff-login-user-label');
-    if (title) title.textContent = isAdmin ? 'Acceso de Administrador' : 'Acceso de Supervisión';
+    if (title) title.textContent = isAdmin ? 'Acceso de Administrador' : (isVisualization ? 'Acceso a Visualizaciones' : 'Acceso de Supervisión');
     if (description) description.textContent = isAdmin
       ? 'Ingresa las credenciales administrativas para gestionar supervisores, estudios y tipos de alertas.'
-      : 'Ingresa tus credenciales para acceder al estudio y módulo que tienes asignados.';
-    if (label) label.textContent = isAdmin ? 'Usuario administrador' : 'Usuario supervisor';
+      : isVisualization
+        ? 'Ingresa con tu usuario de visualización. El acceso Comercial solo mostrará el Comité Ejecutivo.'
+        : 'Ingresa tus credenciales para acceder al estudio y módulo que tienes asignados.';
+    if (label) label.textContent = isAdmin ? 'Usuario administrador' : (isVisualization ? 'Usuario de visualización' : 'Usuario supervisor');
     const modal = document.getElementById('modal-supervisor-login');
     modal?.classList.remove('hidden');
     document.getElementById('sup-login-user')?.focus();
@@ -437,6 +544,9 @@ class ValidaFlowApp {
     if (this.currentRole === 'admin') {
       if (this.currentView === 'administrator') this.logoutSupervisor();
       else this.showView('administrator');
+    } else if (this.isVisualizationRole()) {
+      if (this.currentView === 'visualizations') this.logoutSupervisor();
+      else this.showView('visualizations');
     } else if (this.isSupervisor) {
       if (this.currentView === 'supervisor-workspace') {
         this.showView('supervisor-hub');
@@ -479,8 +589,13 @@ class ValidaFlowApp {
 
       this.isSupervisor = this.currentRole === 'supervisor';
       modalLogin?.classList.add('hidden');
-      this.showView(this.currentRole === 'admin' ? 'administrator' : 'supervisor-hub');
-      this.showToast(`Sesión de ${this.currentRole === 'admin' ? 'Administrador' : 'Supervisor'} iniciada.`, 'success');
+      this.showView(this.currentRole === 'admin'
+        ? 'administrator'
+        : this.isVisualizationRole()
+          ? 'visualizations'
+          : 'supervisor-hub');
+      const sessionLabel = this.currentRole === 'admin' ? 'Administrador' : this.currentRole === 'commercial' ? 'Comercial' : this.currentRole === 'visualizer' ? 'Visualizaciones' : 'Supervisor';
+      this.showToast(`Sesión de ${sessionLabel} iniciada.`, 'success');
     } catch (error) {
       this.isSupervisor = false;
       this.currentRole = null;
@@ -511,7 +626,7 @@ class ValidaFlowApp {
   }
 
   async logoutSupervisor() {
-    const roleLabel = this.currentRole === 'admin' ? 'Administración' : 'Supervisión';
+    const roleLabel = this.currentRole === 'admin' ? 'Administración' : this.isVisualizationRole() ? 'Visualizaciones' : 'Supervisión';
     if (this.backend.configured) {
       try {
         await this.backend.signOut();
@@ -535,6 +650,8 @@ class ValidaFlowApp {
   updateRoleView() {
     if (this.currentRole === 'admin') {
       this.showView('administrator');
+    } else if (this.isVisualizationRole()) {
+      this.showView('visualizations');
     } else if (this.isSupervisor) {
       this.showView('supervisor-hub');
     } else {
@@ -663,15 +780,17 @@ class ValidaFlowApp {
     return remoteSync;
   }
 
-  async loadAdministratorPanel() {
-    if (this.currentRole !== 'admin') return;
+  async loadAdministratorPanel({ visualOnly = false } = {}) {
+    const isAdmin = this.currentRole === 'admin';
+    const isOperationalVisualizer = this.currentRole === 'visualizer';
+    if (!isAdmin && !isOperationalVisualizer) return;
     try {
       const selectedDate = document.getElementById('admin-productivity-date')?.value
         || this.toLocalDateInputValue(new Date());
-      const [administration, historicalBatches] = await Promise.all([
-        this.backend.loadAdministration({ operationDate: selectedDate }),
-        this.backend.loadHistoricalUploadBatches()
-      ]);
+      const administration = await this.backend.loadAdministration({ operationDate: selectedDate });
+      const historicalBatches = isAdmin && !visualOnly
+        ? await this.backend.loadHistoricalUploadBatches()
+        : [];
       this.adminData = administration;
       this.historicalBatches = historicalBatches;
       this.renderAdministratorPanel();
@@ -731,11 +850,16 @@ class ValidaFlowApp {
         const moduleLabels = [...new Set(supervisorAssignments.map(assignment =>
           SUPERVISOR_MODULES[assignment.module]?.label || 'Validación Smart'
         ))];
+        const roleLabels = {
+          supervisor: 'Supervisor operativo',
+          visualizer: 'Visualizaciones operativas',
+          commercial: 'Comercial · Comité Ejecutivo'
+        };
         return `<tr>
           <td><strong>${escapeHtml(supervisor.display_name)}</strong></td>
           <td><code>${escapeHtml(supervisor.username || '—')}</code></td>
-          <td><div class="admin-study-badges">${studiesHtml}</div></td>
-          <td>${moduleLabels.map(label => `<span class="badge badge-info">${escapeHtml(label)}</span>`).join(' ') || '—'}</td>
+          <td><span class="badge ${supervisor.role === 'commercial' ? 'badge-purple' : supervisor.role === 'visualizer' ? 'badge-success' : 'badge-info'}">${escapeHtml(roleLabels[supervisor.role] || supervisor.role || '—')}</span></td>
+          <td>${supervisor.role === 'supervisor' ? `<div class="admin-study-badges">${studiesHtml}</div>${moduleLabels.map(label => `<small>${escapeHtml(label)}</small>`).join(' ')}` : 'Acceso global de consulta'}</td>
           <td><span class="badge ${supervisor.is_active ? 'badge-success' : 'badge-warning'}">${supervisor.is_active ? 'Activo' : 'Inactivo'}</span></td>
           <td><div class="admin-supervisor-actions">
             <button class="btn btn-outline btn-sm btn-admin-reset-password" type="button" data-supervisor-id="${supervisor.id}">🔑 Nueva contraseña</button>
@@ -751,7 +875,8 @@ class ValidaFlowApp {
       });
     }
     this.renderAdministratorProductivity();
-    this.renderHistoricalBatchDeletionOptions();
+    if (this.currentRole === 'admin') this.renderHistoricalBatchDeletionOptions();
+    if (this.currentRole === 'admin') this.toggleAdminUserScope();
   }
 
   renderHistoricalBatchDeletionOptions() {
@@ -784,6 +909,224 @@ class ValidaFlowApp {
 
   refreshAdministratorProductivity() {
     this.loadAdministratorPanel();
+  }
+
+  switchAdminAnalysisSheet(sheet) {
+    const target = ['core', 'alerts', 'editions'].includes(sheet) ? sheet : 'core';
+    this.adminAnalysisSheet = target;
+    document.getElementById('admin-core-content')?.classList.toggle('hidden', target !== 'core');
+    document.getElementById('admin-alerts-analysis-sheet')?.classList.toggle('hidden', target !== 'alerts');
+    document.getElementById('admin-editions-analysis-sheet')?.classList.toggle('hidden', target !== 'editions');
+    document.querySelectorAll('.admin-analysis-tab').forEach(button => {
+      button.classList.toggle('active', button.dataset.adminSheet === target);
+    });
+    if (target !== 'core') this.refreshAdminExternalAnalysis();
+  }
+
+  normalizeExternalColumnName(value) {
+    return String(value || '')
+      .replace(/^\uFEFF/, '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  getExternalExportValue(row, candidates) {
+    const indexed = Object.entries(row || {}).map(([key, value]) => [this.normalizeExternalColumnName(key), value]);
+    for (const candidate of candidates) {
+      const found = indexed.find(([key]) => key === candidate || key.includes(candidate));
+      if (found && found[1] !== null && found[1] !== undefined) return String(found[1]).trim();
+    }
+    return '';
+  }
+
+  parseExternalExportInteger(value) {
+    const parsed = Number(String(value || '0').replace(/[^0-9.-]/g, ''));
+    return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
+  }
+
+  parseExternalExportDate(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return null;
+    const date = new Date(raw);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  }
+
+  parseExternalExportDateOnly(value) {
+    const timestamp = this.parseExternalExportDate(value);
+    return timestamp ? timestamp.slice(0, 10) : null;
+  }
+
+  async readExternalExportRows(file) {
+    if (!file) throw new Error('Selecciona un archivo primero.');
+    if (!window.XLSX) throw new Error('La librería para leer el archivo aún no está disponible. Intenta nuevamente.');
+    const buffer = await file.arrayBuffer();
+    const isDelimited = /\.(csv|txt)$/i.test(file.name || '');
+    const workbook = isDelimited
+      ? XLSX.read(new TextDecoder('windows-1252').decode(buffer), { type: 'string', FS: ';' })
+      : XLSX.read(buffer, { type: 'array', cellDates: true });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!sheet) throw new Error('El archivo no contiene una hoja para leer.');
+    return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false, dateNF: 'yyyy-mm-dd' });
+  }
+
+  normalizeAlertExportRows(rows) {
+    const records = new Map();
+    rows.forEach(row => {
+      const auditId = this.getExternalExportValue(row, ['id audito', 'id auditoria', 'audit id']);
+      if (!auditId) return;
+      const auditStatus = this.getExternalExportValue(row, ['estado']);
+      const alertStatus = this.getExternalExportValue(row, ['substatus', 'sub status']);
+      const alertLabel = this.getExternalExportValue(row, ['alerta']);
+      const isAlert = /alerta/i.test(`${auditStatus} ${alertStatus} ${alertLabel}`);
+      const record = {
+        audit_external_id: auditId,
+        is_alert: isAlert,
+        audit_status: auditStatus || null,
+        alert_status: alertStatus || null,
+        alert_label: alertLabel || null,
+        pdv_id: this.getExternalExportValue(row, ['id pdv', 'pdv id']) || null,
+        pdv_name: this.getExternalExportValue(row, ['nombre de pdv', 'nombre pdv', 'pdv name']) || null,
+        country: this.getExternalExportValue(row, ['pais', 'country']) || null,
+        channel: this.getExternalExportValue(row, ['canal', 'channel']) || null,
+        city: this.getExternalExportValue(row, ['ciudad', 'city']) || null,
+        auditor: this.getExternalExportValue(row, ['auditor']) || null,
+        audit_date: this.parseExternalExportDateOnly(this.getExternalExportValue(row, ['fecha audito', 'fecha auditoria', 'audit date'])),
+        wave: this.getExternalExportValue(row, ['ola', 'wave']) || null,
+        study: this.getExternalExportValue(row, ['survey', 'estudio', 'study']) || null
+      };
+      const current = records.get(auditId);
+      if (!current || (!current.is_alert && record.is_alert)) records.set(auditId, record);
+    });
+    return [...records.values()];
+  }
+
+  normalizeEditionExportRows(rows) {
+    const records = new Map();
+    rows.forEach(row => {
+      const auditId = this.getExternalExportValue(row, ['id auditoria', 'id audito', 'audit id']);
+      if (!auditId) return;
+      const record = {
+        audit_external_id: auditId,
+        study: this.getExternalExportValue(row, ['estudio', 'study']) || null,
+        country: this.getExternalExportValue(row, ['pais', 'country']) || null,
+        audit_status: this.getExternalExportValue(row, ['estado', 'status']) || null,
+        wave: this.getExternalExportValue(row, ['ola', 'wave']) || null,
+        modifications_count: this.parseExternalExportInteger(this.getExternalExportValue(row, ['modificaciones'])),
+        status_changes_count: this.parseExternalExportInteger(this.getExternalExportValue(row, ['cambio de estados', 'status changes'])),
+        first_validation_started_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['inicio primera validacion'])),
+        first_validation_completed_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['fin primera validacion'])),
+        first_validator: this.getExternalExportValue(row, ['usuario fin 1ra validacion']) || null,
+        last_validation_started_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['inicio ultima validacion'])),
+        last_validation_completed_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['fin ultima validacion'])),
+        last_validator: this.getExternalExportValue(row, ['usuario fin ult validacion']) || null
+      };
+      const current = records.get(auditId);
+      if (!current || record.modifications_count >= current.modifications_count) records.set(auditId, record);
+    });
+    return [...records.values()];
+  }
+
+  async importAdminExternalAnalysis(datasetType) {
+    if (!this.canUseExternalAnalysis()) return;
+    const inputId = datasetType === 'alerts' ? 'admin-alerts-export-input' : 'admin-editions-export-input';
+    const file = document.getElementById(inputId)?.files?.[0];
+    try {
+      const rawRows = await this.readExternalExportRows(file);
+      const rows = datasetType === 'alerts'
+        ? this.normalizeAlertExportRows(rawRows)
+        : this.normalizeEditionExportRows(rawRows);
+      if (!rows.length) throw new Error('No se encontró una columna válida de ID de auditoría en el archivo.');
+      this.showToast(`Guardando ${rows.length.toLocaleString('es-CO')} registros útiles…`, 'info');
+      await this.backend.replaceAdminAnalysisImport({ datasetType, sourceFilename: file.name, rows });
+      await this.refreshAdminExternalAnalysis();
+      if (inputId) document.getElementById(inputId).value = '';
+      this.showToast(`Export de ${datasetType === 'alerts' ? 'alertas' : 'ediciones'} cargado y cruzado correctamente.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible cargar el export.', 'error');
+    }
+  }
+
+  async refreshAdminExternalAnalysis() {
+    if (!this.canUseExternalAnalysis()) return;
+    try {
+      const analysis = await this.backend.loadAdminExternalAnalysis();
+      let platformAuditIds = this.adminExternalAnalysis?.platformAuditIds || new Set();
+      if (!platformAuditIds.size && analysis.alertRecords.length) {
+        const platformAudits = await this.backend.loadAuditHistory({ pageSize: 1000 });
+        platformAuditIds = new Set(platformAudits.map(audit => String(audit.id || '').trim()).filter(Boolean));
+      }
+      this.adminExternalAnalysis = { ...analysis, platformAuditIds };
+      this.renderAdminExternalAnalysis();
+    } catch (error) {
+      console.error('No fue posible cargar el análisis administrativo:', error);
+      ['admin-alerts-import-status', 'admin-editions-import-status'].forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.textContent = error.message || 'No fue posible consultar los datos cargados.';
+      });
+    }
+  }
+
+  renderAdminExternalAnalysis() {
+    const analysis = this.adminExternalAnalysis || { imports: [], alertRecords: [], editRecords: [], platformAuditIds: new Set() };
+    const escapeHtml = value => String(value ?? '—').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+    const setText = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
+    const formatNumber = value => Number(value || 0).toLocaleString('es-CO');
+    const alertImport = analysis.imports.find(item => item.dataset_type === 'alerts');
+    const editionImport = analysis.imports.find(item => item.dataset_type === 'editions');
+    const alertRows = (analysis.alertRecords || []).filter(record => record.is_alert);
+    const platformIds = analysis.platformAuditIds || new Set();
+    const matchedAlerts = alertRows.filter(record => platformIds.has(String(record.audit_external_id)));
+    const percentage = alertRows.length ? `${Math.round((matchedAlerts.length / alertRows.length) * 100)}%` : '0%';
+    const renderRanking = (id, rows) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.innerHTML = rows.length ? rows.slice(0, 5).map(([label, count]) => `<div class="admin-analysis-ranking-row"><strong>${escapeHtml(label || 'Sin dato')}</strong><span>${formatNumber(count)}</span></div>`).join('') : '<span class="text-muted">Sin datos para mostrar.</span>';
+    };
+    const rank = (records, field, valueField = null) => Object.entries(records.reduce((acc, record) => {
+      const key = record[field] || 'Sin dato';
+      acc[key] = (acc[key] || 0) + (valueField ? Number(record[valueField] || 0) : 1);
+      return acc;
+    }, {})).sort((a, b) => b[1] - a[1]);
+
+    setText('admin-alerts-import-status', alertImport ? `Archivo activo: ${alertImport.source_filename} · ${formatNumber(alertImport.row_count)} registros útiles.` : 'Aún no se ha cargado un export de auditorías.');
+    setText('admin-editions-import-status', editionImport ? `Archivo activo: ${editionImport.source_filename} · ${formatNumber(editionImport.row_count)} registros útiles.` : 'Primero carga la base de alertas y luego el export de ediciones.');
+    setText('admin-alerts-source-count', formatNumber(analysis.alertRecords.length));
+    setText('admin-alerts-count', formatNumber(alertRows.length));
+    setText('admin-alerts-matched-count', formatNumber(matchedAlerts.length));
+    setText('admin-alerts-match-rate', percentage);
+    renderRanking('admin-alerts-top-auditors', rank(alertRows, 'auditor'));
+    renderRanking('admin-alerts-top-cities', rank(alertRows, 'city'));
+    renderRanking('admin-alerts-top-countries', rank(alertRows, 'country'));
+
+    const alertsTbody = document.getElementById('admin-alerts-analysis-tbody');
+    if (alertsTbody) {
+      alertsTbody.innerHTML = alertRows.length ? alertRows.slice().sort((a, b) => String(a.auditor || '').localeCompare(String(b.auditor || ''))).slice(0, 100).map(record => `<tr>
+        <td><code>${escapeHtml(record.audit_external_id)}</code></td><td>${escapeHtml(record.alert_label || record.alert_status || record.audit_status)}</td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${platformIds.has(String(record.audit_external_id)) ? 'badge-success' : 'badge-warning'}">${platformIds.has(String(record.audit_external_id)) ? 'Encontrada' : 'No encontrada'}</span></td>
+      </tr>`).join('') : '<tr><td colspan="7" class="text-center text-muted">Sin auditorías alertadas cargadas.</td></tr>';
+    }
+
+    const editsById = new Map((analysis.editRecords || []).map(record => [String(record.audit_external_id), record]));
+    const alertEditionRows = alertRows.map(alert => ({ alert, edit: editsById.get(String(alert.audit_external_id)) || null }));
+    const withChanges = alertEditionRows.filter(item => Number(item.edit?.modifications_count || 0) > 0);
+    const withoutChanges = alertEditionRows.length - withChanges.length;
+    const averageChanges = withChanges.length ? withChanges.reduce((total, item) => total + Number(item.edit.modifications_count || 0), 0) / withChanges.length : 0;
+    setText('admin-editions-alerts-count', formatNumber(alertEditionRows.length));
+    setText('admin-editions-with-changes', formatNumber(withChanges.length));
+    setText('admin-editions-without-changes', formatNumber(withoutChanges));
+    setText('admin-editions-average-changes', averageChanges.toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+    renderRanking('admin-editions-top-studies', rank(withChanges.map(item => item.edit), 'study', 'modifications_count'));
+    renderRanking('admin-editions-top-users', rank(withChanges.map(item => item.edit), 'last_validator', 'modifications_count'));
+
+    const editionsTbody = document.getElementById('admin-editions-analysis-tbody');
+    if (editionsTbody) {
+      editionsTbody.innerHTML = alertEditionRows.length ? alertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)).slice(0, 100).map(({ alert, edit }) => {
+        const changes = Number(edit?.modifications_count || 0);
+        return `<tr><td><code>${escapeHtml(alert.audit_external_id)}</code></td><td>${escapeHtml(alert.auditor)}</td><td>${escapeHtml(alert.country)}<small>${escapeHtml(alert.city)}</small></td><td>${escapeHtml(alert.alert_label || alert.alert_status || alert.audit_status)}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.last_validator || '—')}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td></tr>`;
+      }).join('') : '<tr><td colspan="7" class="text-center text-muted">Carga primero la base de alertas.</td></tr>';
+    }
   }
 
   renderAdministratorProductivity() {
@@ -931,6 +1274,21 @@ class ValidaFlowApp {
       && /[^A-Za-z0-9]/.test(password);
   }
 
+  toggleAdminUserScope() {
+    const role = document.getElementById('admin-user-role')?.value || 'visualizer';
+    const needsScope = role === 'supervisor';
+    document.getElementById('admin-supervisor-scope')?.classList.toggle('hidden', !needsScope);
+    document.getElementById('admin-supervisor-module-group')?.classList.toggle('hidden', !needsScope);
+    const help = document.getElementById('admin-user-role-help');
+    const button = document.getElementById('btn-create-admin-user');
+    if (help) help.textContent = needsScope
+      ? 'Podrá cargar, distribuir y operar únicamente los estudios y módulo seleccionados.'
+      : role === 'commercial'
+        ? 'Solo verá la pestaña Comité Ejecutivo y sus descargas.'
+        : 'Verá seguimiento diario, cruces, ediciones, métricas y exportaciones.';
+    if (button) button.textContent = needsScope ? 'Crear supervisor' : role === 'commercial' ? 'Crear usuario Comercial' : 'Crear visualizador';
+  }
+
   showAdminCredential(username, password, title = 'Credenciales listas para copiar') {
     const result = document.getElementById('admin-credential-result');
     const titleElement = document.getElementById('admin-credential-title');
@@ -964,10 +1322,11 @@ class ValidaFlowApp {
     }
   }
 
-  async createAdminSupervisor() {
+  async createAdminUser() {
     const username = document.getElementById('admin-supervisor-username')?.value.trim().toLowerCase() || '';
     const displayName = document.getElementById('admin-supervisor-name')?.value.trim() || '';
     const password = document.getElementById('admin-supervisor-password')?.value || '';
+    const userRole = document.getElementById('admin-user-role')?.value || 'visualizer';
     const studyIds = [...document.querySelectorAll('#admin-study-catalog input[type="checkbox"]:checked')]
       .map(input => input.value);
     const module = document.getElementById('admin-supervisor-module')?.value || '';
@@ -979,11 +1338,11 @@ class ValidaFlowApp {
       this.showToast('El nombre debe tener al menos 3 caracteres.', 'warning');
       return;
     }
-    if (!studyIds.length) {
+    if (userRole === 'supervisor' && !studyIds.length) {
       this.showToast('Selecciona al menos un estudio para el supervisor.', 'warning');
       return;
     }
-    if (!SUPERVISOR_MODULES[module]) {
+    if (userRole === 'supervisor' && !SUPERVISOR_MODULES[module]) {
       this.showToast('Selecciona si el supervisor trabajará en Validación Smart o Alertas Bloqueantes.', 'warning');
       return;
     }
@@ -992,7 +1351,7 @@ class ValidaFlowApp {
       return;
     }
     try {
-      await this.backend.createSupervisor({ username, displayName, password, studyIds, module });
+      await this.backend.createPortalUser({ username, displayName, password, userRole, studyIds, module });
       ['admin-supervisor-username', 'admin-supervisor-name', 'admin-supervisor-password'].forEach(id => {
         const element = document.getElementById(id);
         if (element) element.value = '';
@@ -1000,8 +1359,11 @@ class ValidaFlowApp {
       document.querySelectorAll('#admin-study-catalog input[type="checkbox"]')
         .forEach(input => { input.checked = false; });
       await this.loadAdministratorPanel();
-      this.showAdminCredential(username, password, 'Supervisor creado · guarda estas credenciales');
-      this.showToast(`Supervisor ${username} creado con ${studyIds.length} estudio${studyIds.length !== 1 ? 's' : ''} y ${SUPERVISOR_MODULES[module].label}.`, 'success');
+      const roleLabel = userRole === 'commercial' ? 'Usuario Comercial' : userRole === 'visualizer' ? 'Visualizador' : 'Supervisor';
+      this.showAdminCredential(username, password, `${roleLabel} creado · guarda estas credenciales`);
+      this.showToast(userRole === 'supervisor'
+        ? `Supervisor ${username} creado con ${studyIds.length} estudio${studyIds.length !== 1 ? 's' : ''} y ${SUPERVISOR_MODULES[module].label}.`
+        : `${roleLabel} ${username} creado correctamente.`, 'success');
     } catch (error) {
       const message = String(error.message || '');
       const friendlyMessage = message === 'USERNAME_ALREADY_EXISTS' || /already.*registered|already.*exists/i.test(message)
@@ -1013,6 +1375,13 @@ class ValidaFlowApp {
           : message || 'No fue posible crear el supervisor.';
       this.showToast(friendlyMessage, 'error');
     }
+  }
+
+  async createAdminSupervisor() {
+    const role = document.getElementById('admin-user-role');
+    if (role) role.value = 'supervisor';
+    this.toggleAdminUserScope();
+    return this.createAdminUser();
   }
 
   async resetAdminSupervisorPassword(supervisorId) {
@@ -1419,7 +1788,7 @@ class ValidaFlowApp {
   }
 
   async ensureHistoricalReportsLoaded({ force = false } = {}) {
-    if (!this.backend.configured || !this.isSupervisor) return;
+    if (!this.backend.configured || !(this.isSupervisor || this.isVisualizationRole())) return;
     const module = this.currentModule;
     if (!force && Array.isArray(this.auditHistoryByModule[module])) return;
     if (this.auditHistoryLoadPromises[module]) return this.auditHistoryLoadPromises[module];
@@ -4905,8 +5274,8 @@ class ValidaFlowApp {
   }
 
   async loadValidatorHistory(silent = false) {
-    if (!this.backend.configured || !this.isSupervisor) {
-      this.showToast('El histórico en la nube está disponible para supervisores autenticados.', 'warning');
+    if (!this.backend.configured || !(this.isSupervisor || this.currentRole === 'visualizer')) {
+      this.showToast('El histórico operativo está disponible para supervisores o visualizadores autenticados.', 'warning');
       return;
     }
 

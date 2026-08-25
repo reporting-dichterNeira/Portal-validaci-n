@@ -143,7 +143,7 @@ export class SupabaseBackend {
       .eq('id', session.user.id)
       .maybeSingle();
 
-    if (profile?.is_active && (profile.role === 'supervisor' || profile.role === 'admin')) {
+    if (profile?.is_active && ['supervisor', 'admin', 'visualizer', 'commercial'].includes(profile.role)) {
       this.currentAssignments = profile.role === 'supervisor' ? await this.getMyAssignments() : [];
       this.currentScope = null;
       return {
@@ -187,8 +187,9 @@ export class SupabaseBackend {
       .eq('id', data.user.id)
       .maybeSingle();
 
-    const isStaff = profile?.is_active && ['admin', 'supervisor'].includes(profile.role);
-    if (profileError || !isStaff || (expectedRole && profile.role !== expectedRole)) {
+    const isStaff = profile?.is_active && ['admin', 'supervisor', 'visualizer', 'commercial'].includes(profile.role);
+    const visualLogin = expectedRole === 'visualizer' && ['visualizer', 'commercial'].includes(profile?.role);
+    if (profileError || !isStaff || (expectedRole && !visualLogin && profile.role !== expectedRole)) {
       await this.client.auth.signOut({ scope: 'local' });
       throw new Error('La cuenta no tiene permisos para este portal.');
     }
@@ -684,7 +685,7 @@ export class SupabaseBackend {
     const selectedDate = cleanDate(operationDate) || new Date().toISOString().slice(0, 10);
     const [studies, profiles, assignments, validators, batches] = await Promise.all([
       this.client.from('studies').select('id, name, description, is_active').order('name'),
-      this.client.from('profiles').select('id, username, display_name, role, is_active').eq('role', 'supervisor').order('display_name'),
+      this.client.from('profiles').select('id, username, display_name, role, is_active').in('role', ['supervisor', 'visualizer', 'commercial']).order('display_name'),
       this.client.from('supervisor_assignments').select('id, supervisor_id, study_id, country_id, module').order('created_at'),
       this.client.from('validators').select('id, code, name, study, study_id, is_active').order('is_active', { ascending: false }).order('name'),
       this.client
@@ -715,8 +716,77 @@ export class SupabaseBackend {
     };
   }
 
+  async replaceAdminAnalysisImport({ datasetType, sourceFilename, rows }) {
+    this.ensureConfigured();
+    const table = datasetType === 'alerts'
+      ? 'admin_alert_export_records'
+      : datasetType === 'editions'
+        ? 'admin_edit_export_records'
+        : null;
+    if (!table) throw new Error('Tipo de importación no válido.');
+
+    const { error: deleteError } = await this.client
+      .from(table)
+      .delete()
+      .gt('id', 0);
+    if (deleteError) throw deleteError;
+
+    for (let offset = 0; offset < rows.length; offset += 500) {
+      const { error } = await this.client.from(table).insert(rows.slice(offset, offset + 500));
+      if (error) throw error;
+    }
+
+    const { data: { user } } = await this.client.auth.getUser();
+    const { error: importError } = await this.client
+      .from('admin_analysis_imports')
+      .upsert({
+        dataset_type: datasetType,
+        source_filename: String(sourceFilename || 'archivo_sin_nombre'),
+        row_count: rows.length,
+        imported_at: new Date().toISOString(),
+        imported_by: user?.id || null
+      }, { onConflict: 'dataset_type' });
+    if (importError) throw importError;
+  }
+
+  async loadAllAdminAnalysisRows(table, columns) {
+    const rows = [];
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const { data, error } = await this.client
+        .from(table)
+        .select(columns)
+        .order('id', { ascending: true })
+        .range(from, from + pageSize - 1);
+      if (error) throw error;
+      const page = data || [];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return rows;
+  }
+
+  async loadAdminExternalAnalysis() {
+    this.ensureConfigured();
+    const [importsResult, alertRecords, editRecords] = await Promise.all([
+      this.client.from('admin_analysis_imports').select('dataset_type, source_filename, row_count, imported_at').order('dataset_type'),
+      this.loadAllAdminAnalysisRows('admin_alert_export_records', 'audit_external_id, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, country, channel, city, auditor, audit_date, wave, study'),
+      this.loadAllAdminAnalysisRows('admin_edit_export_records', 'audit_external_id, study, country, audit_status, wave, modifications_count, status_changes_count, first_validation_started_at, first_validation_completed_at, first_validator, last_validation_started_at, last_validation_completed_at, last_validator')
+    ]);
+    if (importsResult.error) throw importsResult.error;
+    return {
+      imports: importsResult.data || [],
+      alertRecords,
+      editRecords
+    };
+  }
+
   async createSupervisor({ username, displayName, password, studyIds, module }) {
-    return this.manageSupervisor({ action: 'create', username, displayName, password, studyIds, module });
+    return this.createPortalUser({ username, displayName, password, studyIds, module, userRole: 'supervisor' });
+  }
+
+  async createPortalUser({ username, displayName, password, userRole, studyIds = [], module = null }) {
+    return this.manageSupervisor({ action: 'create', username, displayName, password, userRole, studyIds, module });
   }
 
   async resetSupervisorPassword({ supervisorId, password }) {
@@ -743,7 +813,7 @@ export class SupabaseBackend {
       throw new Error(detail);
     }
     if (data?.error) throw new Error(data.detail || data.error);
-    return data.supervisor || data;
+    return data.user || data.supervisor || data;
   }
 
   subscribe(onChange) {
