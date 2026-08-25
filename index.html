@@ -656,11 +656,10 @@
             <div class="form-group">
               <label for="admin-user-role">Tipo de acceso</label>
               <select id="admin-user-role" class="form-select" onchange="window.app?.toggleAdminUserScope()">
-                <option value="visualizer">Visualizaciones operativas</option>
-                <option value="commercial">Comercial · solo Comité Ejecutivo</option>
-                <option value="supervisor">Supervisor operativo</option>
+                <option value="supervisor">Operaciones</option>
+                <option value="commercial">Comercial</option>
               </select>
-              <small class="form-help" id="admin-user-role-help">Incluye seguimiento, cruces, ediciones y métricas operacionales.</small>
+              <small class="form-help" id="admin-user-role-help">Incluye supervisión, seguimiento, cruces, ediciones, métricas y exportaciones.</small>
             </div>
             <div class="form-group" id="admin-user-password-group">
               <label for="admin-supervisor-password">Contraseña temporal</label>
@@ -1771,9 +1770,8 @@
         <div class="form-group">
           <label for="admin-access-role">Portal asignado</label>
           <select id="admin-access-role" class="form-select" onchange="window.app?.toggleAdminAccessScope()">
-            <option value="supervisor">Portal de Supervisión · operativo</option>
-            <option value="visualizer">Portal de Visualizaciones · operativo</option>
-            <option value="commercial">Portal Comercial · Comité Ejecutivo</option>
+            <option value="supervisor">Operaciones</option>
+            <option value="commercial">Comercial</option>
           </select>
         </div>
         <div class="admin-access-scope hidden" id="admin-access-scope">
@@ -2648,6 +2646,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=51.0"></script>
+  <script type="module" src="js/app.js?v=52.0"></script>
 </body>
 </html>

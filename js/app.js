@@ -181,6 +181,10 @@ class ValidaFlowApp {
     return ['visualizer', 'commercial'].includes(role);
   }
 
+  canAccessOperationalVisualizations(role = this.currentRole) {
+    return ['admin', 'supervisor', 'visualizer'].includes(role);
+  }
+
   canUseExternalAnalysis() {
     return ['admin', 'visualizer'].includes(this.currentRole);
   }
@@ -208,7 +212,7 @@ class ValidaFlowApp {
   prepareVisualizationPortal() {
     this.mountVisualizationContent();
     const isCommercial = this.currentRole === 'commercial';
-    const roleLabel = isCommercial ? 'Comercial · Comité Ejecutivo' : 'Visualizaciones operativas';
+    const roleLabel = isCommercial ? 'Comercial · Comité Ejecutivo' : 'Operaciones';
     const userName = this.currentProfile?.display_name || this.currentProfile?.username || 'Usuario';
     const nameEl = document.getElementById('visualization-user-name');
     const roleEl = document.getElementById('visualization-user-role');
@@ -512,10 +516,8 @@ class ValidaFlowApp {
   }
 
   handleVisualizationPortalClick() {
-    if (this.isVisualizationRole()) {
+    if (this.isVisualizationRole() || this.canAccessOperationalVisualizations()) {
       this.showView('visualizations');
-    } else if (this.currentRole === 'supervisor') {
-      this.showToast('Crea un usuario de Visualizaciones para acceder a este portal sin permisos operativos.', 'info');
     } else {
       this.openStaffLogin('visualizer');
     }
@@ -783,7 +785,8 @@ class ValidaFlowApp {
   async loadAdministratorPanel({ visualOnly = false } = {}) {
     const isAdmin = this.currentRole === 'admin';
     const isOperationalVisualizer = this.currentRole === 'visualizer';
-    if (!isAdmin && !isOperationalVisualizer) return;
+    const isSupervisor = this.currentRole === 'supervisor';
+    if (!isAdmin && !isOperationalVisualizer && !isSupervisor) return;
     try {
       const selectedDate = document.getElementById('admin-productivity-date')?.value
         || this.toLocalDateInputValue(new Date());
@@ -851,9 +854,9 @@ class ValidaFlowApp {
           SUPERVISOR_MODULES[assignment.module]?.label || 'Validación Smart'
         ))];
         const roleLabels = {
-          supervisor: 'Supervisor operativo',
-          visualizer: 'Visualizaciones operativas',
-          commercial: 'Comercial · Comité Ejecutivo'
+          supervisor: 'Operaciones',
+          visualizer: 'Operaciones',
+          commercial: 'Comercial'
         };
         return `<tr>
           <td><strong>${escapeHtml(supervisor.display_name)}</strong></td>
@@ -864,8 +867,7 @@ class ValidaFlowApp {
           <td><div class="admin-supervisor-actions">
             <div class="admin-access-inline">
               <select class="form-select" id="admin-row-role-${supervisor.id}" aria-label="Portal de ${escapeHtml(supervisor.display_name)}">
-                <option value="supervisor" ${supervisor.role === 'supervisor' ? 'selected' : ''}>Supervisión</option>
-                <option value="visualizer" ${supervisor.role === 'visualizer' ? 'selected' : ''}>Visualizaciones</option>
+                <option value="supervisor" ${supervisor.role !== 'commercial' ? 'selected' : ''}>Operaciones</option>
                 <option value="commercial" ${supervisor.role === 'commercial' ? 'selected' : ''}>Comercial</option>
               </select>
               <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.updateUserAccessFromRow('${supervisor.id}', this)">Aplicar</button>
@@ -1283,7 +1285,7 @@ class ValidaFlowApp {
   }
 
   toggleAdminUserScope() {
-    const role = document.getElementById('admin-user-role')?.value || 'visualizer';
+    const role = document.getElementById('admin-user-role')?.value || 'supervisor';
     const needsScope = role === 'supervisor';
     document.getElementById('admin-supervisor-scope')?.classList.toggle('hidden', !needsScope);
     document.getElementById('admin-supervisor-module-group')?.classList.toggle('hidden', !needsScope);
@@ -1293,8 +1295,8 @@ class ValidaFlowApp {
       ? 'Podrá cargar, distribuir y operar únicamente los estudios y módulo seleccionados.'
       : role === 'commercial'
         ? 'Solo verá la pestaña Comité Ejecutivo y sus descargas.'
-        : 'Verá seguimiento diario, cruces, ediciones, métricas y exportaciones.';
-    if (button) button.textContent = needsScope ? 'Crear supervisor' : role === 'commercial' ? 'Crear usuario Comercial' : 'Crear visualizador';
+        : 'Incluye supervisión, seguimiento diario, cruces, ediciones, métricas y exportaciones.';
+    if (button) button.textContent = needsScope ? 'Crear usuario de Operaciones' : 'Crear usuario Comercial';
   }
 
   showAdminCredential(username, password, title = 'Credenciales listas para copiar') {
@@ -1334,7 +1336,7 @@ class ValidaFlowApp {
     const username = document.getElementById('admin-supervisor-username')?.value.trim().toLowerCase() || '';
     const displayName = document.getElementById('admin-supervisor-name')?.value.trim() || '';
     const password = document.getElementById('admin-supervisor-password')?.value || '';
-    const userRole = document.getElementById('admin-user-role')?.value || 'visualizer';
+    const userRole = document.getElementById('admin-user-role')?.value || 'supervisor';
     const studyIds = [...document.querySelectorAll('#admin-study-catalog input[type="checkbox"]:checked')]
       .map(input => input.value);
     const module = document.getElementById('admin-supervisor-module')?.value || '';
@@ -1367,10 +1369,10 @@ class ValidaFlowApp {
       document.querySelectorAll('#admin-study-catalog input[type="checkbox"]')
         .forEach(input => { input.checked = false; });
       await this.loadAdministratorPanel();
-      const roleLabel = userRole === 'commercial' ? 'Usuario Comercial' : userRole === 'visualizer' ? 'Visualizador' : 'Supervisor';
+      const roleLabel = userRole === 'commercial' ? 'Usuario Comercial' : 'Usuario de Operaciones';
       this.showAdminCredential(username, password, `${roleLabel} creado · guarda estas credenciales`);
       this.showToast(userRole === 'supervisor'
-        ? `Supervisor ${username} creado con ${studyIds.length} estudio${studyIds.length !== 1 ? 's' : ''} y ${SUPERVISOR_MODULES[module].label}.`
+        ? `Usuario de Operaciones ${username} creado con ${studyIds.length} estudio${studyIds.length !== 1 ? 's' : ''} y ${SUPERVISOR_MODULES[module].label}.`
         : `${roleLabel} ${username} creado correctamente.`, 'success');
     } catch (error) {
       const message = String(error.message || '');
@@ -1413,8 +1415,8 @@ class ValidaFlowApp {
       : [];
     const assignedStudyIds = new Set(assignments.map(item => item.study_id));
     if (userId) userId.value = user.id;
-    if (role) role.value = user.role || 'visualizer';
-    if (description) description.textContent = `Define el portal de ${user.display_name || user.username}. Al pasar a supervisión se solicita el alcance operativo.`;
+    if (role) role.value = user.role === 'commercial' ? 'commercial' : 'supervisor';
+    if (description) description.textContent = `Define el acceso de ${user.display_name || user.username}. Operaciones incluye supervisión y visualizaciones.`;
     if (catalog) {
       catalog.innerHTML = (Array.isArray(this.adminData.studies) ? this.adminData.studies : [])
         .filter(study => study.is_active !== false)
@@ -1431,7 +1433,7 @@ class ValidaFlowApp {
   }
 
   toggleAdminAccessScope() {
-    const role = document.getElementById('admin-access-role')?.value || 'visualizer';
+    const role = document.getElementById('admin-access-role')?.value || 'supervisor';
     document.getElementById('admin-access-scope')?.classList.toggle('hidden', role !== 'supervisor');
   }
 
@@ -1453,7 +1455,7 @@ class ValidaFlowApp {
       this.showToast('Este usuario no tiene un alcance operativo guardado. Usa la opción de crear supervisor para definir estudios y tipo de alertas.', 'warning');
       return;
     }
-    if (!confirm(`¿Cambiar a ${user.display_name} al portal ${userRole === 'commercial' ? 'Comercial' : userRole === 'visualizer' ? 'de Visualizaciones' : 'de Supervisión'}?`)) return;
+    if (!confirm(`¿Cambiar a ${user.display_name} al portal ${userRole === 'commercial' ? 'Comercial' : 'Operaciones'}?`)) return;
     const originalLabel = button?.textContent;
     if (button) {
       button.disabled = true;
@@ -1475,7 +1477,7 @@ class ValidaFlowApp {
   async saveAdminUserAccess() {
     const supervisorId = document.getElementById('admin-access-user-id')?.value || '';
     const user = this.adminData.supervisors.find(item => item.id === supervisorId);
-    const userRole = document.getElementById('admin-access-role')?.value || 'visualizer';
+    const userRole = document.getElementById('admin-access-role')?.value || 'supervisor';
     const studyIds = [...document.querySelectorAll('#admin-access-study-catalog input[type="checkbox"]:checked')].map(input => input.value);
     const module = document.getElementById('admin-access-module')?.value || '';
     if (!user || !['supervisor', 'visualizer', 'commercial'].includes(userRole)) return;
@@ -1487,7 +1489,7 @@ class ValidaFlowApp {
       this.showToast('Selecciona el tipo de alertas que operará el supervisor.', 'warning');
       return;
     }
-    if (!confirm(`¿Guardar el acceso de ${user.display_name}? ${userRole === 'commercial' ? 'Solo verá Comité Ejecutivo.' : userRole === 'visualizer' ? 'Verá el Portal de Visualizaciones.' : 'Tendrá acceso operativo de supervisión.'}`)) return;
+    if (!confirm(`¿Guardar el acceso de ${user.display_name}? ${userRole === 'commercial' ? 'Solo verá Comité Ejecutivo.' : 'Tendrá acceso a Operaciones y Visualizaciones.'}`)) return;
     try {
       await this.backend.updatePortalUserAccess({ supervisorId, userRole, studyIds, module });
       this.closeAdminUserAccessModal();
