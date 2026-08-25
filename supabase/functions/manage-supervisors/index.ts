@@ -1,5 +1,5 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
-import { createClient } from 'npm:@supabase/supabase-js@2.112.3';
+import { createClient } from 'npm:@supabase/supabase-js@2.95.0';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
