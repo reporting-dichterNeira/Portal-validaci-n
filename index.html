@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=40.0" />
+  <link rel="stylesheet" href="css/styles.css?v=41.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -323,6 +323,13 @@
           Plataforma corporativa para la asignación equitativa de auditorías, resolución de alertas de KPIs en campo, monitoreo de tiempos y reportería consolidada.
         </p>
 
+        <div class="landing-admin-corner">
+          <button class="compact-admin-access" id="choice-btn-admin" type="button" onclick="window.app?.handleAdminPortalClick()" aria-label="Abrir administración de usuarios">
+            <span class="compact-admin-icon">⚙️</span>
+            <span><strong>Administración</strong><small>Crear usuarios</small></span>
+          </button>
+        </div>
+
         <!-- Accesos por rol -->
         <div class="landing-portal-grid">
           <!-- Opción 1: Validador -->
@@ -365,27 +372,7 @@
             </button>
           </div>
 
-          <!-- Opción 3: Administrador -->
-          <div class="portal-choice-card portal-card-admin" id="choice-btn-admin" onclick="window.app?.handleAdminPortalClick()">
-            <div class="portal-card-icon-wrap icon-purple">
-              <span class="portal-icon">⚙️</span>
-            </div>
-            <div class="portal-card-tag">Acceso Restringido</div>
-            <h2 class="portal-card-title">Administrador</h2>
-            <p class="portal-card-desc">
-              Gestiona las cuentas de supervisión y define los estudios y el tipo de alertas de cada supervisor.
-            </p>
-            <div class="portal-card-features">
-              <div class="feat-item">✓ Creación segura de supervisores</div>
-              <div class="feat-item">✓ Estudios y tipo de alertas asignados</div>
-              <div class="feat-item">✓ Asignación de alcance por supervisor</div>
-            </div>
-            <button class="btn btn-navy btn-glow btn-block" id="btn-enter-admin-portal" onclick="event.stopPropagation(); window.app?.handleAdminPortalClick()">
-              Acceso Administrador ⚙️
-            </button>
-          </div>
-
-          <!-- Opción 4: Visualizaciones -->
+          <!-- Opción 3: Visualizaciones -->
           <div class="portal-choice-card portal-card-visualizations" id="choice-btn-visualizations" onclick="window.app?.handleVisualizationPortalClick()">
             <div class="portal-card-icon-wrap icon-emerald"><span class="portal-icon">📈</span></div>
             <div class="portal-card-tag">Acceso de consulta</div>

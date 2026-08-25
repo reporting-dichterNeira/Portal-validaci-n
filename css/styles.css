@@ -933,6 +933,7 @@ a {
   margin: 2.5rem auto 4rem auto;
   text-align: center;
   padding: 0 1.5rem;
+  position: relative;
   animation: fadeIn 0.3s ease-out;
 }
 
@@ -978,14 +979,57 @@ a {
 
 .landing-portal-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 2rem;
   text-align: left;
 }
 
+.landing-admin-corner {
+  position: absolute;
+  top: 0;
+  right: 1.5rem;
+}
+
+.compact-admin-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 176px;
+  padding: 0.55rem 0.72rem;
+  border: 1px solid #D7C7F2;
+  border-radius: 12px;
+  background: #FBF9FF;
+  color: var(--dn-navy);
+  box-shadow: 0 4px 14px rgba(92, 57, 158, 0.1);
+  cursor: pointer;
+  text-align: left;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast), border-color var(--transition-fast);
+}
+
+.compact-admin-access:hover {
+  transform: translateY(-2px);
+  border-color: var(--dn-purple);
+  box-shadow: 0 7px 18px rgba(92, 57, 158, 0.18);
+}
+
+.compact-admin-access strong,
+.compact-admin-access small { display: block; }
+.compact-admin-access strong { font-size: 0.78rem; font-weight: 800; }
+.compact-admin-access small { margin-top: 0.08rem; color: var(--text-muted); font-size: 0.67rem; }
+.compact-admin-icon { font-size: 1.05rem; }
+
 @media (max-width: 1100px) {
   .landing-portal-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .landing-admin-corner {
+    position: static;
+    display: flex;
+    justify-content: flex-end;
+    margin: -1.5rem 0 1.5rem;
   }
 }
 
