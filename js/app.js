@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=32.0';
-import { SupabaseBackend } from './supabase-backend.js?v=40.0';
+import { SupabaseBackend } from './supabase-backend.js?v=41.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -534,9 +534,9 @@ class ValidaFlowApp {
     if (description) description.textContent = isAdmin
       ? 'Ingresa las credenciales administrativas para gestionar supervisores, estudios y tipos de alertas.'
       : isVisualization
-        ? 'Ingresa con tu usuario de visualización. El acceso Comercial solo mostrará el Comité Ejecutivo.'
+        ? 'Ingresa con tu usuario de Operaciones o Comercial. Comercial solo mostrará el Comité Ejecutivo.'
         : 'Ingresa tus credenciales para acceder al estudio y módulo que tienes asignados.';
-    if (label) label.textContent = isAdmin ? 'Usuario administrador' : (isVisualization ? 'Usuario de visualización' : 'Usuario supervisor');
+    if (label) label.textContent = isAdmin ? 'Usuario administrador' : (isVisualization ? 'Usuario de Operaciones o Comercial' : 'Usuario supervisor');
     const modal = document.getElementById('modal-supervisor-login');
     modal?.classList.remove('hidden');
     document.getElementById('sup-login-user')?.focus();

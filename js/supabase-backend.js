@@ -188,7 +188,7 @@ export class SupabaseBackend {
       .maybeSingle();
 
     const isStaff = profile?.is_active && ['admin', 'supervisor', 'visualizer', 'commercial'].includes(profile.role);
-    const visualLogin = expectedRole === 'visualizer' && ['visualizer', 'commercial'].includes(profile?.role);
+    const visualLogin = expectedRole === 'visualizer' && ['supervisor', 'visualizer', 'commercial'].includes(profile?.role);
     if (profileError || !isStaff || (expectedRole && !visualLogin && profile.role !== expectedRole)) {
       await this.client.auth.signOut({ scope: 'local' });
       throw new Error('La cuenta no tiene permisos para este portal.');
