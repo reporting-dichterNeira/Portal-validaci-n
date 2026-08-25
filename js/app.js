@@ -199,6 +199,12 @@ class ValidaFlowApp {
     move('admin-productivity-panel', 'visualization-pane-overview');
     move('admin-alerts-analysis-sheet', 'visualization-pane-alerts');
     move('admin-editions-analysis-sheet', 'visualization-pane-editions');
+    // These sheets were previously switched inside the administrator view
+    // through the `hidden` utility. Once they live in independent panes, the
+    // pane itself controls visibility, so the legacy class must not hide them.
+    document.getElementById('admin-productivity-panel')?.classList.remove('hidden');
+    document.getElementById('admin-alerts-analysis-sheet')?.classList.remove('hidden');
+    document.getElementById('admin-editions-analysis-sheet')?.classList.remove('hidden');
     this.visualizationsMounted = true;
   }
 
@@ -255,6 +261,9 @@ class ValidaFlowApp {
     if (target === 'overview') {
       await this.loadAdministratorPanel({ visualOnly: true });
     } else if (target === 'alerts' || target === 'editions') {
+      document.getElementById(target === 'alerts'
+        ? 'admin-alerts-analysis-sheet'
+        : 'admin-editions-analysis-sheet')?.classList.remove('hidden');
       await this.refreshAdminExternalAnalysis();
     } else {
       this.moveReportsContent('visualization-pane-metrics');
