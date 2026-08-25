@@ -862,7 +862,14 @@ class ValidaFlowApp {
           <td>${supervisor.role === 'supervisor' ? `<div class="admin-study-badges">${studiesHtml}</div>${moduleLabels.map(label => `<small>${escapeHtml(label)}</small>`).join(' ')}` : 'Acceso global de consulta'}</td>
           <td><span class="badge ${supervisor.is_active ? 'badge-success' : 'badge-warning'}">${supervisor.is_active ? 'Activo' : 'Inactivo'}</span></td>
           <td><div class="admin-supervisor-actions">
-            <button class="btn btn-outline btn-sm btn-admin-change-access" type="button" data-supervisor-id="${supervisor.id}" onclick="window.app?.openAdminUserAccessModal('${supervisor.id}')">↔ Cambiar acceso</button>
+            <div class="admin-access-inline">
+              <select class="form-select" id="admin-row-role-${supervisor.id}" aria-label="Portal de ${escapeHtml(supervisor.display_name)}">
+                <option value="supervisor" ${supervisor.role === 'supervisor' ? 'selected' : ''}>Supervisión</option>
+                <option value="visualizer" ${supervisor.role === 'visualizer' ? 'selected' : ''}>Visualizaciones</option>
+                <option value="commercial" ${supervisor.role === 'commercial' ? 'selected' : ''}>Comercial</option>
+              </select>
+              <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.updateUserAccessFromRow('${supervisor.id}', this)">Aplicar</button>
+            </div>
             <button class="btn btn-outline btn-sm btn-admin-reset-password" type="button" data-supervisor-id="${supervisor.id}">🔑 Nueva contraseña</button>
             <button class="btn btn-ghost btn-sm text-danger btn-admin-delete-supervisor" type="button" data-supervisor-id="${supervisor.id}">🗑️ Eliminar</button>
           </div></td>
@@ -1426,6 +1433,43 @@ class ValidaFlowApp {
   toggleAdminAccessScope() {
     const role = document.getElementById('admin-access-role')?.value || 'visualizer';
     document.getElementById('admin-access-scope')?.classList.toggle('hidden', role !== 'supervisor');
+  }
+
+  async updateUserAccessFromRow(supervisorId, button) {
+    const user = this.adminData.supervisors.find(item => item.id === supervisorId);
+    const roleInput = document.getElementById(`admin-row-role-${supervisorId}`);
+    const userRole = roleInput?.value || '';
+    if (!user || !['supervisor', 'visualizer', 'commercial'].includes(userRole)) return;
+    if (user.role === userRole) {
+      this.showToast('El usuario ya tiene asignado ese portal.', 'info');
+      return;
+    }
+    const assignments = Array.isArray(this.adminData.assignments)
+      ? this.adminData.assignments.filter(item => item.supervisor_id === user.id)
+      : [];
+    const studyIds = assignments.map(item => item.study_id).filter(Boolean);
+    const module = assignments[0]?.module || '';
+    if (userRole === 'supervisor' && (!studyIds.length || !SUPERVISOR_MODULES[module])) {
+      this.showToast('Este usuario no tiene un alcance operativo guardado. Usa la opción de crear supervisor para definir estudios y tipo de alertas.', 'warning');
+      return;
+    }
+    if (!confirm(`¿Cambiar a ${user.display_name} al portal ${userRole === 'commercial' ? 'Comercial' : userRole === 'visualizer' ? 'de Visualizaciones' : 'de Supervisión'}?`)) return;
+    const originalLabel = button?.textContent;
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Guardando…';
+    }
+    try {
+      await this.backend.updatePortalUserAccess({ supervisorId, userRole, studyIds, module });
+      await this.loadAdministratorPanel();
+      this.showToast(`Acceso actualizado para ${user.username}.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible actualizar el acceso.', 'error');
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalLabel || 'Aplicar';
+      }
+    }
   }
 
   async saveAdminUserAccess() {

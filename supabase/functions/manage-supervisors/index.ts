@@ -118,13 +118,12 @@ Deno.serve(async (req) => {
         }
       }
 
-      const { error: removeAssignmentsError } = await adminClient
-        .from('supervisor_assignments')
-        .delete()
-        .eq('supervisor_id', supervisorId);
-      if (removeAssignmentsError) return json({ error: 'ASSIGNMENT_UPDATE_FAILED', detail: removeAssignmentsError.message }, 409);
-
       if (userRole === 'supervisor') {
+        const { error: removeAssignmentsError } = await adminClient
+          .from('supervisor_assignments')
+          .delete()
+          .eq('supervisor_id', supervisorId);
+        if (removeAssignmentsError) return json({ error: 'ASSIGNMENT_UPDATE_FAILED', detail: removeAssignmentsError.message }, 409);
         const assignments = studyIds.map(studyId => ({
           supervisor_id: supervisorId,
           study_id: studyId,

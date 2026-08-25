@@ -3359,6 +3359,20 @@ a {
   font-size: 1.55rem;
 }
 
+.admin-access-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.admin-access-inline .form-select {
+  width: 142px;
+  min-width: 142px;
+  min-height: 34px;
+  padding: 0.32rem 1.8rem 0.32rem 0.55rem;
+  font-size: 0.76rem;
+}
+
 .admin-access-scope {
   display: grid;
   gap: 0.9rem;
