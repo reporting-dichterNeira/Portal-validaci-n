@@ -2661,11 +2661,8 @@ class ValidaFlowApp {
     }
 
     try {
-      if (this.backend.configured && ['supervisor', 'admin'].includes(this.currentRole)) {
-        matches = await this.backend.searchAuditHistory(query, {
-          module: this.currentModule,
-          limit: 50
-        });
+      if (this.backend.configured && ['supervisor', 'admin', 'visualizer'].includes(this.currentRole)) {
+        matches = await this.backend.searchGlobalAuditHistory(query, { limit: 100 });
       } else {
         matches = this.audits.filter(audit => {
           const auditId = String(audit.id || '').toLowerCase();

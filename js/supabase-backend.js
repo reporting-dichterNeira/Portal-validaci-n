@@ -680,6 +680,30 @@ export class SupabaseBackend {
     return (data || []).map(mapAudit);
   }
 
+  async searchGlobalAuditHistory(query, { limit = 50 } = {}) {
+    this.ensureConfigured();
+    const cleanQuery = String(query || '').trim();
+    if (!cleanQuery) return [];
+    const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 100);
+    const { data, error } = await this.client.rpc('search_global_audit_history', {
+      p_query: cleanQuery,
+      p_limit: safeLimit
+    });
+    if (!error) return (data || []).map(mapAudit);
+
+    // Keeps the Operations portal usable while a database deployment catches
+    // up. RLS still governs which historical rows the signed-in user can read.
+    if (!/search_global_audit_history|PGRST202/i.test(`${error.code || ''} ${error.message || ''}`)) {
+      throw error;
+    }
+    const normalized = cleanQuery.toLowerCase();
+    const audits = await this.loadAuditHistory({ pageSize: 1000, ignoreScope: true });
+    return audits.filter(audit => (
+      String(audit.id || '').toLowerCase() === normalized
+      || String(audit.idPDV || '').toLowerCase() === normalized
+    )).slice(0, safeLimit);
+  }
+
   async loadAdministration({ operationDate = null } = {}) {
     this.ensureConfigured();
     const selectedDate = cleanDate(operationDate) || new Date().toISOString().slice(0, 10);
