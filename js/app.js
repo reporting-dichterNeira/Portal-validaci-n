@@ -1340,7 +1340,21 @@ class ValidaFlowApp {
 
     const editionsTbody = document.getElementById('admin-editions-analysis-tbody');
     if (editionsTbody) {
-      editionsTbody.innerHTML = alertEditionRows.length ? alertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)).map(({ platformAlert, context, edit, applicableAlerts }) => {
+      const activeFilter = this.adminEditionAuditFilter || 'all';
+      const filterSelect = document.getElementById('admin-editions-audit-filter');
+      if (filterSelect) filterSelect.value = activeFilter;
+      const filteredAlertEditionRows = alertEditionRows.filter(item => {
+        const hasChanges = Number(item.edit?.modifications_count || 0) > 0;
+        const hasApplies = item.applicableAlerts.length > 0;
+        if (activeFilter === 'applies_without_changes') return hasApplies && !hasChanges;
+        if (activeFilter === 'applies_with_changes') return hasApplies && hasChanges;
+        if (activeFilter === 'with_changes') return hasChanges;
+        if (activeFilter === 'without_changes') return !hasChanges;
+        return true;
+      });
+      const filterCount = document.getElementById('admin-editions-filter-count');
+      if (filterCount) filterCount.textContent = `${formatNumber(filteredAlertEditionRows.length)} de ${formatNumber(alertEditionRows.length)} auditorías mostradas.`;
+      editionsTbody.innerHTML = filteredAlertEditionRows.length ? filteredAlertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)).map(({ platformAlert, context, edit, applicableAlerts }) => {
         const audit = platformAlert.audit || {};
         const auditId = String(audit.id || '—');
         const auditor = context?.auditor || audit.auditor || audit.nombreAuditor || '—';
@@ -1353,7 +1367,7 @@ class ValidaFlowApp {
         const validaFlowValidator = audit._validatorName || audit.validadorNombre || audit.validatorName || audit.assignedValidatorId || '—';
         const appliesLabel = applicableAlerts.length ? `<small class="text-success">${applicableAlerts.length} marcada${applicableAlerts.length === 1 ? '' : 's'} como Aplica</small>` : '';
         return `<tr><td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(month))}</td><td>${escapeHtml(auditor)}</td><td>${escapeHtml(country)}<small>${escapeHtml(city)}</small></td><td>${escapeHtml(alertLabel)}${appliesLabel}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.first_validator || '—')}</td><td>${escapeHtml(edit?.last_validator || '—')}</td><td>${escapeHtml(validaFlowValidator)}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td><td><button class="btn btn-outline btn-sm" type="button" onclick="window.app?.showEditionAuditDetail(decodeURIComponent('${detailKey}'))">Ver detalle</button></td></tr>`;
-      }).join('') : '<tr><td colspan="11" class="text-center text-muted">Aún no hay auditorías con alertas validadas en la plataforma para cruzar.</td></tr>';
+      }).join('') : '<tr><td colspan="11" class="text-center text-muted">No hay auditorías que cumplan con el filtro seleccionado.</td></tr>';
     }
   }
 
@@ -1387,6 +1401,12 @@ class ValidaFlowApp {
       ? `Última edición registrada por: ${cross.edit.last_validator}.`
       : 'Sin usuario de última edición disponible.';
     document.getElementById('modal-edition-audit-detail')?.classList.remove('hidden');
+  }
+
+  setAdminEditionAuditFilter(filter) {
+    const allowedFilters = new Set(['all', 'applies_without_changes', 'applies_with_changes', 'with_changes', 'without_changes']);
+    this.adminEditionAuditFilter = allowedFilters.has(filter) ? filter : 'all';
+    this.renderAdminExternalAnalysis();
   }
 
   renderAdministratorProductivity() {

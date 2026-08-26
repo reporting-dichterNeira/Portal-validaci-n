@@ -3758,6 +3758,29 @@ a {
   background: rgba(0, 165, 78, 0.055);
 }
 
+.admin-editions-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0 0 0.9rem;
+}
+
+.admin-editions-filter-bar label {
+  color: var(--dn-navy);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.admin-editions-filter-bar .form-select {
+  width: min(100%, 330px);
+  min-height: 38px;
+}
+
+.admin-editions-filter-bar .form-help {
+  margin: 0;
+}
+
 .admin-compliance-chart {
   display: grid;
   gap: 0.8rem;

@@ -833,6 +833,17 @@
 
           <section class="admin-analysis-card admin-analysis-table-card">
             <h3>Auditorías alertadas y sus ediciones</h3>
+            <div class="admin-editions-filter-bar">
+              <label for="admin-editions-audit-filter">Filtrar auditorías</label>
+              <select id="admin-editions-audit-filter" class="form-select" onchange="window.app?.setAdminEditionAuditFilter(this.value)">
+                <option value="all">Todas las auditorías con alerta</option>
+                <option value="applies_without_changes">Con Aplica y sin edición</option>
+                <option value="applies_with_changes">Con Aplica y con edición</option>
+                <option value="with_changes">Con cualquier alerta y con edición</option>
+                <option value="without_changes">Con cualquier alerta y sin edición</option>
+              </select>
+              <span class="form-help" id="admin-editions-filter-count">—</span>
+            </div>
             <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Auditor</th><th>País / ciudad</th><th>Alerta</th><th>Modificaciones</th><th>Usuario fin 1ra validación</th><th>Usuario fin últ. validación</th><th>Validador ValidaFlow</th><th>Estado</th><th>Detalle</th></tr></thead><tbody id="admin-editions-analysis-tbody"><tr><td colspan="11" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
           </section>
         </section>
