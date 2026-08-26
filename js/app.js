@@ -1180,7 +1180,7 @@ class ValidaFlowApp {
       const analysis = await this.backend.loadAdminExternalAnalysis();
       // Editions are crossed with the alerts already validated in ValidaFlow.
       // The general export only enriches those rows with auditor/PDV context.
-      const platformAudits = await this.backend.loadAuditHistory({ pageSize: 1000 });
+      const platformAudits = await this.backend.loadAuditHistory({ pageSize: 1000, ignoreScope: true });
       const platformAuditIds = new Set(platformAudits.map(audit => String(audit.id || '').trim()).filter(Boolean));
       const platformAlertAudits = platformAudits.reduce((items, audit) => {
         if (audit.validationStatus !== 'completada') return items;

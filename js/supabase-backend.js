@@ -625,7 +625,7 @@ export class SupabaseBackend {
     return data || { batch_id: parsedBatchId, audits_deleted: 0, batches_deleted: 0 };
   }
 
-  async loadAuditHistory({ module = null, pageSize = 500, onProgress = null } = {}) {
+  async loadAuditHistory({ module = null, pageSize = 500, onProgress = null, ignoreScope = false } = {}) {
     this.ensureConfigured();
     const safePageSize = Math.min(Math.max(Number(pageSize) || 500, 100), 1000);
     const rows = [];
@@ -646,8 +646,8 @@ export class SupabaseBackend {
         .gt('id', cursor);
 
       if (module) request = request.eq('module', module);
-      if (this.currentScope?.study?.id) request = request.eq('study_id', this.currentScope.study.id);
-      if (this.currentScope?.country?.id) request = request.eq('country_id', this.currentScope.country.id);
+      if (!ignoreScope && this.currentScope?.study?.id) request = request.eq('study_id', this.currentScope.study.id);
+      if (!ignoreScope && this.currentScope?.country?.id) request = request.eq('country_id', this.currentScope.country.id);
       request = request.order('id', { ascending: true }).limit(safePageSize);
 
       const { data, error } = await request;
