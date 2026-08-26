@@ -1128,6 +1128,7 @@ class ValidaFlowApp {
         audit_status: this.getExternalExportValue(row, ['estado', 'status']) || null,
         wave: this.getExternalExportValue(row, ['ola', 'wave']) || null,
         modifications_count: this.parseExternalExportInteger(this.getExternalExportValue(row, ['modificaciones'])),
+        question_detail: this.getExternalExportValue(row, ['detalle por pregunta', 'detalle pregunta', 'question detail', 'details by question']) || null,
         status_changes_count: this.parseExternalExportInteger(this.getExternalExportValue(row, ['cambio de estados', 'status changes'])),
         first_validation_started_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['inicio primera validacion'])),
         first_validation_completed_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['fin primera validacion'])),
@@ -1187,7 +1188,12 @@ class ValidaFlowApp {
         const alertKpis = (Array.isArray(audit.kpis) ? audit.kpis : []).filter(kpi => (
           kpi?.needsReview || /alerta/i.test(String(kpi?.alertaStatus || ''))
         ));
-        if (alertKpis.length) items.push({ audit, alertCount: alertKpis.length });
+        if (alertKpis.length) {
+          const applicableAlerts = alertKpis.filter(kpi => (
+            audit.validationResults?.[kpi?.name]?.status === 'aplica'
+          ));
+          items.push({ audit, alertCount: alertKpis.length, applicableAlerts });
+        }
         return items;
       }, []);
       this.adminExternalAnalysis = { ...analysis, platformAuditIds, platformAlertAudits };
@@ -1249,21 +1255,32 @@ class ValidaFlowApp {
     const editsById = new Map((analysis.editRecords || []).map(record => [String(record.audit_external_id || '').trim(), record]));
     const alertEditionRows = platformAlertAudits.map(platformAlert => {
       const auditId = String(platformAlert.audit?.id || '').trim();
-      return { platformAlert, context: contextByAuditId.get(auditId) || null, edit: editsById.get(auditId) || null };
+      return {
+        platformAlert,
+        context: contextByAuditId.get(auditId) || null,
+        edit: editsById.get(auditId) || null,
+        applicableAlerts: platformAlert.applicableAlerts || []
+      };
     });
     const withChanges = alertEditionRows.filter(item => Number(item.edit?.modifications_count || 0) > 0);
     const withoutChanges = alertEditionRows.length - withChanges.length;
     const averageChanges = withChanges.length ? withChanges.reduce((total, item) => total + Number(item.edit.modifications_count || 0), 0) / withChanges.length : 0;
+    const auditsWithApplies = alertEditionRows.filter(item => item.applicableAlerts.length > 0);
+    const appliesWithChanges = auditsWithApplies.filter(item => Number(item.edit?.modifications_count || 0) > 0);
+    const appliesWithoutChanges = auditsWithApplies.length - appliesWithChanges.length;
     setText('admin-editions-alerts-count', formatNumber(alertEditionRows.length));
     setText('admin-editions-with-changes', formatNumber(withChanges.length));
     setText('admin-editions-without-changes', formatNumber(withoutChanges));
     setText('admin-editions-average-changes', averageChanges.toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
+    setText('admin-editions-applies-with-changes', formatNumber(appliesWithChanges.length));
+    setText('admin-editions-applies-without-changes', formatNumber(appliesWithoutChanges));
     renderRanking('admin-editions-top-studies', rank(withChanges.map(item => item.edit), 'study', 'modifications_count'));
     renderRanking('admin-editions-top-users', rank(withChanges.map(item => item.edit), 'last_validator', 'modifications_count'));
+    this.adminEditionCrossByAuditId = new Map(alertEditionRows.map(item => [String(item.platformAlert.audit?.id || '').trim(), item]));
 
     const editionsTbody = document.getElementById('admin-editions-analysis-tbody');
     if (editionsTbody) {
-      editionsTbody.innerHTML = alertEditionRows.length ? alertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)).map(({ platformAlert, context, edit }) => {
+      editionsTbody.innerHTML = alertEditionRows.length ? alertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)).map(({ platformAlert, context, edit, applicableAlerts }) => {
         const audit = platformAlert.audit || {};
         const auditId = String(audit.id || '—');
         const auditor = context?.auditor || audit.auditor || audit.nombreAuditor || '—';
@@ -1272,9 +1289,43 @@ class ValidaFlowApp {
         const month = edit?.period_month || context?.period_month || audit.fechaValidacion || audit.fecha;
         const alertLabel = context?.alert_label || context?.alert_status || `${platformAlert.alertCount} alerta${platformAlert.alertCount === 1 ? '' : 's'} validada${platformAlert.alertCount === 1 ? '' : 's'}`;
         const changes = Number(edit?.modifications_count || 0);
-        return `<tr><td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(month))}</td><td>${escapeHtml(auditor)}</td><td>${escapeHtml(country)}<small>${escapeHtml(city)}</small></td><td>${escapeHtml(alertLabel)}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.last_validator || '—')}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td></tr>`;
-      }).join('') : '<tr><td colspan="8" class="text-center text-muted">Aún no hay auditorías con alertas validadas en la plataforma para cruzar.</td></tr>';
+        const detailKey = encodeURIComponent(auditId);
+        const appliesLabel = applicableAlerts.length ? `<small class="text-success">${applicableAlerts.length} marcada${applicableAlerts.length === 1 ? '' : 's'} como Aplica</small>` : '';
+        return `<tr><td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(month))}</td><td>${escapeHtml(auditor)}</td><td>${escapeHtml(country)}<small>${escapeHtml(city)}</small></td><td>${escapeHtml(alertLabel)}${appliesLabel}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.last_validator || '—')}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td><td><button class="btn btn-outline btn-sm" type="button" onclick="window.app?.showEditionAuditDetail(decodeURIComponent('${detailKey}'))">Ver detalle</button></td></tr>`;
+      }).join('') : '<tr><td colspan="9" class="text-center text-muted">Aún no hay auditorías con alertas validadas en la plataforma para cruzar.</td></tr>';
     }
+  }
+
+  showEditionAuditDetail(auditId) {
+    const cross = this.adminEditionCrossByAuditId?.get(String(auditId || '').trim());
+    if (!cross) {
+      this.showToast('No fue posible encontrar el detalle de esta auditoría.', 'error');
+      return;
+    }
+    const escapeHtml = value => String(value ?? '—').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+    const audit = cross.platformAlert.audit || {};
+    const applicableAlerts = cross.applicableAlerts || [];
+    const questions = String(cross.edit?.question_detail || '')
+      .split(/\s*\|\|?\s*/)
+      .map(question => question.trim())
+      .filter(Boolean);
+    const title = document.getElementById('edition-audit-detail-title');
+    const subtitle = document.getElementById('edition-audit-detail-subtitle');
+    const applies = document.getElementById('edition-audit-detail-applies');
+    const editedQuestions = document.getElementById('edition-audit-detail-questions');
+    const editSummary = document.getElementById('edition-audit-detail-summary');
+    if (title) title.textContent = `Detalle de Aplica y ediciones · Auditoría #${audit.id || auditId}`;
+    if (subtitle) subtitle.textContent = `${cross.edit?.modifications_count || 0} modificación(es) registradas en el export de ediciones.`;
+    if (applies) applies.innerHTML = applicableAlerts.length
+      ? `<ul class="edition-detail-list">${applicableAlerts.map(kpi => `<li>${escapeHtml(kpi?.name || 'Alerta sin nombre')}</li>`).join('')}</ul>`
+      : '<p class="text-muted">Esta auditoría no tiene alertas marcadas como Aplica.</p>';
+    if (editedQuestions) editedQuestions.innerHTML = questions.length
+      ? `<ul class="edition-detail-list">${questions.map(question => `<li>${escapeHtml(question)}</li>`).join('')}</ul>`
+      : `<p class="text-muted">${cross.edit ? 'El export cargado no trae “Detalle por Pregunta” para esta auditoría.' : 'No se registraron ediciones para esta auditoría.'}</p>`;
+    if (editSummary) editSummary.textContent = cross.edit?.last_validator
+      ? `Última edición registrada por: ${cross.edit.last_validator}.`
+      : 'Sin usuario de última edición disponible.';
+    document.getElementById('modal-edition-audit-detail')?.classList.remove('hidden');
   }
 
   renderAdministratorProductivity() {

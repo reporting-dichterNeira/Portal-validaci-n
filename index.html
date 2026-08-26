@@ -811,6 +811,8 @@
             <div class="stat-card"><div class="stat-icon-wrapper icon-emerald">✓</div><div class="stat-details"><span class="stat-label">Con modificación</span><strong class="stat-value" id="admin-editions-with-changes">0</strong></div></div>
             <div class="stat-card"><div class="stat-icon-wrapper icon-orange">—</div><div class="stat-details"><span class="stat-label">Sin modificación</span><strong class="stat-value" id="admin-editions-without-changes">0</strong></div></div>
             <div class="stat-card"><div class="stat-icon-wrapper icon-purple">∑</div><div class="stat-details"><span class="stat-label">Promedio con edición</span><strong class="stat-value" id="admin-editions-average-changes">0.0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-blue">✓</div><div class="stat-details"><span class="stat-label">Con “Aplica” y edición</span><strong class="stat-value text-success" id="admin-editions-applies-with-changes">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-orange">—</div><div class="stat-details"><span class="stat-label">Con “Aplica” sin edición</span><strong class="stat-value" id="admin-editions-applies-without-changes">0</strong></div></div>
           </div>
 
           <div class="admin-analysis-grid admin-analysis-grid-two">
@@ -820,7 +822,7 @@
 
           <section class="admin-analysis-card admin-analysis-table-card">
             <h3>Auditorías alertadas y sus ediciones</h3>
-            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Auditor</th><th>País / ciudad</th><th>Alerta</th><th>Modificaciones</th><th>Usuario última edición</th><th>Estado</th></tr></thead><tbody id="admin-editions-analysis-tbody"><tr><td colspan="8" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Auditor</th><th>País / ciudad</th><th>Alerta</th><th>Modificaciones</th><th>Usuario última edición</th><th>Estado</th><th>Detalle</th></tr></thead><tbody id="admin-editions-analysis-tbody"><tr><td colspan="9" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
           </section>
         </section>
       </div>
@@ -1819,6 +1821,25 @@
         <button class="btn btn-secondary" type="button" onclick="window.app?.closeAdminUserAccessModal()">Cancelar</button>
         <button class="btn btn-primary btn-glow" type="button" onclick="window.app?.saveAdminUserAccess()">Guardar acceso</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay hidden" id="modal-edition-audit-detail" role="dialog" aria-modal="true" aria-labelledby="edition-audit-detail-title">
+    <div class="modal-card modal-card-md edition-audit-detail-modal">
+      <div class="modal-header">
+        <div>
+          <span class="corporate-badge-sm">dichter & neira • Cruce de ediciones</span>
+          <h3 id="edition-audit-detail-title">Detalle de Aplica y ediciones</h3>
+          <p class="modal-desc-sm" id="edition-audit-detail-subtitle">—</p>
+        </div>
+        <button class="btn-close-modal" type="button" aria-label="Cerrar" onclick="document.getElementById('modal-edition-audit-detail').classList.add('hidden')">✕</button>
+      </div>
+      <div class="modal-body">
+        <section class="edition-detail-section"><h4>✓ Alertas marcadas como Aplica</h4><div id="edition-audit-detail-applies"></div></section>
+        <section class="edition-detail-section"><h4>✏️ Preguntas que tuvieron edición</h4><div id="edition-audit-detail-questions"></div></section>
+        <p class="form-help" id="edition-audit-detail-summary"></p>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" type="button" onclick="document.getElementById('modal-edition-audit-detail').classList.add('hidden')">Cerrar</button></div>
     </div>
   </div>
 

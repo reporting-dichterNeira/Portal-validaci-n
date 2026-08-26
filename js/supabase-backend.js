@@ -838,11 +838,29 @@ export class SupabaseBackend {
 
   async loadAdminExternalAnalysis() {
     this.ensureConfigured();
-    const [imports, alertRecords, editRecords] = await Promise.all([
-      this.loadAdminAnalysisImports(),
-      this.loadAllAdminAnalysisRows('admin_alert_export_records', 'audit_external_id, period_month, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, country, channel, city, auditor, audit_date, wave, study'),
-      this.loadAllAdminAnalysisRows('admin_edit_export_records', 'audit_external_id, period_month, study, country, audit_status, wave, modifications_count, status_changes_count, first_validation_started_at, first_validation_completed_at, first_validator, last_validation_started_at, last_validation_completed_at, last_validator')
-    ]);
+    const alertColumns = 'audit_external_id, period_month, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, country, channel, city, auditor, audit_date, wave, study';
+    const editColumns = 'audit_external_id, period_month, study, country, audit_status, wave, modifications_count, question_detail, status_changes_count, first_validation_started_at, first_validation_completed_at, first_validator, last_validation_started_at, last_validation_completed_at, last_validator';
+    const legacyEditColumns = editColumns.replace(', question_detail', '');
+    let imports;
+    let alertRecords;
+    let editRecords;
+    try {
+      [imports, alertRecords, editRecords] = await Promise.all([
+        this.loadAdminAnalysisImports(),
+        this.loadAllAdminAnalysisRows('admin_alert_export_records', alertColumns),
+        this.loadAllAdminAnalysisRows('admin_edit_export_records', editColumns)
+      ]);
+    } catch (error) {
+      // The presentation remains usable while the one-time database migration
+      // is being applied. New detail values become available automatically
+      // after the column exists and the monthly file is uploaded again.
+      if (!/question_detail|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
+      [imports, alertRecords, editRecords] = await Promise.all([
+        this.loadAdminAnalysisImports(),
+        this.loadAllAdminAnalysisRows('admin_alert_export_records', alertColumns),
+        this.loadAllAdminAnalysisRows('admin_edit_export_records', legacyEditColumns)
+      ]);
+    }
     return {
       imports,
       alertRecords,

@@ -3706,7 +3706,33 @@ a {
 }
 
 .admin-analysis-table {
-  min-width: 940px;
+  min-width: 1040px;
+}
+
+.edition-audit-detail-modal {
+  max-width: 720px !important;
+}
+
+.edition-detail-section {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 0.95rem;
+  background: var(--bg-surface-elevated);
+}
+
+.edition-detail-section h4 {
+  margin: 0 0 0.65rem;
+  color: var(--dn-navy);
+  font-size: 0.93rem;
+}
+
+.edition-detail-list {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.45rem;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
 }
 
 .admin-analysis-ranking {
