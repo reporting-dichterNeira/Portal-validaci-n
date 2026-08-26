@@ -1178,12 +1178,19 @@ class ValidaFlowApp {
     if (!this.canUseExternalAnalysis()) return;
     try {
       const analysis = await this.backend.loadAdminExternalAnalysis();
-      let platformAuditIds = this.adminExternalAnalysis?.platformAuditIds || new Set();
-      if (!platformAuditIds.size && analysis.alertRecords.length) {
-        const platformAudits = await this.backend.loadAuditHistory({ pageSize: 1000 });
-        platformAuditIds = new Set(platformAudits.map(audit => String(audit.id || '').trim()).filter(Boolean));
-      }
-      this.adminExternalAnalysis = { ...analysis, platformAuditIds };
+      // Editions are crossed with the alerts already validated in ValidaFlow.
+      // The general export only enriches those rows with auditor/PDV context.
+      const platformAudits = await this.backend.loadAuditHistory({ pageSize: 1000 });
+      const platformAuditIds = new Set(platformAudits.map(audit => String(audit.id || '').trim()).filter(Boolean));
+      const platformAlertAudits = platformAudits.reduce((items, audit) => {
+        if (audit.validationStatus !== 'completada') return items;
+        const alertKpis = (Array.isArray(audit.kpis) ? audit.kpis : []).filter(kpi => (
+          kpi?.needsReview || /alerta/i.test(String(kpi?.alertaStatus || ''))
+        ));
+        if (alertKpis.length) items.push({ audit, alertCount: alertKpis.length });
+        return items;
+      }, []);
+      this.adminExternalAnalysis = { ...analysis, platformAuditIds, platformAlertAudits };
       this.renderAdminExternalAnalysis();
     } catch (error) {
       console.error('No fue posible cargar el análisis administrativo:', error);
@@ -1201,6 +1208,7 @@ class ValidaFlowApp {
     const formatNumber = value => Number(value || 0).toLocaleString('es-CO');
     const alertImport = analysis.imports.find(item => item.dataset_type === 'alerts');
     const editionImport = analysis.imports.find(item => item.dataset_type === 'editions');
+    const platformAlertAudits = analysis.platformAlertAudits || [];
     // The general export supplies the audit context for the cross. Keep all
     // of its rows visible, including imports created before the rule changed.
     const alertRows = analysis.alertRecords || [];
@@ -1219,10 +1227,9 @@ class ValidaFlowApp {
     }, {})).sort((a, b) => b[1] - a[1]);
 
     setText('admin-alerts-import-status', alertImport ? `Último export: ${alertImport.source_filename} · ${this.formatExternalImportMonth(alertImport.period_month)} · ${formatNumber(alertImport.row_count)} registros útiles.` : 'Aún no se ha cargado un export general.');
-    const hasGeneralForEditionMonth = editionImport && analysis.imports.some(item => item.dataset_type === 'alerts' && item.period_month === editionImport.period_month);
     setText('admin-editions-import-status', editionImport
-      ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles.${hasGeneralForEditionMonth ? '' : ` Falta cargar el Export general de ${this.formatExternalImportMonth(editionImport.period_month)} para mostrar el cruce.`}`
-      : 'Primero carga el export general y luego el de ediciones.');
+      ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles. Cruzado contra ${formatNumber(platformAlertAudits.length)} auditorías con alertas ya validadas en ValidaFlow.`
+      : 'Carga el export de ediciones para cruzarlo con las alertas validadas en ValidaFlow.');
     setText('admin-alerts-source-count', formatNumber(analysis.alertRecords.length));
     setText('admin-alerts-count', formatNumber(alertRows.length));
     setText('admin-alerts-matched-count', formatNumber(matchedAlerts.length));
@@ -1238,9 +1245,12 @@ class ValidaFlowApp {
       </tr>`).join('') : '<tr><td colspan="8" class="text-center text-muted">Sin auditorías alertadas cargadas.</td></tr>';
     }
 
-    const periodAuditKey = record => `${record?.period_month || ''}|${record?.audit_external_id || ''}`;
-    const editsById = new Map((analysis.editRecords || []).map(record => [periodAuditKey(record), record]));
-    const alertEditionRows = alertRows.map(alert => ({ alert, edit: editsById.get(periodAuditKey(alert)) || null }));
+    const contextByAuditId = new Map((analysis.alertRecords || []).map(record => [String(record.audit_external_id || '').trim(), record]));
+    const editsById = new Map((analysis.editRecords || []).map(record => [String(record.audit_external_id || '').trim(), record]));
+    const alertEditionRows = platformAlertAudits.map(platformAlert => {
+      const auditId = String(platformAlert.audit?.id || '').trim();
+      return { platformAlert, context: contextByAuditId.get(auditId) || null, edit: editsById.get(auditId) || null };
+    });
     const withChanges = alertEditionRows.filter(item => Number(item.edit?.modifications_count || 0) > 0);
     const withoutChanges = alertEditionRows.length - withChanges.length;
     const averageChanges = withChanges.length ? withChanges.reduce((total, item) => total + Number(item.edit.modifications_count || 0), 0) / withChanges.length : 0;
@@ -1253,10 +1263,17 @@ class ValidaFlowApp {
 
     const editionsTbody = document.getElementById('admin-editions-analysis-tbody');
     if (editionsTbody) {
-      editionsTbody.innerHTML = alertEditionRows.length ? alertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)).slice(0, 100).map(({ alert, edit }) => {
+      editionsTbody.innerHTML = alertEditionRows.length ? alertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)).map(({ platformAlert, context, edit }) => {
+        const audit = platformAlert.audit || {};
+        const auditId = String(audit.id || '—');
+        const auditor = context?.auditor || audit.auditor || audit.nombreAuditor || '—';
+        const country = context?.country || audit.pais || audit.country || '—';
+        const city = context?.city || audit.ciudad || audit.city || '—';
+        const month = edit?.period_month || context?.period_month || audit.fechaValidacion || audit.fecha;
+        const alertLabel = context?.alert_label || context?.alert_status || `${platformAlert.alertCount} alerta${platformAlert.alertCount === 1 ? '' : 's'} validada${platformAlert.alertCount === 1 ? '' : 's'}`;
         const changes = Number(edit?.modifications_count || 0);
-        return `<tr><td><code>${escapeHtml(alert.audit_external_id)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(edit?.period_month || alert.period_month))}</td><td>${escapeHtml(alert.auditor)}</td><td>${escapeHtml(alert.country)}<small>${escapeHtml(alert.city)}</small></td><td>${escapeHtml(alert.alert_label || alert.alert_status || alert.audit_status)}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.last_validator || '—')}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td></tr>`;
-      }).join('') : `<tr><td colspan="8" class="text-center text-muted">${editionImport ? `El export de ediciones fue cargado (${formatNumber(editionImport.row_count)} registros), pero falta el Export general de ${escapeHtml(this.formatExternalImportMonth(editionImport.period_month))} para cruzarlo.` : 'Carga primero el export general y luego el de ediciones.'}</td></tr>`;
+        return `<tr><td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(month))}</td><td>${escapeHtml(auditor)}</td><td>${escapeHtml(country)}<small>${escapeHtml(city)}</small></td><td>${escapeHtml(alertLabel)}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.last_validator || '—')}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td></tr>`;
+      }).join('') : '<tr><td colspan="8" class="text-center text-muted">Aún no hay auditorías con alertas validadas en la plataforma para cruzar.</td></tr>';
     }
   }
 
