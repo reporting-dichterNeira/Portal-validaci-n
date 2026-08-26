@@ -1279,15 +1279,63 @@ class ValidaFlowApp {
     const averageChanges = withChanges.length ? withChanges.reduce((total, item) => total + Number(item.edit.modifications_count || 0), 0) / withChanges.length : 0;
     const auditsWithApplies = alertEditionRows.filter(item => item.applicableAlerts.length > 0);
     const appliesWithChanges = auditsWithApplies.filter(item => Number(item.edit?.modifications_count || 0) > 0);
-    const appliesWithoutChanges = auditsWithApplies.length - appliesWithChanges.length;
+    const auditsWithApplyGaps = auditsWithApplies.filter(item => Number(item.edit?.modifications_count || 0) === 0);
+    const appliesWithoutChanges = auditsWithApplyGaps.length;
+    const applicableKpiCount = auditsWithApplies.reduce((total, item) => total + item.applicableAlerts.length, 0);
+    const appliesCompliance = auditsWithApplies.length ? Math.round((appliesWithChanges.length / auditsWithApplies.length) * 100) : 0;
     setText('admin-editions-alerts-count', formatNumber(alertEditionRows.length));
     setText('admin-editions-with-changes', formatNumber(withChanges.length));
     setText('admin-editions-without-changes', formatNumber(withoutChanges));
     setText('admin-editions-average-changes', averageChanges.toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }));
     setText('admin-editions-applies-with-changes', formatNumber(appliesWithChanges.length));
     setText('admin-editions-applies-without-changes', formatNumber(appliesWithoutChanges));
+    setText('admin-editions-applies-compliance', `${appliesCompliance}%`);
+    setText('admin-editions-applies-kpis-count', formatNumber(applicableKpiCount));
+    const complianceSummary = document.getElementById('admin-editions-compliance-summary');
+    if (complianceSummary) {
+      complianceSummary.classList.toggle('is-complete', appliesWithoutChanges === 0 && auditsWithApplies.length > 0);
+      complianceSummary.classList.toggle('has-gap', appliesWithoutChanges > 0);
+      complianceSummary.innerHTML = auditsWithApplies.length
+        ? appliesWithoutChanges
+          ? `<strong>Atención:</strong> ${formatNumber(appliesWithoutChanges)} auditorías con al menos una alerta marcada como Aplica no tienen ninguna edición. El cumplimiento actual es <strong>${appliesCompliance}%</strong>.`
+          : `<strong>✓ Cumplimiento total:</strong> las ${formatNumber(auditsWithApplies.length)} auditorías con alertas Aplica cuentan con al menos una edición registrada.`
+        : 'Aún no hay auditorías con alertas marcadas como Aplica para evaluar.';
+    }
     renderRanking('admin-editions-top-studies', rank(withChanges.map(item => item.edit), 'study', 'modifications_count'));
     renderRanking('admin-editions-top-users', rank(withChanges.map(item => item.edit), 'last_validator', 'modifications_count'));
+    const renderComplianceChart = (id, items) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.innerHTML = items.length ? items.slice(0, 8).map(item => {
+        const compliance = item.total ? Math.round((item.withChanges / item.total) * 100) : 0;
+        return `<div class="admin-compliance-chart-row"><div class="admin-compliance-chart-label"><strong>${escapeHtml(item.label)}</strong><span>${formatNumber(item.withChanges)} con edición · ${formatNumber(item.withoutChanges)} sin edición</span></div><div class="admin-compliance-bar" aria-label="${compliance}% con edición"><span style="width:${compliance}%"></span></div><strong class="admin-compliance-percent">${compliance}%</strong></div>`;
+      }).join('') : '<span class="text-muted">Sin auditorías con Aplica para mostrar.</span>';
+    };
+    const groupAppliesBy = field => Object.values(auditsWithApplies.reduce((groups, item) => {
+      const audit = item.platformAlert.audit || {};
+      const label = item.context?.[field] || item.edit?.[field] || audit[field === 'study' ? 'estudio' : field] || 'Sin dato';
+      if (!groups[label]) groups[label] = { label, total: 0, withChanges: 0, withoutChanges: 0 };
+      groups[label].total += 1;
+      if (Number(item.edit?.modifications_count || 0) > 0) groups[label].withChanges += 1;
+      else groups[label].withoutChanges += 1;
+      return groups;
+    }, {})).sort((a, b) => b.total - a.total);
+    renderComplianceChart('admin-editions-compliance-by-study', groupAppliesBy('study'));
+    const countryGaps = auditsWithApplyGaps.reduce((gaps, item) => {
+      const audit = item.platformAlert.audit || {};
+      const country = item.context?.country || item.edit?.country || audit.pais || audit.country || 'Sin dato';
+      gaps[country] = (gaps[country] || 0) + 1;
+      return gaps;
+    }, {});
+    renderRanking('admin-editions-gaps-by-country', Object.entries(countryGaps).sort((a, b) => b[1] - a[1]));
+    const kpiGaps = auditsWithApplyGaps
+      .flatMap(item => item.applicableAlerts)
+      .reduce((counts, kpi) => {
+        const label = kpi?.name || 'Alerta sin nombre';
+        counts[label] = (counts[label] || 0) + 1;
+        return counts;
+      }, {});
+    renderRanking('admin-editions-gaps-by-kpi', Object.entries(kpiGaps).sort((a, b) => b[1] - a[1]));
     this.adminEditionCrossByAuditId = new Map(alertEditionRows.map(item => [String(item.platformAlert.audit?.id || '').trim(), item]));
 
     const editionsTbody = document.getElementById('admin-editions-analysis-tbody');

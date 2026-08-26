@@ -813,12 +813,23 @@
             <div class="stat-card"><div class="stat-icon-wrapper icon-purple">∑</div><div class="stat-details"><span class="stat-label">Promedio con edición</span><strong class="stat-value" id="admin-editions-average-changes">0.0</strong></div></div>
             <div class="stat-card"><div class="stat-icon-wrapper icon-blue">✓</div><div class="stat-details"><span class="stat-label">Con “Aplica” y edición</span><strong class="stat-value text-success" id="admin-editions-applies-with-changes">0</strong></div></div>
             <div class="stat-card"><div class="stat-icon-wrapper icon-orange">—</div><div class="stat-details"><span class="stat-label">Con “Aplica” sin edición</span><strong class="stat-value" id="admin-editions-applies-without-changes">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-emerald">%</div><div class="stat-details"><span class="stat-label">Cumplimiento Aplica → edición</span><strong class="stat-value text-success" id="admin-editions-applies-compliance">0%</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-blue">⚑</div><div class="stat-details"><span class="stat-label">Alertas KPI marcadas Aplica</span><strong class="stat-value" id="admin-editions-applies-kpis-count">0</strong></div></div>
           </div>
+
+          <div class="admin-analysis-compliance-callout" id="admin-editions-compliance-summary">Carga el export de ediciones para evaluar el cumplimiento de las alertas marcadas como Aplica.</div>
 
           <div class="admin-analysis-grid admin-analysis-grid-two">
             <section class="admin-analysis-card"><h3>✏️ Mayor edición por estudio</h3><div id="admin-editions-top-studies" class="admin-analysis-ranking"><span class="text-muted">Sin información cargada.</span></div></section>
             <section class="admin-analysis-card"><h3>👤 Usuarios que terminan más ediciones</h3><div id="admin-editions-top-users" class="admin-analysis-ranking"><span class="text-muted">Sin información cargada.</span></div></section>
           </div>
+
+          <div class="admin-analysis-grid admin-analysis-grid-two">
+            <section class="admin-analysis-card"><h3>📊 Cumplimiento de “Aplica” por estudio</h3><p class="form-help">Proporción de auditorías con al menos una alerta Aplica que sí registraron edición.</p><div id="admin-editions-compliance-by-study" class="admin-compliance-chart"><span class="text-muted">Sin información cargada.</span></div></section>
+            <section class="admin-analysis-card"><h3>🌎 Brechas por país</h3><p class="form-help">Auditorías con Aplica que no cuentan con ninguna modificación.</p><div id="admin-editions-gaps-by-country" class="admin-analysis-ranking"><span class="text-muted">Sin información cargada.</span></div></section>
+          </div>
+
+          <section class="admin-analysis-card admin-analysis-table-card"><h3>⚠️ Alertas Aplica con mayor brecha de edición</h3><p class="form-help">KPIs confirmados como Aplica dentro de auditorías que aún no presentan una edición.</p><div id="admin-editions-gaps-by-kpi" class="admin-analysis-ranking admin-analysis-ranking-columns"><span class="text-muted">Sin información cargada.</span></div></section>
 
           <section class="admin-analysis-card admin-analysis-table-card">
             <h3>Auditorías alertadas y sus ediciones</h3>
