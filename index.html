@@ -770,6 +770,11 @@
             <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminExternalAnalysis('alerts')">📥 Cargar export general</button>
           </div>
           <p class="form-help" id="admin-alerts-import-status">Aún no se ha cargado un export de auditorías.</p>
+          <div class="admin-analysis-filter-bar">
+            <label for="admin-alerts-study-filter">Filtrar por estudio</label>
+            <select id="admin-alerts-study-filter" class="form-select"><option value="all">Todos los estudios</option></select>
+            <span class="form-help" id="admin-alerts-filter-count">—</span>
+          </div>
 
           <div class="stats-grid admin-analysis-stats">
             <div class="stat-card"><div class="stat-icon-wrapper icon-blue">🧾</div><div class="stat-details"><span class="stat-label">Registros útiles</span><strong class="stat-value" id="admin-alerts-source-count">0</strong></div></div>
@@ -778,15 +783,16 @@
             <div class="stat-card"><div class="stat-icon-wrapper icon-purple">📊</div><div class="stat-details"><span class="stat-label">Tasa de cruce</span><strong class="stat-value" id="admin-alerts-match-rate">0%</strong></div></div>
           </div>
 
-          <div class="admin-analysis-grid">
+          <div class="admin-analysis-grid admin-analysis-grid-four">
             <section class="admin-analysis-card"><h3>👤 Auditor con más alertas</h3><div id="admin-alerts-top-auditors" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
             <section class="admin-analysis-card"><h3>📍 Ciudades con más alertas</h3><div id="admin-alerts-top-cities" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
+            <section class="admin-analysis-card"><h3>📺 Canales con más alertas</h3><div id="admin-alerts-top-channels" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
             <section class="admin-analysis-card"><h3>🌎 Países con más alertas</h3><div id="admin-alerts-top-countries" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
           </div>
 
           <section class="admin-analysis-card admin-analysis-table-card">
             <h3>Detalle cruzado de alertas</h3>
-            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Alerta</th><th>Auditor</th><th>PDV</th><th>País / ciudad</th><th>Canal</th><th>Cruce ValidaFlow</th></tr></thead><tbody id="admin-alerts-analysis-tbody"><tr><td colspan="8" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Estudio</th><th>Alerta</th><th>Auditor</th><th>PDV</th><th>País / ciudad</th><th>Canal</th><th>Cruce ValidaFlow</th></tr></thead><tbody id="admin-alerts-analysis-tbody"><tr><td colspan="9" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
           </section>
         </section>
 

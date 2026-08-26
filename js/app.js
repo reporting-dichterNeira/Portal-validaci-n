@@ -1231,8 +1231,25 @@ class ValidaFlowApp {
     // of its rows visible, including imports created before the rule changed.
     const alertRows = analysis.alertRecords || [];
     const platformIds = analysis.platformAuditIds || new Set();
-    const matchedAlerts = alertRows.filter(record => platformIds.has(String(record.audit_external_id)));
-    const percentage = alertRows.length ? `${Math.round((matchedAlerts.length / alertRows.length) * 100)}%` : '0%';
+    const availableStudies = [...new Set(alertRows.map(record => String(record.study || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'es'));
+    const requestedStudy = this.adminAlertsStudyFilter || 'all';
+    const activeStudy = requestedStudy === 'all' || availableStudies.includes(requestedStudy) ? requestedStudy : 'all';
+    this.adminAlertsStudyFilter = activeStudy;
+    const studyFilter = document.getElementById('admin-alerts-study-filter');
+    if (studyFilter) {
+      studyFilter.innerHTML = `<option value="all">Todos los estudios</option>${availableStudies.map(study => `<option value="${escapeHtml(study)}">${escapeHtml(study)}</option>`).join('')}`;
+      studyFilter.value = activeStudy;
+      if (studyFilter.dataset.filterBound !== 'true') {
+        studyFilter.addEventListener('change', event => this.setAdminAlertsStudyFilter(event.target.value));
+        studyFilter.dataset.filterBound = 'true';
+      }
+    }
+    const filteredAlertRows = activeStudy === 'all'
+      ? alertRows
+      : alertRows.filter(record => String(record.study || '').trim() === activeStudy);
+    const matchedAlerts = filteredAlertRows.filter(record => platformIds.has(String(record.audit_external_id)));
+    const percentage = filteredAlertRows.length ? `${Math.round((matchedAlerts.length / filteredAlertRows.length) * 100)}%` : '0%';
     const renderRanking = (id, rows) => {
       const element = document.getElementById(id);
       if (!element) return;
@@ -1248,19 +1265,21 @@ class ValidaFlowApp {
     setText('admin-editions-import-status', editionImport
       ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles. Cruzado contra ${formatNumber(platformAlertAudits.length)} auditorías con alertas ya validadas en ValidaFlow.`
       : 'Carga el export de ediciones para cruzarlo con las alertas validadas en ValidaFlow.');
-    setText('admin-alerts-source-count', formatNumber(analysis.alertRecords.length));
-    setText('admin-alerts-count', formatNumber(alertRows.length));
+    setText('admin-alerts-source-count', formatNumber(filteredAlertRows.length));
+    setText('admin-alerts-count', formatNumber(filteredAlertRows.length));
     setText('admin-alerts-matched-count', formatNumber(matchedAlerts.length));
     setText('admin-alerts-match-rate', percentage);
-    renderRanking('admin-alerts-top-auditors', rank(alertRows, 'auditor'));
-    renderRanking('admin-alerts-top-cities', rank(alertRows, 'city'));
-    renderRanking('admin-alerts-top-countries', rank(alertRows, 'country'));
+    setText('admin-alerts-filter-count', `${formatNumber(filteredAlertRows.length)} de ${formatNumber(alertRows.length)} alertas mostradas.`);
+    renderRanking('admin-alerts-top-auditors', rank(filteredAlertRows, 'auditor'));
+    renderRanking('admin-alerts-top-cities', rank(filteredAlertRows, 'city'));
+    renderRanking('admin-alerts-top-channels', rank(filteredAlertRows, 'channel'));
+    renderRanking('admin-alerts-top-countries', rank(filteredAlertRows, 'country'));
 
     const alertsTbody = document.getElementById('admin-alerts-analysis-tbody');
     if (alertsTbody) {
-      alertsTbody.innerHTML = alertRows.length ? alertRows.slice().sort((a, b) => String(a.auditor || '').localeCompare(String(b.auditor || ''))).slice(0, 100).map(record => `<tr>
-        <td><code>${escapeHtml(record.audit_external_id)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(record.period_month))}</td><td>${escapeHtml(record.alert_label || record.alert_status || record.audit_status)}</td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${platformIds.has(String(record.audit_external_id)) ? 'badge-success' : 'badge-warning'}">${platformIds.has(String(record.audit_external_id)) ? 'Encontrada' : 'No encontrada'}</span></td>
-      </tr>`).join('') : '<tr><td colspan="8" class="text-center text-muted">Sin auditorías alertadas cargadas.</td></tr>';
+      alertsTbody.innerHTML = filteredAlertRows.length ? filteredAlertRows.slice().sort((a, b) => String(a.auditor || '').localeCompare(String(b.auditor || ''))).slice(0, 100).map(record => `<tr>
+        <td><code>${escapeHtml(record.audit_external_id)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(record.period_month))}</td><td>${escapeHtml(record.study)}</td><td>${escapeHtml(record.alert_label || record.alert_status || record.audit_status)}</td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${platformIds.has(String(record.audit_external_id)) ? 'badge-success' : 'badge-warning'}">${platformIds.has(String(record.audit_external_id)) ? 'Encontrada' : 'No encontrada'}</span></td>
+      </tr>`).join('') : '<tr><td colspan="9" class="text-center text-muted">No hay alertas para el estudio seleccionado.</td></tr>';
     }
 
     const contextByAuditId = new Map((analysis.alertRecords || []).map(record => [String(record.audit_external_id || '').trim(), record]));
@@ -1412,6 +1431,11 @@ class ValidaFlowApp {
   setAdminEditionAuditFilter(filter) {
     const allowedFilters = new Set(['all', 'applies_without_changes', 'applies_with_changes', 'with_changes', 'without_changes']);
     this.adminEditionAuditFilter = allowedFilters.has(filter) ? filter : 'all';
+    this.renderAdminExternalAnalysis();
+  }
+
+  setAdminAlertsStudyFilter(study) {
+    this.adminAlertsStudyFilter = String(study || 'all');
     this.renderAdminExternalAnalysis();
   }
 
