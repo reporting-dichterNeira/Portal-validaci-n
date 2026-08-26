@@ -1074,9 +1074,21 @@ class ValidaFlowApp {
     if (!window.XLSX) throw new Error('La librería para leer el archivo aún no está disponible. Intenta nuevamente.');
     const buffer = await file.arrayBuffer();
     const isDelimited = /\.(csv|txt)$/i.test(file.name || '');
-    const workbook = isDelimited
-      ? XLSX.read(new TextDecoder('windows-1252').decode(buffer), { type: 'string', FS: ';' })
-      : XLSX.read(buffer, { type: 'array', cellDates: true });
+    let workbook;
+    if (isDelimited) {
+      // Los exportes recientes llegan en UTF-8 (con o sin BOM), mientras que
+      // algunos archivos antiguos aún usan Windows-1252. Probar UTF-8 en modo
+      // estricto evita convertir “¿” en “Â¿” o “ó” en “Ã³”.
+      let text;
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+      } catch {
+        text = new TextDecoder('windows-1252').decode(buffer);
+      }
+      workbook = XLSX.read(text, { type: 'string', FS: ';' });
+    } else {
+      workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+    }
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     if (!sheet) throw new Error('El archivo no contiene una hoja para leer.');
     return XLSX.utils.sheet_to_json(sheet, { defval: '', raw: false, dateNF: 'yyyy-mm-dd' });
