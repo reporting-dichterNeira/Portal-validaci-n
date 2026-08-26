@@ -1090,7 +1090,10 @@ class ValidaFlowApp {
       const auditStatus = this.getExternalExportValue(row, ['estado']);
       const alertStatus = this.getExternalExportValue(row, ['substatus', 'sub status']);
       const alertLabel = this.getExternalExportValue(row, ['alerta']);
-      const isAlert = /alerta/i.test(`${auditStatus} ${alertStatus} ${alertLabel}`);
+      // The general export is the source used to enrich the audit IDs.  It
+      // does not always include a column whose text literally says “alerta”,
+      // so every imported audit must remain available for the cross.
+      const isAlert = true;
       const record = {
         audit_external_id: auditId,
         is_alert: isAlert,
@@ -1198,7 +1201,9 @@ class ValidaFlowApp {
     const formatNumber = value => Number(value || 0).toLocaleString('es-CO');
     const alertImport = analysis.imports.find(item => item.dataset_type === 'alerts');
     const editionImport = analysis.imports.find(item => item.dataset_type === 'editions');
-    const alertRows = (analysis.alertRecords || []).filter(record => record.is_alert);
+    // The general export supplies the audit context for the cross. Keep all
+    // of its rows visible, including imports created before the rule changed.
+    const alertRows = analysis.alertRecords || [];
     const platformIds = analysis.platformAuditIds || new Set();
     const matchedAlerts = alertRows.filter(record => platformIds.has(String(record.audit_external_id)));
     const percentage = alertRows.length ? `${Math.round((matchedAlerts.length / alertRows.length) * 100)}%` : '0%';
@@ -1214,7 +1219,10 @@ class ValidaFlowApp {
     }, {})).sort((a, b) => b[1] - a[1]);
 
     setText('admin-alerts-import-status', alertImport ? `Último export: ${alertImport.source_filename} · ${this.formatExternalImportMonth(alertImport.period_month)} · ${formatNumber(alertImport.row_count)} registros útiles.` : 'Aún no se ha cargado un export general.');
-    setText('admin-editions-import-status', editionImport ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles.` : 'Primero carga el export general y luego el de ediciones.');
+    const hasGeneralForEditionMonth = editionImport && analysis.imports.some(item => item.dataset_type === 'alerts' && item.period_month === editionImport.period_month);
+    setText('admin-editions-import-status', editionImport
+      ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles.${hasGeneralForEditionMonth ? '' : ` Falta cargar el Export general de ${this.formatExternalImportMonth(editionImport.period_month)} para mostrar el cruce.`}`
+      : 'Primero carga el export general y luego el de ediciones.');
     setText('admin-alerts-source-count', formatNumber(analysis.alertRecords.length));
     setText('admin-alerts-count', formatNumber(alertRows.length));
     setText('admin-alerts-matched-count', formatNumber(matchedAlerts.length));
@@ -1248,7 +1256,7 @@ class ValidaFlowApp {
       editionsTbody.innerHTML = alertEditionRows.length ? alertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)).slice(0, 100).map(({ alert, edit }) => {
         const changes = Number(edit?.modifications_count || 0);
         return `<tr><td><code>${escapeHtml(alert.audit_external_id)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(edit?.period_month || alert.period_month))}</td><td>${escapeHtml(alert.auditor)}</td><td>${escapeHtml(alert.country)}<small>${escapeHtml(alert.city)}</small></td><td>${escapeHtml(alert.alert_label || alert.alert_status || alert.audit_status)}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.last_validator || '—')}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td></tr>`;
-      }).join('') : '<tr><td colspan="8" class="text-center text-muted">Carga primero el export general.</td></tr>';
+      }).join('') : `<tr><td colspan="8" class="text-center text-muted">${editionImport ? `El export de ediciones fue cargado (${formatNumber(editionImport.row_count)} registros), pero falta el Export general de ${escapeHtml(this.formatExternalImportMonth(editionImport.period_month))} para cruzarlo.` : 'Carga primero el export general y luego el de ediciones.'}</td></tr>`;
     }
   }
 
