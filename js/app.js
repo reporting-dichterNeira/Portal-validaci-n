@@ -1302,9 +1302,10 @@ class ValidaFlowApp {
         const alertLabel = context?.alert_label || context?.alert_status || `${platformAlert.alertCount} alerta${platformAlert.alertCount === 1 ? '' : 's'} validada${platformAlert.alertCount === 1 ? '' : 's'}`;
         const changes = Number(edit?.modifications_count || 0);
         const detailKey = encodeURIComponent(auditId);
+        const validaFlowValidator = audit._validatorName || audit.validadorNombre || audit.validatorName || audit.assignedValidatorId || '—';
         const appliesLabel = applicableAlerts.length ? `<small class="text-success">${applicableAlerts.length} marcada${applicableAlerts.length === 1 ? '' : 's'} como Aplica</small>` : '';
-        return `<tr><td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(month))}</td><td>${escapeHtml(auditor)}</td><td>${escapeHtml(country)}<small>${escapeHtml(city)}</small></td><td>${escapeHtml(alertLabel)}${appliesLabel}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.last_validator || '—')}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td><td><button class="btn btn-outline btn-sm" type="button" onclick="window.app?.showEditionAuditDetail(decodeURIComponent('${detailKey}'))">Ver detalle</button></td></tr>`;
-      }).join('') : '<tr><td colspan="9" class="text-center text-muted">Aún no hay auditorías con alertas validadas en la plataforma para cruzar.</td></tr>';
+        return `<tr><td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(month))}</td><td>${escapeHtml(auditor)}</td><td>${escapeHtml(country)}<small>${escapeHtml(city)}</small></td><td>${escapeHtml(alertLabel)}${appliesLabel}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.first_validator || '—')}</td><td>${escapeHtml(edit?.last_validator || '—')}</td><td>${escapeHtml(validaFlowValidator)}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td><td><button class="btn btn-outline btn-sm" type="button" onclick="window.app?.showEditionAuditDetail(decodeURIComponent('${detailKey}'))">Ver detalle</button></td></tr>`;
+      }).join('') : '<tr><td colspan="11" class="text-center text-muted">Aún no hay auditorías con alertas validadas en la plataforma para cruzar.</td></tr>';
     }
   }
 
