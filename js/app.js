@@ -1342,7 +1342,13 @@ class ValidaFlowApp {
     if (editionsTbody) {
       const activeFilter = this.adminEditionAuditFilter || 'all';
       const filterSelect = document.getElementById('admin-editions-audit-filter');
-      if (filterSelect) filterSelect.value = activeFilter;
+      if (filterSelect) {
+        filterSelect.value = activeFilter;
+        if (filterSelect.dataset.filterBound !== 'true') {
+          filterSelect.addEventListener('change', event => this.setAdminEditionAuditFilter(event.target.value));
+          filterSelect.dataset.filterBound = 'true';
+        }
+      }
       const filteredAlertEditionRows = alertEditionRows.filter(item => {
         const hasChanges = Number(item.edit?.modifications_count || 0) > 0;
         const hasApplies = item.applicableAlerts.length > 0;
