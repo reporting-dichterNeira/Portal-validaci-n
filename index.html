@@ -732,11 +732,11 @@
           </div>
           <div class="admin-export-delete-grid">
             <div class="admin-export-delete-item">
-              <div><strong>Export de alertas</strong><small id="admin-delete-alerts-import-detail">Cargando información…</small></div>
-              <button class="btn btn-outline text-danger" id="btn-admin-delete-alerts-import" type="button" onclick="window.app?.deleteAdminExternalAnalysis('alerts')">🗑️ Eliminar alertas</button>
+              <div><strong>Export general</strong><select class="form-select" id="admin-delete-alerts-import-select" onchange="window.app?.renderAdminExternalImportDeletionOptions()"><option value="">Cargando exports…</option></select><small id="admin-delete-alerts-import-detail">Cargando información…</small></div>
+              <button class="btn btn-outline text-danger" id="btn-admin-delete-alerts-import" type="button" onclick="window.app?.deleteAdminExternalAnalysis('alerts')">🗑️ Eliminar export</button>
             </div>
             <div class="admin-export-delete-item">
-              <div><strong>Export de ediciones</strong><small id="admin-delete-editions-import-detail">Cargando información…</small></div>
+              <div><strong>Export de ediciones</strong><select class="form-select" id="admin-delete-editions-import-select" onchange="window.app?.renderAdminExternalImportDeletionOptions()"><option value="">Cargando exports…</option></select><small id="admin-delete-editions-import-detail">Cargando información…</small></div>
               <button class="btn btn-outline text-danger" id="btn-admin-delete-editions-import" type="button" onclick="window.app?.deleteAdminExternalAnalysis('editions')">🗑️ Eliminar ediciones</button>
             </div>
           </div>
@@ -759,14 +759,15 @@
           <div class="section-header admin-analysis-header">
             <div>
               <div class="corporate-badge">Cruce por ID de auditoría</div>
-              <h2>Alertas con contexto de auditoría</h2>
-              <p>Carga el export de auditorías para enriquecer las alertas con auditor, PDV, país, ciudad y canal. Solo se guardan estos campos de análisis.</p>
+              <h2>Export general con contexto de auditoría</h2>
+              <p>Carga el export consolidado para enriquecer las alertas con auditor, PDV, país, ciudad y canal. El sistema conserva la última versión que subas para cada mes.</p>
             </div>
             <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis()">↻ Actualizar</button>
           </div>
           <div class="admin-analysis-upload">
+            <label class="admin-analysis-period" for="admin-alerts-export-period">Mes del consolidado <input class="form-control" type="month" id="admin-alerts-export-period" required /></label>
             <input class="form-control" type="file" id="admin-alerts-export-input" accept=".xlsx,.xls,.csv,.txt" />
-            <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminExternalAnalysis('alerts')">📥 Cargar y cruzar export</button>
+            <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminExternalAnalysis('alerts')">📥 Cargar export general</button>
           </div>
           <p class="form-help" id="admin-alerts-import-status">Aún no se ha cargado un export de auditorías.</p>
 
@@ -785,7 +786,7 @@
 
           <section class="admin-analysis-card admin-analysis-table-card">
             <h3>Detalle cruzado de alertas</h3>
-            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Alerta</th><th>Auditor</th><th>PDV</th><th>País / ciudad</th><th>Canal</th><th>Cruce ValidaFlow</th></tr></thead><tbody id="admin-alerts-analysis-tbody"><tr><td colspan="7" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Alerta</th><th>Auditor</th><th>PDV</th><th>País / ciudad</th><th>Canal</th><th>Cruce ValidaFlow</th></tr></thead><tbody id="admin-alerts-analysis-tbody"><tr><td colspan="8" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
           </section>
         </section>
 
@@ -794,11 +795,12 @@
             <div>
               <div class="corporate-badge">Cruce por ID de auditoría</div>
               <h2>Impacto de ediciones sobre alertas</h2>
-              <p>Carga el export de ediciones. Se relaciona únicamente con las auditorías alertadas ya cargadas para medir modificación, intensidad y responsables.</p>
+              <p>Carga el consolidado de ediciones del mes. Se conserva solamente la última versión subida para ese mes.</p>
             </div>
             <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis()">↻ Actualizar</button>
           </div>
           <div class="admin-analysis-upload">
+            <label class="admin-analysis-period" for="admin-editions-export-period">Mes del consolidado <input class="form-control" type="month" id="admin-editions-export-period" required /></label>
             <input class="form-control" type="file" id="admin-editions-export-input" accept=".xlsx,.xls,.csv,.txt" />
             <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminExternalAnalysis('editions')">📥 Cargar export de ediciones</button>
           </div>
@@ -818,7 +820,7 @@
 
           <section class="admin-analysis-card admin-analysis-table-card">
             <h3>Auditorías alertadas y sus ediciones</h3>
-            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Auditor</th><th>País / ciudad</th><th>Alerta</th><th>Modificaciones</th><th>Usuario última edición</th><th>Estado</th></tr></thead><tbody id="admin-editions-analysis-tbody"><tr><td colspan="7" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Auditor</th><th>País / ciudad</th><th>Alerta</th><th>Modificaciones</th><th>Usuario última edición</th><th>Estado</th></tr></thead><tbody id="admin-editions-analysis-tbody"><tr><td colspan="8" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
           </section>
         </section>
       </div>
@@ -2670,6 +2672,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=58.0"></script>
+  <script type="module" src="js/app.js?v=59.0"></script>
 </body>
 </html>

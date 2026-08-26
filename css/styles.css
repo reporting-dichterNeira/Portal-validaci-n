@@ -7112,10 +7112,14 @@ body.dark-theme {
 .admin-export-delete-item { display: flex; justify-content: space-between; align-items: center; gap: 0.9rem; padding: 0.9rem; border: 1px solid rgba(220, 53, 69, 0.22); border-radius: var(--radius-md); background: color-mix(in srgb, var(--dn-magenta) 3%, var(--surface-card)); }
 .admin-export-delete-item strong, .admin-export-delete-item small { display: block; }
 .admin-export-delete-item small { margin-top: 0.25rem; color: var(--text-secondary); font-size: 0.76rem; }
+.admin-export-delete-item .form-select { margin-top: 0.55rem; min-width: 250px; }
+.admin-analysis-period { display: grid; gap: 0.3rem; min-width: 175px; color: var(--dn-navy); font-size: 0.78rem; font-weight: 800; }
+.admin-analysis-period .form-control { min-height: 42px; }
 
 @media (max-width: 720px) {
   .admin-export-delete-grid { grid-template-columns: 1fr; }
   .admin-export-delete-item { align-items: flex-start; flex-direction: column; }
+  .admin-export-delete-item .form-select { min-width: 0; width: 100%; }
 }
 
 .visualization-console { max-width: 1520px; }

@@ -912,21 +912,34 @@ class ValidaFlowApp {
   renderAdminExternalImportDeletionOptions() {
     const imports = this.adminExternalImports || [];
     const number = value => new Intl.NumberFormat('es-CO').format(Number(value || 0));
-    const describe = (datasetType, fallback) => {
-      const item = imports.find(entry => entry.dataset_type === datasetType);
-      if (!item) return fallback;
-      return `${item.source_filename || 'Archivo sin nombre'} · ${number(item.row_count)} registros · ${formatNicaraguaDateTime(item.imported_at, 'fecha no disponible')}`;
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+    const populate = (datasetType, selectId, detailId, buttonId, fallback) => {
+      const select = document.getElementById(selectId);
+      const detail = document.getElementById(detailId);
+      const button = document.getElementById(buttonId);
+      const options = imports.filter(entry => entry.dataset_type === datasetType);
+      const previous = select?.value;
+      if (select) {
+        select.innerHTML = [
+          '<option value="">Selecciona el mes que deseas eliminar…</option>',
+          ...options.map(item => `<option value="${escapeHtml(item.period_month)}">${escapeHtml(this.formatExternalImportMonth(item.period_month))} · ${escapeHtml(item.source_filename || 'Archivo sin nombre')} (${number(item.row_count)} registros)</option>`)
+        ].join('');
+        if (options.some(item => item.period_month === previous)) select.value = previous;
+        else if (options.length === 1) select.value = options[0].period_month;
+      }
+      const selectedMonth = select?.value;
+      const selected = options.find(item => item.period_month === selectedMonth);
+      if (detail) detail.textContent = selected
+        ? `${selected.source_filename || 'Archivo sin nombre'} · ${number(selected.row_count)} registros · cargado ${formatNicaraguaDateTime(selected.imported_at, 'fecha no disponible')}`
+        : fallback;
+      if (button) button.disabled = !selected;
     };
-    const alertImport = imports.find(entry => entry.dataset_type === 'alerts');
-    const editionImport = imports.find(entry => entry.dataset_type === 'editions');
     const alertDetail = document.getElementById('admin-delete-alerts-import-detail');
     const editionDetail = document.getElementById('admin-delete-editions-import-detail');
-    const alertButton = document.getElementById('btn-admin-delete-alerts-import');
-    const editionButton = document.getElementById('btn-admin-delete-editions-import');
-    if (alertDetail) alertDetail.textContent = describe('alerts', 'No hay export de alertas guardado.');
-    if (editionDetail) editionDetail.textContent = describe('editions', 'No hay export de ediciones guardado.');
-    if (alertButton) alertButton.disabled = !alertImport;
-    if (editionButton) editionButton.disabled = !editionImport;
+    if (alertDetail && editionDetail) {
+      populate('alerts', 'admin-delete-alerts-import-select', 'admin-delete-alerts-import-detail', 'btn-admin-delete-alerts-import', 'No hay export general guardado.');
+      populate('editions', 'admin-delete-editions-import-select', 'admin-delete-editions-import-detail', 'btn-admin-delete-editions-import', 'No hay export de ediciones guardado.');
+    }
   }
 
   async deleteAdminExternalAnalysis(datasetType) {
@@ -934,15 +947,17 @@ class ValidaFlowApp {
       this.showToast('Esta acción requiere una sesión administrativa.', 'error');
       return;
     }
-    const importInfo = (this.adminExternalImports || []).find(item => item.dataset_type === datasetType);
+    const selectId = datasetType === 'alerts' ? 'admin-delete-alerts-import-select' : 'admin-delete-editions-import-select';
+    const periodMonth = document.getElementById(selectId)?.value;
+    const importInfo = (this.adminExternalImports || []).find(item => item.dataset_type === datasetType && item.period_month === periodMonth);
     if (!importInfo) {
       this.showToast('No hay una carga guardada de este tipo para eliminar.', 'warning');
       return;
     }
-    const typeLabel = datasetType === 'alerts' ? 'export de alertas' : 'export de ediciones';
-    const confirmation = `ELIMINAR ${datasetType === 'alerts' ? 'ALERTAS' : 'EDICIONES'}`;
+    const typeLabel = datasetType === 'alerts' ? 'export general' : 'export de ediciones';
+    const confirmation = `ELIMINAR ${datasetType === 'alerts' ? 'EXPORT GENERAL' : 'EDICIONES'}`;
     const confirmed = confirm(
-      `¿Eliminar permanentemente el ${typeLabel} “${importInfo.source_filename || 'sin nombre'}”?\n\n` +
+      `¿Eliminar permanentemente el ${typeLabel} de ${this.formatExternalImportMonth(importInfo.period_month)} “${importInfo.source_filename || 'sin nombre'}”?\n\n` +
       `Se borrarán ${Number(importInfo.row_count || 0).toLocaleString('es-CO')} registros normalizados y no se podrán recuperar.`
     );
     if (!confirmed) return;
@@ -959,8 +974,8 @@ class ValidaFlowApp {
       button.textContent = 'Eliminando…';
     }
     try {
-      await this.backend.deleteAdminAnalysisImport(datasetType);
-      this.adminExternalImports = (this.adminExternalImports || []).filter(item => item.dataset_type !== datasetType);
+      await this.backend.deleteAdminAnalysisImport(datasetType, importInfo.period_month);
+      this.adminExternalImports = (this.adminExternalImports || []).filter(item => !(item.dataset_type === datasetType && item.period_month === importInfo.period_month));
       this.adminExternalAnalysis = null;
       this.renderAdminExternalImportDeletionOptions();
       this.showToast(`Se eliminó el ${typeLabel} y sus registros guardados.`, 'success');
@@ -1127,21 +1142,33 @@ class ValidaFlowApp {
   async importAdminExternalAnalysis(datasetType) {
     if (!this.canUseExternalAnalysis()) return;
     const inputId = datasetType === 'alerts' ? 'admin-alerts-export-input' : 'admin-editions-export-input';
+    const periodInputId = datasetType === 'alerts' ? 'admin-alerts-export-period' : 'admin-editions-export-period';
     const file = document.getElementById(inputId)?.files?.[0];
+    const periodMonth = document.getElementById(periodInputId)?.value;
     try {
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(periodMonth || ''))) {
+        throw new Error('Selecciona el mes de referencia antes de cargar el export.');
+      }
       const rawRows = await this.readExternalExportRows(file);
       const rows = datasetType === 'alerts'
         ? this.normalizeAlertExportRows(rawRows)
         : this.normalizeEditionExportRows(rawRows);
       if (!rows.length) throw new Error('No se encontró una columna válida de ID de auditoría en el archivo.');
       this.showToast(`Guardando ${rows.length.toLocaleString('es-CO')} registros útiles…`, 'info');
-      await this.backend.replaceAdminAnalysisImport({ datasetType, sourceFilename: file.name, rows });
+      await this.backend.replaceAdminAnalysisImport({ datasetType, sourceFilename: file.name, periodMonth, rows });
       await this.refreshAdminExternalAnalysis();
       if (inputId) document.getElementById(inputId).value = '';
-      this.showToast(`Export de ${datasetType === 'alerts' ? 'alertas' : 'ediciones'} cargado y cruzado correctamente.`, 'success');
+      this.showToast(`Export de ${datasetType === 'alerts' ? 'general' : 'ediciones'} cargado y cruzado correctamente para ${this.formatExternalImportMonth(periodMonth)}.`, 'success');
     } catch (error) {
       this.showToast(error.message || 'No fue posible cargar el export.', 'error');
     }
+  }
+
+  formatExternalImportMonth(value) {
+    const match = String(value || '').match(/^(\d{4})-(\d{2})/);
+    if (!match) return 'el mes seleccionado';
+    return new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' })
+      .format(new Date(Number(match[1]), Number(match[2]) - 1, 1));
   }
 
   async refreshAdminExternalAnalysis() {
@@ -1186,8 +1213,8 @@ class ValidaFlowApp {
       return acc;
     }, {})).sort((a, b) => b[1] - a[1]);
 
-    setText('admin-alerts-import-status', alertImport ? `Archivo activo: ${alertImport.source_filename} · ${formatNumber(alertImport.row_count)} registros útiles.` : 'Aún no se ha cargado un export de auditorías.');
-    setText('admin-editions-import-status', editionImport ? `Archivo activo: ${editionImport.source_filename} · ${formatNumber(editionImport.row_count)} registros útiles.` : 'Primero carga la base de alertas y luego el export de ediciones.');
+    setText('admin-alerts-import-status', alertImport ? `Último export: ${alertImport.source_filename} · ${this.formatExternalImportMonth(alertImport.period_month)} · ${formatNumber(alertImport.row_count)} registros útiles.` : 'Aún no se ha cargado un export general.');
+    setText('admin-editions-import-status', editionImport ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles.` : 'Primero carga el export general y luego el de ediciones.');
     setText('admin-alerts-source-count', formatNumber(analysis.alertRecords.length));
     setText('admin-alerts-count', formatNumber(alertRows.length));
     setText('admin-alerts-matched-count', formatNumber(matchedAlerts.length));
@@ -1199,12 +1226,13 @@ class ValidaFlowApp {
     const alertsTbody = document.getElementById('admin-alerts-analysis-tbody');
     if (alertsTbody) {
       alertsTbody.innerHTML = alertRows.length ? alertRows.slice().sort((a, b) => String(a.auditor || '').localeCompare(String(b.auditor || ''))).slice(0, 100).map(record => `<tr>
-        <td><code>${escapeHtml(record.audit_external_id)}</code></td><td>${escapeHtml(record.alert_label || record.alert_status || record.audit_status)}</td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${platformIds.has(String(record.audit_external_id)) ? 'badge-success' : 'badge-warning'}">${platformIds.has(String(record.audit_external_id)) ? 'Encontrada' : 'No encontrada'}</span></td>
-      </tr>`).join('') : '<tr><td colspan="7" class="text-center text-muted">Sin auditorías alertadas cargadas.</td></tr>';
+        <td><code>${escapeHtml(record.audit_external_id)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(record.period_month))}</td><td>${escapeHtml(record.alert_label || record.alert_status || record.audit_status)}</td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${platformIds.has(String(record.audit_external_id)) ? 'badge-success' : 'badge-warning'}">${platformIds.has(String(record.audit_external_id)) ? 'Encontrada' : 'No encontrada'}</span></td>
+      </tr>`).join('') : '<tr><td colspan="8" class="text-center text-muted">Sin auditorías alertadas cargadas.</td></tr>';
     }
 
-    const editsById = new Map((analysis.editRecords || []).map(record => [String(record.audit_external_id), record]));
-    const alertEditionRows = alertRows.map(alert => ({ alert, edit: editsById.get(String(alert.audit_external_id)) || null }));
+    const periodAuditKey = record => `${record?.period_month || ''}|${record?.audit_external_id || ''}`;
+    const editsById = new Map((analysis.editRecords || []).map(record => [periodAuditKey(record), record]));
+    const alertEditionRows = alertRows.map(alert => ({ alert, edit: editsById.get(periodAuditKey(alert)) || null }));
     const withChanges = alertEditionRows.filter(item => Number(item.edit?.modifications_count || 0) > 0);
     const withoutChanges = alertEditionRows.length - withChanges.length;
     const averageChanges = withChanges.length ? withChanges.reduce((total, item) => total + Number(item.edit.modifications_count || 0), 0) / withChanges.length : 0;
@@ -1219,8 +1247,8 @@ class ValidaFlowApp {
     if (editionsTbody) {
       editionsTbody.innerHTML = alertEditionRows.length ? alertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)).slice(0, 100).map(({ alert, edit }) => {
         const changes = Number(edit?.modifications_count || 0);
-        return `<tr><td><code>${escapeHtml(alert.audit_external_id)}</code></td><td>${escapeHtml(alert.auditor)}</td><td>${escapeHtml(alert.country)}<small>${escapeHtml(alert.city)}</small></td><td>${escapeHtml(alert.alert_label || alert.alert_status || alert.audit_status)}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.last_validator || '—')}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td></tr>`;
-      }).join('') : '<tr><td colspan="7" class="text-center text-muted">Carga primero la base de alertas.</td></tr>';
+        return `<tr><td><code>${escapeHtml(alert.audit_external_id)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(edit?.period_month || alert.period_month))}</td><td>${escapeHtml(alert.auditor)}</td><td>${escapeHtml(alert.country)}<small>${escapeHtml(alert.city)}</small></td><td>${escapeHtml(alert.alert_label || alert.alert_status || alert.audit_status)}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.last_validator || '—')}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td></tr>`;
+      }).join('') : '<tr><td colspan="8" class="text-center text-muted">Carga primero el export general.</td></tr>';
     }
   }
 

@@ -719,7 +719,7 @@ export class SupabaseBackend {
     };
   }
 
-  async replaceAdminAnalysisImport({ datasetType, sourceFilename, rows }) {
+  async replaceAdminAnalysisImport({ datasetType, sourceFilename, periodMonth, rows }) {
     this.ensureConfigured();
     const table = datasetType === 'alerts'
       ? 'admin_alert_export_records'
@@ -727,15 +727,20 @@ export class SupabaseBackend {
         ? 'admin_edit_export_records'
         : null;
     if (!table) throw new Error('Tipo de importación no válido.');
+    const normalizedMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(periodMonth || ''))
+      ? `${periodMonth}-01`
+      : null;
+    if (!normalizedMonth) throw new Error('Selecciona el mes de referencia del export.');
 
     const { error: deleteError } = await this.client
       .from(table)
       .delete()
-      .gt('id', 0);
+      .eq('period_month', normalizedMonth);
     if (deleteError) throw deleteError;
 
-    for (let offset = 0; offset < rows.length; offset += 500) {
-      const { error } = await this.client.from(table).insert(rows.slice(offset, offset + 500));
+    const rowsForMonth = rows.map(row => ({ ...row, period_month: normalizedMonth }));
+    for (let offset = 0; offset < rowsForMonth.length; offset += 500) {
+      const { error } = await this.client.from(table).insert(rowsForMonth.slice(offset, offset + 500));
       if (error) throw error;
     }
 
@@ -744,11 +749,12 @@ export class SupabaseBackend {
       .from('admin_analysis_imports')
       .upsert({
         dataset_type: datasetType,
+        period_month: normalizedMonth,
         source_filename: String(sourceFilename || 'archivo_sin_nombre'),
         row_count: rows.length,
         imported_at: new Date().toISOString(),
         imported_by: user?.id || null
-      }, { onConflict: 'dataset_type' });
+      }, { onConflict: 'dataset_type,period_month' });
     if (importError) throw importError;
   }
 
@@ -756,13 +762,14 @@ export class SupabaseBackend {
     this.ensureConfigured();
     const { data, error } = await this.client
       .from('admin_analysis_imports')
-      .select('dataset_type, source_filename, row_count, imported_at')
+      .select('dataset_type, period_month, source_filename, row_count, imported_at')
+      .order('period_month', { ascending: false })
       .order('dataset_type');
     if (error) throw error;
     return data || [];
   }
 
-  async deleteAdminAnalysisImport(datasetType) {
+  async deleteAdminAnalysisImport(datasetType, periodMonth) {
     this.ensureConfigured();
     const table = datasetType === 'alerts'
       ? 'admin_alert_export_records'
@@ -770,17 +777,21 @@ export class SupabaseBackend {
         ? 'admin_edit_export_records'
         : null;
     if (!table) throw new Error('Tipo de export no válido.');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(periodMonth || ''))) {
+      throw new Error('Selecciona el mes del export que deseas eliminar.');
+    }
 
     const { error: recordsError } = await this.client
       .from(table)
       .delete()
-      .gt('id', 0);
+      .eq('period_month', periodMonth);
     if (recordsError) throw recordsError;
 
     const { error: importError } = await this.client
       .from('admin_analysis_imports')
       .delete()
-      .eq('dataset_type', datasetType);
+      .eq('dataset_type', datasetType)
+      .eq('period_month', periodMonth);
     if (importError) throw importError;
   }
 
@@ -805,8 +816,8 @@ export class SupabaseBackend {
     this.ensureConfigured();
     const [imports, alertRecords, editRecords] = await Promise.all([
       this.loadAdminAnalysisImports(),
-      this.loadAllAdminAnalysisRows('admin_alert_export_records', 'audit_external_id, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, country, channel, city, auditor, audit_date, wave, study'),
-      this.loadAllAdminAnalysisRows('admin_edit_export_records', 'audit_external_id, study, country, audit_status, wave, modifications_count, status_changes_count, first_validation_started_at, first_validation_completed_at, first_validator, last_validation_started_at, last_validation_completed_at, last_validator')
+      this.loadAllAdminAnalysisRows('admin_alert_export_records', 'audit_external_id, period_month, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, country, channel, city, auditor, audit_date, wave, study'),
+      this.loadAllAdminAnalysisRows('admin_edit_export_records', 'audit_external_id, period_month, study, country, audit_status, wave, modifications_count, status_changes_count, first_validation_started_at, first_validation_completed_at, first_validator, last_validation_started_at, last_validation_completed_at, last_validator')
     ]);
     return {
       imports,
