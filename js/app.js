@@ -191,7 +191,7 @@ class ValidaFlowApp {
   }
 
   getVisualizationModuleFilter() {
-    if (this.currentView !== 'visualizations' || this.currentRole === 'commercial') return 'all';
+    if (this.currentView !== 'visualizations') return 'all';
     return ['smart', 'blocking'].includes(this.visualizationModuleFilter)
       ? this.visualizationModuleFilter
       : 'all';
@@ -286,7 +286,7 @@ class ValidaFlowApp {
     });
     document.getElementById('btn-subtab-operational')?.classList.toggle('hidden', isCommercial);
     document.getElementById('btn-subtab-executive')?.classList.toggle('hidden', !isCommercial);
-    document.getElementById('visualization-module-switcher')?.classList.toggle('hidden', isCommercial);
+    document.getElementById('visualization-module-switcher')?.classList.remove('hidden');
     this.updateVisualizationModuleControls();
     this.switchReportsSubtab(isCommercial ? 'executive' : 'operational');
     this.switchVisualizationTab(isCommercial ? 'committee' : this.visualizationTab || 'overview');
@@ -318,7 +318,7 @@ class ValidaFlowApp {
       this.renderReportsView();
       this.renderDailyReportsView();
       const visualizationModule = this.getVisualizationModuleFilter();
-      if (visualizationModule === 'all' && !isCommercial) {
+      if (visualizationModule === 'all') {
         Promise.all(['smart', 'blocking'].map(module => this.ensureHistoricalReportsLoaded({ module })))
           .catch(error => console.error('No fue posible cargar el histórico segmentado:', error));
       } else {
