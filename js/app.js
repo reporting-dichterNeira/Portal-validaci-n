@@ -42,6 +42,10 @@ class ValidaFlowApp {
     this.pendingStaffRole = 'supervisor';
     this.adminData = { countries: [], studies: [], supervisors: [], assignments: [] };
     this.adminExternalAnalysis = { imports: [], alertRecords: [], editRecords: [], platformAuditIds: new Set() };
+    this.adminAlertsStudyFilter = 'all';
+    this.adminAlertsAuditorFilter = 'all';
+    this.adminAlertsFilteredRows = [];
+    this.adminAlertCrossByAuditId = new Map();
     this.adminAnalysisSheet = 'core';
     this.visualizationTab = 'overview';
     this.visualizationModuleFilter = 'all';
@@ -1265,7 +1269,7 @@ class ValidaFlowApp {
         }
         return items;
       }, []);
-      this.adminExternalAnalysis = { ...analysis, platformAuditIds, platformAlertAudits };
+      this.adminExternalAnalysis = { ...analysis, platformAudits, platformAuditIds, platformAlertAudits };
       this.renderAdminExternalAnalysis();
     } catch (error) {
       console.error('No fue posible cargar el análisis administrativo:', error);
@@ -1288,6 +1292,10 @@ class ValidaFlowApp {
     const platformAlertAudits = visualizationModule === 'all'
       ? allPlatformAlertAudits
       : allPlatformAlertAudits.filter(item => item.audit?._module === visualizationModule || item.audit?.module === visualizationModule);
+    const allPlatformAudits = analysis.platformAudits || [];
+    const platformAudits = visualizationModule === 'all'
+      ? allPlatformAudits
+      : allPlatformAudits.filter(audit => audit?._module === visualizationModule || audit?.module === visualizationModule);
     // The general export supplies the audit context for the cross. Keep all
     // of its rows visible, including imports created before the rule changed.
     const allAlertRows = analysis.alertRecords || [];
@@ -1299,6 +1307,41 @@ class ValidaFlowApp {
     const alertRows = visualizationModule === 'all'
       ? allAlertRows
       : allAlertRows.filter(record => platformIds.has(String(record.audit_external_id || '').trim()));
+    const platformAlertByAuditId = new Map(platformAlertAudits.map(item => [
+      String(item.audit?.id || '').trim(),
+      item
+    ]));
+    const platformAuditByAuditId = new Map(platformAudits.map(audit => [String(audit?.id || '').trim(), audit]));
+    const buildAlertItem = record => {
+      const auditId = String(record.audit_external_id || '').trim();
+      const platformAlert = platformAlertByAuditId.get(auditId) || null;
+      const audit = platformAlert?.audit || platformAuditByAuditId.get(auditId) || null;
+      const alertKpis = audit
+        ? (Array.isArray(audit.kpis) ? audit.kpis : []).filter(kpi => (
+          kpi?.needsReview || /alerta/i.test(String(kpi?.alertaStatus || ''))
+        ))
+        : [];
+      const decisions = alertKpis.map(kpi => ({
+        name: kpi?.name || 'Alerta sin nombre',
+        status: String(audit?.validationResults?.[kpi?.name]?.status || '').toLowerCase()
+      }));
+      const applicableAlerts = decisions.filter(item => item.status === 'aplica');
+      const noApplicableAlerts = decisions.filter(item => item.status === 'no_aplica');
+      const pendingAlerts = decisions.filter(item => !['aplica', 'no_aplica'].includes(item.status));
+      return {
+        record,
+        auditId,
+        audit,
+        platformAlert,
+        matched: Boolean(audit),
+        summary: {
+          total: audit ? alertKpis.length : null,
+          applicableAlerts,
+          noApplicableAlerts,
+          pendingAlerts
+        }
+      };
+    };
     const availableStudies = [...new Set(alertRows.map(record => String(record.study || '').trim()).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'es'));
     const requestedStudy = this.adminAlertsStudyFilter || 'all';
@@ -1313,11 +1356,29 @@ class ValidaFlowApp {
         studyFilter.dataset.filterBound = 'true';
       }
     }
-    const filteredAlertRows = activeStudy === 'all'
+    const studyFilteredAlertRows = activeStudy === 'all'
       ? alertRows
       : alertRows.filter(record => String(record.study || '').trim() === activeStudy);
-    const matchedAlerts = filteredAlertRows.filter(record => platformIds.has(String(record.audit_external_id)));
-    const percentage = filteredAlertRows.length ? `${Math.round((matchedAlerts.length / filteredAlertRows.length) * 100)}%` : '0%';
+    const availableAuditors = [...new Set(studyFilteredAlertRows.map(record => String(record.auditor || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'es'));
+    const requestedAuditor = this.adminAlertsAuditorFilter || 'all';
+    const activeAuditor = requestedAuditor === 'all' || availableAuditors.includes(requestedAuditor) ? requestedAuditor : 'all';
+    this.adminAlertsAuditorFilter = activeAuditor;
+    const auditorFilter = document.getElementById('admin-alerts-auditor-filter');
+    if (auditorFilter) {
+      auditorFilter.innerHTML = `<option value="all">Todos los auditores</option>${availableAuditors.map(auditor => `<option value="${escapeHtml(auditor)}">${escapeHtml(auditor)}</option>`).join('')}`;
+      auditorFilter.value = activeAuditor;
+      if (auditorFilter.dataset.filterBound !== 'true') {
+        auditorFilter.addEventListener('change', event => this.setAdminAlertsAuditorFilter(event.target.value));
+        auditorFilter.dataset.filterBound = 'true';
+      }
+    }
+    const filteredAlertRows = activeAuditor === 'all'
+      ? studyFilteredAlertRows
+      : studyFilteredAlertRows.filter(record => String(record.auditor || '').trim() === activeAuditor);
+    const filteredAlertItems = filteredAlertRows.map(buildAlertItem);
+    const matchedAlerts = filteredAlertItems.filter(item => item.matched);
+    const percentage = filteredAlertItems.length ? `${Math.round((matchedAlerts.length / filteredAlertItems.length) * 100)}%` : '0%';
     const renderRanking = (id, rows) => {
       const element = document.getElementById(id);
       if (!element) return;
@@ -1343,12 +1404,34 @@ class ValidaFlowApp {
     renderRanking('admin-alerts-top-cities', rank(filteredAlertRows, 'city'));
     renderRanking('admin-alerts-top-channels', rank(filteredAlertRows, 'channel'));
     renderRanking('admin-alerts-top-countries', rank(filteredAlertRows, 'country'));
+    const appliesByKpi = Object.entries(filteredAlertItems.reduce((counts, item) => {
+      item.summary.applicableAlerts.forEach(alert => {
+        counts[alert.name] = (counts[alert.name] || 0) + 1;
+      });
+      return counts;
+    }, {})).sort((a, b) => b[1] - a[1]);
+    renderRanking('admin-alerts-top-applies-kpi', appliesByKpi);
+
+    this.adminAlertsFilteredRows = filteredAlertItems;
+    this.adminAlertCrossByAuditId = new Map(alertRows.map(record => {
+      const item = buildAlertItem(record);
+      return [item.auditId, item];
+    }));
 
     const alertsTbody = document.getElementById('admin-alerts-analysis-tbody');
     if (alertsTbody) {
-      alertsTbody.innerHTML = filteredAlertRows.length ? filteredAlertRows.slice().sort((a, b) => String(a.auditor || '').localeCompare(String(b.auditor || ''))).slice(0, 100).map(record => `<tr>
-        <td><code>${escapeHtml(record.audit_external_id)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(record.period_month))}</td><td>${escapeHtml(record.study)}</td><td>${escapeHtml(record.alert_label || record.alert_status || record.audit_status)}</td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${platformIds.has(String(record.audit_external_id)) ? 'badge-success' : 'badge-warning'}">${platformIds.has(String(record.audit_external_id)) ? 'Encontrada' : 'No encontrada'}</span></td>
-      </tr>`).join('') : '<tr><td colspan="9" class="text-center text-muted">No hay alertas para el estudio seleccionado.</td></tr>';
+      const previewItems = filteredAlertItems
+        .slice()
+        .sort((a, b) => String(a.record.auditor || '').localeCompare(String(b.record.auditor || ''), 'es'))
+        .slice(0, 250);
+      alertsTbody.innerHTML = previewItems.length ? previewItems.map(item => {
+        const { record, auditId, matched, summary } = item;
+        const detailsKey = encodeURIComponent(auditId);
+        const valueOrDash = value => matched ? formatNumber(value) : '—';
+        return `<tr>
+          <td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(record.period_month))}</td><td>${escapeHtml(record.study)}</td><td><strong>${valueOrDash(summary.total)}</strong></td><td><strong class="text-success">${valueOrDash(summary.applicableAlerts.length)}</strong></td><td><strong class="text-magenta">${valueOrDash(summary.noApplicableAlerts.length)}</strong></td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${matched ? 'badge-success' : 'badge-warning'}">${matched ? 'Encontrada' : 'No encontrada'}</span></td><td><button class="btn btn-outline btn-sm" type="button" ${matched ? `onclick="window.app?.showAlertAuditDetail(decodeURIComponent('${detailsKey}'))"` : 'disabled title="No se encontró esta auditoría en ValidaFlow"'}>Ver detalle</button></td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="12" class="text-center text-muted">No hay auditorías que cumplan con los filtros seleccionados.</td></tr>';
     }
 
     const contextByAuditId = new Map((analysis.alertRecords || []).map(record => [String(record.audit_external_id || '').trim(), record]));
@@ -1506,6 +1589,85 @@ class ValidaFlowApp {
   setAdminAlertsStudyFilter(study) {
     this.adminAlertsStudyFilter = String(study || 'all');
     this.renderAdminExternalAnalysis();
+  }
+
+  setAdminAlertsAuditorFilter(auditor) {
+    this.adminAlertsAuditorFilter = String(auditor || 'all');
+    this.renderAdminExternalAnalysis();
+  }
+
+  showAlertAuditDetail(auditId) {
+    const item = this.adminAlertCrossByAuditId?.get(String(auditId || '').trim());
+    if (!item?.matched) {
+      this.showToast('No se encontró el detalle de alertas de esta auditoría en ValidaFlow.', 'warning');
+      return;
+    }
+    const escapeHtml = value => String(value ?? '—').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+    const { record, audit, summary } = item;
+    const title = document.getElementById('alert-audit-detail-title');
+    const subtitle = document.getElementById('alert-audit-detail-subtitle');
+    const applies = document.getElementById('alert-audit-detail-applies');
+    const noApplies = document.getElementById('alert-audit-detail-no-applies');
+    const detailSummary = document.getElementById('alert-audit-detail-summary');
+    if (title) title.textContent = `Detalle de alertas · Auditoría #${item.auditId}`;
+    if (subtitle) subtitle.textContent = `${record.auditor || 'Auditor sin dato'} · ${record.pdv_name || record.pdv_id || 'PDV sin dato'}.`;
+    const renderList = (entries, emptyMessage) => entries.length
+      ? `<ul class="edition-detail-list">${entries.map(entry => `<li>${escapeHtml(entry.name)}</li>`).join('')}</ul>`
+      : `<p class="text-muted">${emptyMessage}</p>`;
+    if (applies) applies.innerHTML = renderList(summary.applicableAlerts, 'No hay alertas marcadas como Aplica.');
+    if (noApplies) noApplies.innerHTML = renderList(summary.noApplicableAlerts, 'No hay alertas marcadas como No aplica.');
+    if (detailSummary) {
+      const pending = summary.pendingAlerts.length;
+      detailSummary.textContent = `${summary.total} alerta(s) reportada(s): ${summary.applicableAlerts.length} Aplica y ${summary.noApplicableAlerts.length} No aplica${pending ? ` · ${pending} sin decisión registrada` : ''}. Validada por: ${audit?._validatorName || audit?.validadorNombre || 'sin dato'}.`;
+    }
+    document.getElementById('modal-alert-audit-detail')?.classList.remove('hidden');
+  }
+
+  exportAdminAlertsTable() {
+    const rows = this.adminAlertsFilteredRows || [];
+    if (!rows.length) {
+      this.showToast('No hay auditorías para exportar con los filtros seleccionados.', 'warning');
+      return;
+    }
+    if (!window.XLSX) {
+      this.showToast('La librería de Excel aún no está disponible. Intenta nuevamente.', 'error');
+      return;
+    }
+    const exportRows = rows.map(item => {
+      const { record, matched, summary } = item;
+      return {
+        'ID auditoría': item.auditId,
+        Mes: this.formatExternalImportMonth(record.period_month),
+        Estudio: record.study || '',
+        Auditor: record.auditor || '',
+        PDV: record.pdv_id || '',
+        'Nombre PDV': record.pdv_name || '',
+        País: record.country || '',
+        Ciudad: record.city || '',
+        Canal: record.channel || '',
+        'Cruce ValidaFlow': matched ? 'Encontrada' : 'No encontrada',
+        'Alertas totales': matched ? summary.total : '',
+        'Alertas Aplica': matched ? summary.applicableAlerts.length : '',
+        'Detalle alertas Aplica': matched ? summary.applicableAlerts.map(alert => alert.name).join(' | ') : '',
+        'Alertas No aplica': matched ? summary.noApplicableAlerts.length : '',
+        'Detalle alertas No aplica': matched ? summary.noApplicableAlerts.map(alert => alert.name).join(' | ') : '',
+        'Alertas sin decisión': matched ? summary.pendingAlerts.length : ''
+      };
+    });
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    worksheet['!cols'] = [
+      { wch: 15 }, { wch: 18 }, { wch: 24 }, { wch: 26 }, { wch: 16 }, { wch: 34 },
+      { wch: 20 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 16 },
+      { wch: 18 }, { wch: 52 }, { wch: 18 }, { wch: 52 }, { wch: 20 }
+    ];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Cruce de alertas');
+    const auditor = this.adminAlertsAuditorFilter && this.adminAlertsAuditorFilter !== 'all'
+      ? this.adminAlertsAuditorFilter
+      : 'todos_los_auditores';
+    const safeAuditor = String(auditor).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'auditor';
+    XLSX.writeFile(workbook, `Cruce_alertas_${safeAuditor}.xlsx`);
+    this.showToast(`Descargando ${exportRows.length.toLocaleString('es-CO')} auditorías filtradas.`, 'success');
   }
 
   renderAdministratorProductivity() {

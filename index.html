@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=48.0" />
+  <link rel="stylesheet" href="css/styles.css?v=49.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -777,6 +777,8 @@
           <div class="admin-analysis-filter-bar">
             <label for="admin-alerts-study-filter">Filtrar por estudio</label>
             <select id="admin-alerts-study-filter" class="form-select"><option value="all">Todos los estudios</option></select>
+            <label for="admin-alerts-auditor-filter">Filtrar por auditor</label>
+            <select id="admin-alerts-auditor-filter" class="form-select"><option value="all">Todos los auditores</option></select>
             <span class="form-help" id="admin-alerts-filter-count">—</span>
           </div>
 
@@ -787,16 +789,17 @@
             <div class="stat-card"><div class="stat-icon-wrapper icon-purple">📊</div><div class="stat-details"><span class="stat-label">Tasa de cruce</span><strong class="stat-value" id="admin-alerts-match-rate">0%</strong></div></div>
           </div>
 
-          <div class="admin-analysis-grid admin-analysis-grid-four">
+          <div class="admin-analysis-grid admin-analysis-grid-five">
             <section class="admin-analysis-card"><h3>👤 Auditor con más alertas</h3><div id="admin-alerts-top-auditors" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
             <section class="admin-analysis-card"><h3>📍 Ciudades con más alertas</h3><div id="admin-alerts-top-cities" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
             <section class="admin-analysis-card"><h3>📺 Canales con más alertas</h3><div id="admin-alerts-top-channels" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
             <section class="admin-analysis-card"><h3>🌎 Países con más alertas</h3><div id="admin-alerts-top-countries" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
+            <section class="admin-analysis-card"><h3>🎯 KPI con más alertas “Aplica”</h3><p class="form-help">Se actualiza según los filtros elegidos.</p><div id="admin-alerts-top-applies-kpi" class="admin-analysis-ranking"><span class="text-muted">Carga un export para ver el análisis.</span></div></section>
           </div>
 
           <section class="admin-analysis-card admin-analysis-table-card">
-            <h3>Detalle cruzado de alertas</h3>
-            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Estudio</th><th>Alerta</th><th>Auditor</th><th>PDV</th><th>País / ciudad</th><th>Canal</th><th>Cruce ValidaFlow</th></tr></thead><tbody id="admin-alerts-analysis-tbody"><tr><td colspan="9" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
+            <div class="admin-analysis-table-heading"><div><h3>Detalle cruzado de alertas</h3><p class="form-help">Consulta los KPIs alertados y su decisión final en cada auditoría.</p></div><button class="btn btn-success btn-sm" type="button" onclick="window.app?.exportAdminAlertsTable()">📊 Descargar tabla filtrada</button></div>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Estudio</th><th>Alertas</th><th>Aplica</th><th>No aplica</th><th>Auditor</th><th>PDV</th><th>País / ciudad</th><th>Canal</th><th>Cruce ValidaFlow</th><th>Detalle</th></tr></thead><tbody id="admin-alerts-analysis-tbody"><tr><td colspan="12" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
           </section>
         </section>
 
@@ -1884,6 +1887,25 @@
     </div>
   </div>
 
+  <div class="modal-overlay hidden" id="modal-alert-audit-detail" role="dialog" aria-modal="true" aria-labelledby="alert-audit-detail-title">
+    <div class="modal-card modal-card-md edition-audit-detail-modal">
+      <div class="modal-header">
+        <div>
+          <span class="corporate-badge-sm">dichter & neira • Cruce de alertas</span>
+          <h3 id="alert-audit-detail-title">Detalle de alertas de la auditoría</h3>
+          <p class="modal-desc-sm" id="alert-audit-detail-subtitle">—</p>
+        </div>
+        <button class="btn-close-modal" type="button" aria-label="Cerrar" onclick="document.getElementById('modal-alert-audit-detail').classList.add('hidden')">✕</button>
+      </div>
+      <div class="modal-body">
+        <section class="edition-detail-section"><h4>✓ Alertas marcadas como Aplica</h4><div id="alert-audit-detail-applies"></div></section>
+        <section class="edition-detail-section"><h4>✕ Alertas marcadas como No aplica</h4><div id="alert-audit-detail-no-applies"></div></section>
+        <p class="form-help" id="alert-audit-detail-summary"></p>
+      </div>
+      <div class="modal-footer"><button class="btn btn-secondary" type="button" onclick="document.getElementById('modal-alert-audit-detail').classList.add('hidden')">Cerrar</button></div>
+    </div>
+  </div>
+
   <!-- ======================================================== -->
   <!-- MODAL: LOGIN DEL SUPERVISOR                              -->
   <!-- ======================================================== -->
@@ -2737,6 +2759,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=76.0"></script>
+  <script type="module" src="js/app.js?v=77.0"></script>
 </body>
 </html>
