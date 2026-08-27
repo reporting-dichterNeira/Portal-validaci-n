@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=33.0';
-import { SupabaseBackend } from './supabase-backend.js?v=44.0';
+import { SupabaseBackend } from './supabase-backend.js?v=46.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -1514,6 +1514,7 @@ class ValidaFlowApp {
       studies = [],
       supervisors = [],
       batchCreators = supervisors,
+      batchUploaders = [],
       assignments = [],
       validators = [],
       batches: allBatches = [],
@@ -1534,6 +1535,7 @@ class ValidaFlowApp {
     })[char]);
     const studyById = new Map(studies.map(item => [item.id, item]));
     const supervisorById = new Map(batchCreators.map(item => [item.id, item]));
+    const uploaderByBatchId = new Map(batchUploaders.map(item => [String(item.batchId), item]));
     const assignedSupervisorByScope = new Map(
       assignments.map(assignment => [`${assignment.study_id}:${assignment.module}`, assignment.supervisor_id])
     );
@@ -1600,18 +1602,19 @@ class ValidaFlowApp {
         const batchProgress = batchAudits.length ? Math.round((batchCompleted / batchAudits.length) * 100) : 0;
         const study = studyById.get(batch.study_id);
         const moduleLabel = batch.module === 'blocking' ? 'Bloqueantes' : 'Smart';
-        const uploadedBy = supervisorById.get(batch.created_by);
+        const batchUploader = uploaderByBatchId.get(String(batch.id));
+        const uploadedBy = batchUploader || supervisorById.get(batch.created_by);
         const assignedSupervisorId = assignedSupervisorByScope.get(`${batch.study_id}:${batch.module}`);
-        const supervisor = uploadedBy || supervisorById.get(assignedSupervisorId);
+        const assignedSupervisor = supervisorById.get(assignedSupervisorId);
         const responsibilityDetail = uploadedBy
-          ? `Usuario: ${uploadedBy.username || 'sin usuario'}`
-          : supervisor
-            ? `Supervisor asignado a ${moduleLabel}`
-            : 'No se pudo identificar el usuario de carga';
+          ? `Usuario que cargó la base: ${uploadedBy.username || 'sin usuario'}`
+          : assignedSupervisor
+            ? `Autor no disponible · Supervisor asignado a ${moduleLabel}: ${assignedSupervisor.display_name || assignedSupervisor.username || 'sin identificar'}`
+            : 'Autor no disponible para esta carga histórica';
         return `<tr>
           <td><strong>${escapeHtml(study?.name || 'Sin estudio')}</strong></td>
           <td><span class="badge badge-info">${moduleLabel}</span></td>
-          <td><strong>${escapeHtml(supervisor?.display_name || supervisor?.username || 'Supervisor no identificado')}</strong><small>${escapeHtml(responsibilityDetail)}</small></td>
+          <td><strong>${escapeHtml(uploadedBy?.displayName || uploadedBy?.display_name || uploadedBy?.username || 'Autor no identificado')}</strong><small>${escapeHtml(responsibilityDetail)}</small></td>
           <td><span class="admin-file-name" title="${escapeHtml(batch.source_filename || '')}">${escapeHtml(batch.source_filename || 'Carga sin archivo')}</span><small>${number(batch.row_count)} registros · ${formatDateTime(batch.activated_at || batch.created_at)}</small></td>
           <td><strong>${number(batchCompleted)} / ${number(batchAudits.length)}</strong><div class="admin-progress-track"><span style="width:${batchProgress}%"></span></div></td>
           <td><span class="badge ${batch.status === 'active' ? 'badge-success' : 'badge-secondary'}">${batch.status === 'active' ? 'Activa' : 'Histórica'}</span></td>

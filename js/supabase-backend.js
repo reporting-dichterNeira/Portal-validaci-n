@@ -723,19 +723,31 @@ export class SupabaseBackend {
     const failed = [studies, profiles, assignments, validators, batches].find(result => result.error);
     if (failed?.error) throw failed.error;
     const batchIds = (batches.data || []).map(batch => batch.id);
-    const audits = batchIds.length
-      ? await this.client
-          .from('audits')
-          .select('id, batch_id, study_id, module, status, assigned_validator_id, started_at, completed_at, validation_date, updated_at')
-          .in('batch_id', batchIds)
-      : { data: [], error: null };
+    const [audits, batchUploaders] = await Promise.all([
+      batchIds.length
+        ? this.client
+            .from('audits')
+            .select('id, batch_id, study_id, module, status, assigned_validator_id, started_at, completed_at, validation_date, updated_at')
+            .in('batch_id', batchIds)
+        : Promise.resolve({ data: [], error: null }),
+      batchIds.length
+        ? this.client.rpc('get_visible_batch_uploaders', { p_batch_ids: batchIds })
+        : Promise.resolve({ data: [], error: null })
+    ]);
     if (audits.error) throw audits.error;
+    if (batchUploaders.error) throw batchUploaders.error;
     return {
       studies: studies.data || [],
       // Administrators are included only to resolve the author of a batch;
       // they must not appear in the editable list of portal users.
       supervisors: (profiles.data || []).filter(profile => profile.role !== 'admin'),
       batchCreators: profiles.data || [],
+      batchUploaders: (batchUploaders.data || []).map(row => ({
+        batchId: row.batch_id,
+        creatorId: row.creator_id,
+        username: row.creator_username,
+        displayName: row.creator_display_name
+      })),
       assignments: assignments.data || [],
       validators: validators.data || [],
       batches: batches.data || [],
