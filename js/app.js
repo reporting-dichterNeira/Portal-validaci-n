@@ -2056,11 +2056,12 @@ class ValidaFlowApp {
     const title = document.getElementById('supervisor-hub-title');
     const message = document.getElementById('supervisor-hub-assignment');
     const userName = document.getElementById('supervisor-hub-user-name');
-    if (title) title.textContent = 'Selecciona tu estudio';
+    if (title) title.textContent = 'Selecciona tu operación';
     if (userName) userName.textContent = this.currentProfile?.display_name || 'Supervisor d&n';
     if (message) {
+      const assignedStudies = new Set(assignments.map(assignment => assignment.study?.id || assignment.study?.name).filter(Boolean));
       message.textContent = assignments.length
-        ? `Tienes ${assignments.length} estudio${assignments.length !== 1 ? 's' : ''} asignado${assignments.length !== 1 ? 's' : ''}. ¿Con cuál vas a trabajar hoy?`
+        ? `Tienes ${assignedStudies.size} estudio${assignedStudies.size !== 1 ? 's' : ''} asignado${assignedStudies.size !== 1 ? 's' : ''}. Elige la operación y el tipo de alertas que vas a gestionar hoy.`
         : 'Tu usuario todavía no tiene estudios asignados.';
     }
     if (!grid) return;
@@ -2080,26 +2081,52 @@ class ValidaFlowApp {
       return;
     }
 
-    grid.innerHTML = assignments.map(assignment => {
+    const studies = new Map();
+    assignments.forEach(assignment => {
       const studyName = assignment.study?.name || 'Estudio';
+      const studyKey = assignment.study?.id || studyName;
+      if (!studies.has(studyKey)) {
+        studies.set(studyKey, { studyName, assignments: [] });
+      }
+      studies.get(studyKey).assignments.push(assignment);
+    });
+
+    grid.innerHTML = [...studies.values()].map(({ studyName, assignments: studyAssignments }) => {
       const info = studyInfo[studyName] || { icon: '📚', description: 'Estudio asignado' };
-      const moduleInfo = SUPERVISOR_MODULES[assignment.module] || SUPERVISOR_MODULES.smart;
-      const selected = this.currentScope?.id === assignment.id;
+      const selected = studyAssignments.some(assignment => this.currentScope?.id === assignment.id);
+      const moduleButtons = ['blocking', 'smart'].map(moduleKey => {
+        const assignment = studyAssignments.find(item => item.module === moduleKey);
+        const moduleInfo = SUPERVISOR_MODULES[moduleKey];
+        if (!assignment) {
+          return `
+            <div class="supervisor-module-option is-unavailable" aria-label="${escapeHtml(moduleInfo.label)} no asignado">
+              <span class="supervisor-module-option-icon">${moduleInfo.icon}</span>
+              <span><strong>${escapeHtml(moduleInfo.label)}</strong><small>No asignado</small></span>
+            </div>
+          `;
+        }
+        const isSelected = this.currentScope?.id === assignment.id;
+        return `
+          <button class="supervisor-module-option btn-select-supervisor-study ${moduleKey === 'blocking' ? 'is-blocking' : 'is-smart'} ${isSelected ? 'is-selected' : ''}" type="button" data-assignment-id="${assignment.id}">
+            <span class="supervisor-module-option-icon">${moduleInfo.icon}</span>
+            <span><strong>${escapeHtml(moduleInfo.label)}</strong><small>${isSelected ? 'Seleccionado' : 'Ingresar al módulo'}</small></span>
+            <span class="supervisor-module-option-arrow">→</span>
+          </button>
+        `;
+      }).join('');
       return `
-        <article class="hub-module-card supervisor-study-card ${selected ? 'active-module' : ''}" data-assignment-id="${assignment.id}">
+        <article class="hub-module-card supervisor-study-card supervisor-study-card-grouped ${selected ? 'active-module' : ''}">
           <div class="module-card-header">
             <div class="module-icon-wrap icon-blue">${info.icon}</div>
             <div>
-              <div class="module-tag">Estudio asignado</div>
+              <div class="module-tag">Operación asignada</div>
               <h2 class="module-title">${escapeHtml(studyName)}</h2>
             </div>
           </div>
           <p class="module-desc">${escapeHtml(info.description)}</p>
-          <div class="module-status-bar"><span class="status-indicator-dot dot-green"></span>${moduleInfo.icon} ${escapeHtml(moduleInfo.label)}</div>
-          <div class="module-action-footer">
-            <button class="btn btn-primary btn-glow btn-block btn-select-supervisor-study" type="button" data-assignment-id="${assignment.id}">
-              Trabajar hoy en ${escapeHtml(studyName)} →
-            </button>
+          <div class="supervisor-module-picker" aria-label="Módulos disponibles en ${escapeHtml(studyName)}">
+            <div class="supervisor-module-picker-label">Selecciona el módulo</div>
+            <div class="supervisor-module-options">${moduleButtons}</div>
           </div>
         </article>
       `;

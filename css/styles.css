@@ -1567,6 +1567,136 @@ a {
   min-height: 255px !important;
 }
 
+/* Selector de supervisión: un estudio, módulos separados */
+.supervisor-study-grid {
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+}
+
+.supervisor-study-card-grouped {
+  min-height: 0 !important;
+  padding: 1.35rem !important;
+  gap: 0.8rem;
+}
+
+.supervisor-study-card-grouped .module-card-header {
+  gap: 0.75rem;
+}
+
+.supervisor-study-card-grouped .module-icon-wrap {
+  width: 42px;
+  height: 42px;
+  font-size: 1.2rem;
+}
+
+.supervisor-study-card-grouped .module-title {
+  font-size: 1.15rem;
+}
+
+.supervisor-study-card-grouped .module-desc {
+  min-height: 2.5em;
+  font-size: 0.82rem;
+}
+
+.supervisor-module-picker {
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.8rem;
+}
+
+.supervisor-module-picker-label {
+  color: var(--text-muted);
+  font-size: 0.69rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.55rem;
+  text-transform: uppercase;
+}
+
+.supervisor-module-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.supervisor-module-option {
+  align-items: center;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--dn-navy);
+  display: grid;
+  font: inherit;
+  gap: 0.45rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 56px;
+  padding: 0.55rem 0.6rem;
+  text-align: left;
+  transition: all var(--transition-fast);
+}
+
+button.supervisor-module-option {
+  cursor: pointer;
+}
+
+button.supervisor-module-option:hover {
+  border-color: var(--dn-blue);
+  box-shadow: 0 3px 10px rgba(13, 92, 171, 0.12);
+  transform: translateY(-1px);
+}
+
+.supervisor-module-option.is-blocking {
+  border-left: 4px solid var(--dn-magenta);
+}
+
+.supervisor-module-option.is-smart {
+  border-left: 4px solid var(--dn-cyan);
+}
+
+.supervisor-module-option.is-selected {
+  background: var(--dn-blue-light);
+  border-color: var(--dn-blue);
+  box-shadow: inset 0 0 0 1px var(--dn-blue);
+}
+
+.supervisor-module-option.is-unavailable {
+  border-style: dashed;
+  color: var(--text-muted);
+  grid-template-columns: auto minmax(0, 1fr);
+  opacity: 0.64;
+}
+
+.supervisor-module-option-icon {
+  font-size: 1rem;
+}
+
+.supervisor-module-option strong,
+.supervisor-module-option small {
+  display: block;
+}
+
+.supervisor-module-option strong {
+  font-size: 0.74rem;
+  line-height: 1.15;
+}
+
+.supervisor-module-option small {
+  color: var(--text-secondary);
+  font-size: 0.64rem;
+  margin-top: 0.15rem;
+}
+
+.supervisor-module-option-arrow {
+  color: var(--dn-blue);
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+@media (max-width: 480px) {
+  .supervisor-study-grid,
+  .supervisor-module-options {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 600px) {
   .admin-study-checklist {
     grid-template-columns: 1fr;
