@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=44.0" />
+  <link rel="stylesheet" href="css/styles.css?v=45.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -671,13 +671,12 @@
               <small class="form-help">Mínimo 12 caracteres con mayúscula, minúscula, número y símbolo.</small>
             </div>
             <div class="form-group" id="admin-supervisor-module-group">
-              <label for="admin-supervisor-module">Tipo de alertas</label>
-              <select id="admin-supervisor-module" class="form-select">
-                <option value="">Selecciona un tipo de alertas</option>
-                <option value="smart">Validación Smart</option>
-                <option value="blocking">Alertas Bloqueantes</option>
-              </select>
-              <small class="form-help">Este será el único módulo visible para el supervisor.</small>
+              <span class="form-label">Módulos de alertas</span>
+              <div id="admin-supervisor-modules" class="admin-module-checklist" role="group" aria-label="Módulos de alertas asignados">
+                <label class="admin-study-check-option"><input type="checkbox" value="smart" /><span><strong>🧠⚡ Validación Smart</strong><small>Alertas generadas por la validación Smart.</small></span></label>
+                <label class="admin-study-check-option"><input type="checkbox" value="blocking" /><span><strong>🚫🚨 Alertas Bloqueantes</strong><small>Alertas que requieren control antes de continuar.</small></span></label>
+              </div>
+              <small class="form-help">Puedes asignar uno o ambos módulos al mismo supervisor.</small>
             </div>
           </div>
           <button class="btn btn-navy btn-glow" onclick="window.app?.createAdminUser()" id="btn-create-admin-user">Crear usuario</button>
@@ -1836,12 +1835,12 @@
             <div id="admin-access-study-catalog" class="admin-study-checklist" role="group" aria-label="Estudios del supervisor"></div>
           </div>
           <div class="form-group">
-            <label for="admin-access-module">Tipo de alertas</label>
-            <select id="admin-access-module" class="form-select">
-              <option value="">Selecciona un tipo de alertas</option>
-              <option value="smart">Validación Smart</option>
-              <option value="blocking">Alertas Bloqueantes</option>
-            </select>
+            <span class="form-label">Módulos de alertas</span>
+            <div id="admin-access-modules" class="admin-module-checklist" role="group" aria-label="Módulos de alertas del supervisor">
+              <label class="admin-study-check-option"><input type="checkbox" value="smart" /><span><strong>🧠⚡ Validación Smart</strong><small>Alertas generadas por la validación Smart.</small></span></label>
+              <label class="admin-study-check-option"><input type="checkbox" value="blocking" /><span><strong>🚫🚨 Alertas Bloqueantes</strong><small>Alertas que requieren control antes de continuar.</small></span></label>
+            </div>
+            <small class="form-help">Puedes mantener ambos accesos activos simultáneamente.</small>
           </div>
         </div>
       </div>
@@ -2721,6 +2720,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=65.0"></script>
+  <script type="module" src="js/app.js?v=66.0"></script>
 </body>
 </html>

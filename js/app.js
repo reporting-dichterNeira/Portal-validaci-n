@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=32.0';
-import { SupabaseBackend } from './supabase-backend.js?v=42.0';
+import { SupabaseBackend } from './supabase-backend.js?v=43.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -1593,7 +1593,7 @@ class ValidaFlowApp {
     const help = document.getElementById('admin-user-role-help');
     const button = document.getElementById('btn-create-admin-user');
     if (help) help.textContent = needsScope
-      ? 'Podrá cargar, distribuir y operar únicamente los estudios y módulo seleccionados.'
+      ? 'Podrá cargar, distribuir y operar únicamente los estudios y módulos seleccionados.'
       : role === 'commercial'
         ? 'Solo verá la pestaña Comité Ejecutivo y sus descargas.'
         : 'Incluye supervisión, seguimiento diario, cruces, ediciones, métricas y exportaciones.';
@@ -1640,7 +1640,9 @@ class ValidaFlowApp {
     const userRole = document.getElementById('admin-user-role')?.value || 'supervisor';
     const studyIds = [...document.querySelectorAll('#admin-study-catalog input[type="checkbox"]:checked')]
       .map(input => input.value);
-    const module = document.getElementById('admin-supervisor-module')?.value || '';
+    const modules = [...document.querySelectorAll('#admin-supervisor-modules input[type="checkbox"]:checked')]
+      .map(input => input.value)
+      .filter(module => SUPERVISOR_MODULES[module]);
     if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) {
       this.showToast('El usuario debe tener entre 3 y 32 caracteres: letras minúsculas, números, punto, guion o guion bajo.', 'warning');
       return;
@@ -1653,8 +1655,8 @@ class ValidaFlowApp {
       this.showToast('Selecciona al menos un estudio para el supervisor.', 'warning');
       return;
     }
-    if (userRole === 'supervisor' && !SUPERVISOR_MODULES[module]) {
-      this.showToast('Selecciona si el supervisor trabajará en Validación Smart o Alertas Bloqueantes.', 'warning');
+    if (userRole === 'supervisor' && !modules.length) {
+      this.showToast('Selecciona al menos un módulo de alertas para el supervisor.', 'warning');
       return;
     }
     if (!this.isStrongSupervisorPassword(password)) {
@@ -1662,18 +1664,20 @@ class ValidaFlowApp {
       return;
     }
     try {
-      await this.backend.createPortalUser({ username, displayName, password, userRole, studyIds, module });
+      await this.backend.createPortalUser({ username, displayName, password, userRole, studyIds, modules });
       ['admin-supervisor-username', 'admin-supervisor-name', 'admin-supervisor-password'].forEach(id => {
         const element = document.getElementById(id);
         if (element) element.value = '';
       });
       document.querySelectorAll('#admin-study-catalog input[type="checkbox"]')
         .forEach(input => { input.checked = false; });
+      document.querySelectorAll('#admin-supervisor-modules input[type="checkbox"]')
+        .forEach(input => { input.checked = false; });
       await this.loadAdministratorPanel();
       const roleLabel = userRole === 'commercial' ? 'Usuario Comercial' : 'Usuario de Operaciones';
       this.showAdminCredential(username, password, `${roleLabel} creado · guarda estas credenciales`);
       this.showToast(userRole === 'supervisor'
-        ? `Usuario de Operaciones ${username} creado con ${studyIds.length} estudio${studyIds.length !== 1 ? 's' : ''} y ${SUPERVISOR_MODULES[module].label}.`
+        ? `Usuario de Operaciones ${username} creado con ${studyIds.length} estudio${studyIds.length !== 1 ? 's' : ''} y ${modules.map(module => SUPERVISOR_MODULES[module].label).join(' y ')}.`
         : `${roleLabel} ${username} creado correctamente.`, 'success');
     } catch (error) {
       const message = String(error.message || '');
@@ -1682,7 +1686,7 @@ class ValidaFlowApp {
         : message === 'WEAK_PASSWORD'
           ? 'La contraseña necesita mínimo 12 caracteres, mayúscula, minúscula, número y símbolo.'
           : message === 'MODULE_REQUIRED'
-            ? 'Selecciona el tipo de alertas que tendrá asignado el supervisor.'
+            ? 'Selecciona al menos un módulo de alertas para el supervisor.'
           : message || 'No fue posible crear el supervisor.';
       this.showToast(friendlyMessage, 'error');
     }
@@ -1706,7 +1710,6 @@ class ValidaFlowApp {
     const role = document.getElementById('admin-access-role');
     const description = document.getElementById('admin-user-access-description');
     const catalog = document.getElementById('admin-access-study-catalog');
-    const module = document.getElementById('admin-access-module');
     if (!modal) {
       this.showToast('No se encontró la ventana para cambiar el acceso. Actualiza la página.', 'error');
       return;
@@ -1724,7 +1727,9 @@ class ValidaFlowApp {
         .map(study => `<label class="admin-study-check-option"><input type="checkbox" value="${study.id}" ${assignedStudyIds.has(study.id) ? 'checked' : ''} /><span><strong>${escapeHtml(study.name)}</strong></span></label>`)
         .join('') || '<span class="text-muted">No hay estudios disponibles.</span>';
     }
-    if (module) module.value = assignments[0]?.module || '';
+    const assignedModules = new Set(assignments.map(item => item.module));
+    document.querySelectorAll('#admin-access-modules input[type="checkbox"]')
+      .forEach(input => { input.checked = assignedModules.has(input.value); });
     this.toggleAdminAccessScope();
     modal.classList.remove('hidden');
   }
@@ -1746,23 +1751,23 @@ class ValidaFlowApp {
     const assignments = Array.isArray(this.adminData.assignments)
       ? this.adminData.assignments.filter(item => item.supervisor_id === user.id)
       : [];
-    const studyIds = assignments.map(item => item.study_id).filter(Boolean);
-    const module = assignments[0]?.module || '';
+    const studyIds = [...new Set(assignments.map(item => item.study_id).filter(Boolean))];
+    const modules = [...new Set(assignments.map(item => item.module).filter(module => SUPERVISOR_MODULES[module]))];
     const userRole = selectedAccess === 'commercial'
       ? 'commercial'
       : user.role === 'supervisor'
         ? 'supervisor'
         : user.role === 'visualizer'
           ? 'visualizer'
-          : studyIds.length && SUPERVISOR_MODULES[module]
+          : studyIds.length && modules.length
             ? 'supervisor'
             : 'visualizer';
     if (user.role === userRole) {
       this.showToast('El usuario ya tiene asignado ese acceso.', 'info');
       return;
     }
-    if (userRole === 'supervisor' && (!studyIds.length || !SUPERVISOR_MODULES[module])) {
-      this.showToast('Este usuario no tiene un alcance operativo guardado. Usa la opción de crear supervisor para definir estudios y tipo de alertas.', 'warning');
+    if (userRole === 'supervisor' && (!studyIds.length || !modules.length)) {
+      this.showToast('Este usuario no tiene un alcance operativo guardado. Usa “Cambiar acceso” para definir estudios y módulos de alertas.', 'warning');
       return;
     }
     if (!confirm(`¿Cambiar a ${user.display_name} al portal ${userRole === 'commercial' ? 'Comercial' : 'Operaciones'}?`)) return;
@@ -1772,7 +1777,7 @@ class ValidaFlowApp {
       button.textContent = 'Guardando…';
     }
     try {
-      await this.backend.updatePortalUserAccess({ supervisorId, userRole, studyIds, module });
+      await this.backend.updatePortalUserAccess({ supervisorId, userRole, studyIds, modules });
       await this.loadAdministratorPanel();
       this.showToast(`Acceso actualizado para ${user.username}.`, 'success');
     } catch (error) {
@@ -1789,25 +1794,27 @@ class ValidaFlowApp {
     const user = this.adminData.supervisors.find(item => item.id === supervisorId);
     const userRole = document.getElementById('admin-access-role')?.value || 'supervisor';
     const studyIds = [...document.querySelectorAll('#admin-access-study-catalog input[type="checkbox"]:checked')].map(input => input.value);
-    const module = document.getElementById('admin-access-module')?.value || '';
+    const modules = [...document.querySelectorAll('#admin-access-modules input[type="checkbox"]:checked')]
+      .map(input => input.value)
+      .filter(module => SUPERVISOR_MODULES[module]);
     if (!user || !['supervisor', 'visualizer', 'commercial'].includes(userRole)) return;
     if (userRole === 'supervisor' && !studyIds.length) {
       this.showToast('Selecciona al menos un estudio para el acceso de supervisión.', 'warning');
       return;
     }
-    if (userRole === 'supervisor' && !SUPERVISOR_MODULES[module]) {
-      this.showToast('Selecciona el tipo de alertas que operará el supervisor.', 'warning');
+    if (userRole === 'supervisor' && !modules.length) {
+      this.showToast('Selecciona al menos un módulo de alertas.', 'warning');
       return;
     }
     if (!confirm(`¿Guardar el acceso de ${user.display_name}? ${userRole === 'commercial' ? 'Solo verá Comité Ejecutivo.' : 'Tendrá acceso a Operaciones y Visualizaciones.'}`)) return;
     try {
-      await this.backend.updatePortalUserAccess({ supervisorId, userRole, studyIds, module });
+      await this.backend.updatePortalUserAccess({ supervisorId, userRole, studyIds, modules });
       this.closeAdminUserAccessModal();
       await this.loadAdministratorPanel();
       this.showToast(`Acceso actualizado para ${user.username}.`, 'success');
     } catch (error) {
       const message = String(error.message || 'No fue posible actualizar el acceso.');
-      this.showToast(message === 'STUDY_REQUIRED' ? 'Selecciona los estudios para el supervisor.' : message === 'MODULE_REQUIRED' ? 'Selecciona el tipo de alertas.' : message, 'error');
+      this.showToast(message === 'STUDY_REQUIRED' ? 'Selecciona los estudios para el supervisor.' : message === 'MODULE_REQUIRED' ? 'Selecciona al menos un módulo de alertas.' : message, 'error');
     }
   }
 

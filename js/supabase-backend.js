@@ -868,20 +868,22 @@ export class SupabaseBackend {
     };
   }
 
-  async createSupervisor({ username, displayName, password, studyIds, module }) {
-    return this.createPortalUser({ username, displayName, password, studyIds, module, userRole: 'supervisor' });
+  async createSupervisor({ username, displayName, password, studyIds, module, modules = [] }) {
+    return this.createPortalUser({ username, displayName, password, studyIds, module, modules, userRole: 'supervisor' });
   }
 
-  async createPortalUser({ username, displayName, password, userRole, studyIds = [], module = null }) {
-    return this.manageSupervisor({ action: 'create', username, displayName, password, userRole, studyIds, module });
+  async createPortalUser({ username, displayName, password, userRole, studyIds = [], module = null, modules = [] }) {
+    const selectedModules = [...new Set((Array.isArray(modules) && modules.length ? modules : [module]).filter(Boolean))];
+    return this.manageSupervisor({ action: 'create', username, displayName, password, userRole, studyIds, module: selectedModules[0] || null, modules: selectedModules });
   }
 
   async resetSupervisorPassword({ supervisorId, password }) {
     return this.manageSupervisor({ action: 'reset_password', supervisorId, password });
   }
 
-  async updatePortalUserAccess({ supervisorId, userRole, studyIds = [], module = null }) {
-    return this.manageSupervisor({ action: 'update_access', supervisorId, userRole, studyIds, module });
+  async updatePortalUserAccess({ supervisorId, userRole, studyIds = [], module = null, modules = [] }) {
+    const selectedModules = [...new Set((Array.isArray(modules) && modules.length ? modules : [module]).filter(Boolean))];
+    return this.manageSupervisor({ action: 'update_access', supervisorId, userRole, studyIds, module: selectedModules[0] || null, modules: selectedModules });
   }
 
   async deleteSupervisor({ supervisorId }) {

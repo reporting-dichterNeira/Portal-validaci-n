@@ -12,6 +12,13 @@ const allowedModules = new Set(['smart', 'blocking']);
 const internalCountryCode = 'GLB';
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function readModules(value: unknown, fallback: unknown) {
+  const rawValues = Array.isArray(value) ? value : [value ?? fallback];
+  return [...new Set(rawValues
+    .map(item => String(item ?? '').trim().toLowerCase())
+    .filter(module => allowedModules.has(module)))];
+}
+
 function isStrongPassword(password: string) {
   return password.length >= 12
     && /[a-z]/.test(password)
@@ -91,7 +98,7 @@ Deno.serve(async (req) => {
       const userRole = String(body.userRole ?? '').trim().toLowerCase();
       const rawStudyIds = Array.isArray(body.studyIds) ? body.studyIds : [body.studyId];
       const studyIds = [...new Set(rawStudyIds.map(value => String(value ?? '').trim()).filter(Boolean))];
-      const module = String(body.module ?? '').trim().toLowerCase();
+      const modules = readModules(body.modules, body.module);
       if (!['supervisor', 'visualizer', 'commercial'].includes(userRole)) {
         return json({ error: 'INVALID_USER_ROLE' }, 400);
       }
@@ -101,7 +108,7 @@ Deno.serve(async (req) => {
         if (studyIds.length < 1 || studyIds.length > 4 || studyIds.some(id => !uuidPattern.test(id))) {
           return json({ error: 'STUDY_REQUIRED' }, 400);
         }
-        if (!allowedModules.has(module)) return json({ error: 'MODULE_REQUIRED' }, 400);
+        if (!modules.length) return json({ error: 'MODULE_REQUIRED' }, 400);
         const results = await Promise.all([
           adminClient.from('studies').select('id, name').in('id', studyIds).eq('is_active', true),
           adminClient.from('countries').select('id').eq('code', internalCountryCode).eq('is_active', true).maybeSingle(),
@@ -124,13 +131,13 @@ Deno.serve(async (req) => {
           .delete()
           .eq('supervisor_id', supervisorId);
         if (removeAssignmentsError) return json({ error: 'ASSIGNMENT_UPDATE_FAILED', detail: removeAssignmentsError.message }, 409);
-        const assignments = studyIds.map(studyId => ({
+        const assignments = studyIds.flatMap(studyId => modules.map(module => ({
           supervisor_id: supervisorId,
           study_id: studyId,
           country_id: internalCountry!.id,
           module,
           created_by: userData.user.id,
-        }));
+        })));
         const { error: assignmentError } = await adminClient.from('supervisor_assignments').insert(assignments);
         if (assignmentError) return json({ error: 'ASSIGNMENT_UPDATE_FAILED', detail: assignmentError.message }, 409);
       }
@@ -147,7 +154,7 @@ Deno.serve(async (req) => {
         .update({ role: userRole })
         .eq('id', supervisorId);
       if (profileUpdateError) return json({ error: 'PROFILE_ROLE_UPDATE_FAILED', detail: profileUpdateError.message }, 409);
-      return json({ user: { id: supervisor.id, username: supervisor.username, role: userRole } });
+      return json({ user: { id: supervisor.id, username: supervisor.username, role: userRole, modules } });
     }
 
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(supervisorId);
@@ -161,7 +168,7 @@ Deno.serve(async (req) => {
   const displayName = String(body.displayName ?? '').trim();
   const rawStudyIds = Array.isArray(body.studyIds) ? body.studyIds : [body.studyId];
   const studyIds = [...new Set(rawStudyIds.map(value => String(value ?? '').trim()).filter(Boolean))];
-  const module = String(body.module ?? '').trim().toLowerCase();
+  const modules = readModules(body.modules, body.module);
   const userRole = String(body.userRole ?? 'supervisor').trim().toLowerCase();
 
   if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(username)) {
@@ -176,7 +183,7 @@ Deno.serve(async (req) => {
     if (studyIds.length < 1 || studyIds.length > 4 || studyIds.some(id => !uuidPattern.test(id))) {
       return json({ error: 'STUDY_REQUIRED' }, 400);
     }
-    if (!allowedModules.has(module)) return json({ error: 'MODULE_REQUIRED' }, 400);
+    if (!modules.length) return json({ error: 'MODULE_REQUIRED' }, 400);
   }
 
   let studies: Array<{ id: string; name: string }> = [];
@@ -226,13 +233,13 @@ Deno.serve(async (req) => {
   }
 
   if (userRole === 'supervisor') {
-    const assignments = studyIds.map(studyId => ({
+    const assignments = studyIds.flatMap(studyId => modules.map(module => ({
       supervisor_id: userId,
       study_id: studyId,
       country_id: internalCountry!.id,
       module,
       created_by: userData.user.id,
-    }));
+    })));
     const { error: assignmentError } = await adminClient.from('supervisor_assignments').insert(assignments);
 
     if (assignmentError) {
@@ -243,6 +250,6 @@ Deno.serve(async (req) => {
   }
 
   return json({
-    user: { id: userId, username, displayName, role: userRole, studyIds, module },
+    user: { id: userId, username, displayName, role: userRole, studyIds, modules },
   }, 201);
 });
