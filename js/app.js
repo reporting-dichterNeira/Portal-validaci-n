@@ -1711,6 +1711,9 @@ class ValidaFlowApp {
     const role = document.getElementById('admin-access-role');
     const description = document.getElementById('admin-user-access-description');
     const catalog = document.getElementById('admin-access-study-catalog');
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+    })[char]);
     if (!modal) {
       this.showToast('No se encontró la ventana para cambiar el acceso. Actualiza la página.', 'error');
       return;
