@@ -284,8 +284,10 @@ class ValidaFlowApp {
       const allowed = isCommercial ? tab === 'committee' : tab !== 'committee';
       button.classList.toggle('hidden', !allowed);
     });
+    // Operaciones puede alternar entre el seguimiento operativo y la lectura
+    // ejecutiva. Comercial se mantiene como antes: entra únicamente al Comité.
     document.getElementById('btn-subtab-operational')?.classList.toggle('hidden', isCommercial);
-    document.getElementById('btn-subtab-executive')?.classList.toggle('hidden', !isCommercial);
+    document.getElementById('btn-subtab-executive')?.classList.remove('hidden');
     document.getElementById('visualization-module-switcher')?.classList.remove('hidden');
     this.updateVisualizationModuleControls();
     this.switchReportsSubtab(isCommercial ? 'executive' : 'operational');
