@@ -889,6 +889,7 @@ class ValidaFlowApp {
               </select>
               <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.updateUserAccessFromRow('${supervisor.id}', this)">Aplicar</button>
             </div>
+            <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.openAdminUserAccessModal('${supervisor.id}')">⚙ Reasignar</button>
             <button class="btn btn-outline btn-sm btn-admin-reset-password" type="button" data-supervisor-id="${supervisor.id}">🔑 Nueva contraseña</button>
             <button class="btn btn-ghost btn-sm text-danger btn-admin-delete-supervisor" type="button" data-supervisor-id="${supervisor.id}">🗑️ Eliminar</button>
           </div></td>
