@@ -1597,17 +1597,17 @@
               <div class="roi-metric-box">
                 <span class="roi-metric-num text-magenta" id="exec-stat-false-positives">0</span>
                 <span class="roi-metric-lbl">Falsos Positivos Filtrados</span>
-                <span class="roi-metric-sub text-success">Alertas evitadas al cliente</span>
+                <span class="roi-metric-sub text-success">Alertas que el validador marcó como “No Aplica”</span>
               </div>
               <div class="roi-metric-box">
                 <span class="roi-metric-num text-success" id="exec-stat-precision-rate">0%</span>
                 <span class="roi-metric-lbl">Precisión de Algoritmo</span>
-                <span class="roi-metric-sub">Tasa de Efectividad Real</span>
+                <span class="roi-metric-sub">Aplica ÷ (Aplica + No Aplica)</span>
               </div>
               <div class="roi-metric-box">
                 <span class="roi-metric-num text-purple" id="exec-stat-sla-time">0s</span>
-                <span class="roi-metric-lbl">Velocidad de Resolución</span>
-                <span class="roi-metric-sub">SLA Operativo &lt; 24h</span>
+                <span class="roi-metric-lbl">Tiempo promedio por auditoría</span>
+                <span class="roi-metric-sub">Promedio entre inicio y final de auditorías completadas</span>
               </div>
             </div>
           </div>
@@ -2721,6 +2721,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=64.0"></script>
+  <script type="module" src="js/app.js?v=65.0"></script>
 </body>
 </html>
