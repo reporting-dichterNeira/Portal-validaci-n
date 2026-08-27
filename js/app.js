@@ -1514,6 +1514,7 @@ class ValidaFlowApp {
       studies = [],
       supervisors = [],
       batchCreators = supervisors,
+      assignments = [],
       validators = [],
       batches: allBatches = [],
       audits: allAudits = [],
@@ -1533,6 +1534,9 @@ class ValidaFlowApp {
     })[char]);
     const studyById = new Map(studies.map(item => [item.id, item]));
     const supervisorById = new Map(batchCreators.map(item => [item.id, item]));
+    const assignedSupervisorByScope = new Map(
+      assignments.map(assignment => [`${assignment.study_id}:${assignment.module}`, assignment.supervisor_id])
+    );
     const validatorById = new Map(validators.map(item => [item.id, item]));
     const auditsByBatch = new Map();
     const auditsByValidator = new Map();
@@ -1595,12 +1599,19 @@ class ValidaFlowApp {
         const batchCompleted = batchAudits.filter(audit => audit.status === 'completada').length;
         const batchProgress = batchAudits.length ? Math.round((batchCompleted / batchAudits.length) * 100) : 0;
         const study = studyById.get(batch.study_id);
-        const supervisor = supervisorById.get(batch.created_by);
         const moduleLabel = batch.module === 'blocking' ? 'Bloqueantes' : 'Smart';
+        const uploadedBy = supervisorById.get(batch.created_by);
+        const assignedSupervisorId = assignedSupervisorByScope.get(`${batch.study_id}:${batch.module}`);
+        const supervisor = uploadedBy || supervisorById.get(assignedSupervisorId);
+        const responsibilityDetail = uploadedBy
+          ? `Usuario: ${uploadedBy.username || 'sin usuario'}`
+          : supervisor
+            ? `Supervisor asignado a ${moduleLabel}`
+            : 'No se pudo identificar el usuario de carga';
         return `<tr>
           <td><strong>${escapeHtml(study?.name || 'Sin estudio')}</strong></td>
           <td><span class="badge badge-info">${moduleLabel}</span></td>
-          <td><strong>${escapeHtml(supervisor?.display_name || 'Equipo administrador')}</strong><small>Usuario: ${escapeHtml(supervisor?.username || 'administrador')}</small></td>
+          <td><strong>${escapeHtml(supervisor?.display_name || supervisor?.username || 'Supervisor no identificado')}</strong><small>${escapeHtml(responsibilityDetail)}</small></td>
           <td><span class="admin-file-name" title="${escapeHtml(batch.source_filename || '')}">${escapeHtml(batch.source_filename || 'Carga sin archivo')}</span><small>${number(batch.row_count)} registros · ${formatDateTime(batch.activated_at || batch.created_at)}</small></td>
           <td><strong>${number(batchCompleted)} / ${number(batchAudits.length)}</strong><div class="admin-progress-track"><span style="width:${batchProgress}%"></span></div></td>
           <td><span class="badge ${batch.status === 'active' ? 'badge-success' : 'badge-secondary'}">${batch.status === 'active' ? 'Activa' : 'Histórica'}</span></td>
