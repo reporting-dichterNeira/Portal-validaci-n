@@ -7423,6 +7423,15 @@ body.dark-theme {
 .visualization-tab { border: 0; border-radius: 10px; padding: 0.7rem 0.9rem; cursor: pointer; color: var(--text-secondary); background: transparent; font: 700 0.86rem/1.2 var(--font-body); transition: background 0.2s ease, color 0.2s ease; }
 .visualization-tab:hover, .visualization-tab.active { background: var(--dn-blue-light); color: var(--dn-navy); }
 .visualization-tab[data-visualization-tab="committee"].active { background: #f2eaff; color: var(--dn-purple); }
+.visualization-module-switcher { align-items: center; background: var(--surface-card); border: 1px solid var(--border-color); border-left: 4px solid var(--dn-blue); border-radius: 14px; box-shadow: var(--shadow-sm); display: flex; flex-wrap: wrap; gap: 0.75rem; margin: -0.55rem 0 1.35rem; padding: 0.7rem 0.85rem; }
+.visualization-module-switcher-label { color: var(--dn-navy); font-size: 0.82rem; font-weight: 800; }
+.visualization-module-actions { display: inline-flex; gap: 0.35rem; padding: 0.25rem; background: var(--bg-surface-elevated); border: 1px solid var(--border-color); border-radius: 10px; }
+.visualization-module-button { background: transparent; border: 0; border-radius: 7px; color: var(--text-secondary); cursor: pointer; font: 800 0.76rem/1.15 var(--font-body); padding: 0.5rem 0.65rem; transition: all 0.18s ease; }
+.visualization-module-button:hover { background: var(--dn-blue-light); color: var(--dn-navy); }
+.visualization-module-button.active { background: var(--dn-navy); color: #fff; box-shadow: 0 2px 5px rgba(7, 30, 74, 0.2); }
+.visualization-module-button.is-blocking.active { background: var(--dn-magenta); }
+.visualization-module-button.is-smart.active { background: var(--dn-blue); }
+.visualization-module-context { color: var(--text-muted); font-size: 0.75rem; font-weight: 700; margin-left: auto; }
 .visualization-pane { display: none; }
 .visualization-pane.active { display: block; }
 .visualization-pane > .admin-productivity-panel, .visualization-pane > .admin-analysis-sheet { margin-bottom: 0; }
@@ -7431,6 +7440,10 @@ body.dark-theme {
 @media (max-width: 760px) {
   .visualization-tabs { display: grid; grid-template-columns: 1fr 1fr; }
   .visualization-tab { min-height: 48px; font-size: 0.78rem; }
+  .visualization-module-switcher { align-items: flex-start; flex-direction: column; }
+  .visualization-module-actions { width: 100%; }
+  .visualization-module-button { flex: 1; }
+  .visualization-module-context { margin-left: 0; }
 }
 
 

@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=46.0" />
+  <link rel="stylesheet" href="css/styles.css?v=47.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -879,6 +879,15 @@
           <button class="visualization-tab" data-visualization-tab="metrics" type="button" onclick="window.app?.switchVisualizationTab('metrics')">📊 Métricas & exportaciones</button>
           <button class="visualization-tab hidden" data-visualization-tab="committee" type="button" onclick="window.app?.switchVisualizationTab('committee')">👔 Comité Ejecutivo</button>
         </nav>
+        <div class="visualization-module-switcher" id="visualization-module-switcher" aria-label="Módulo de alertas a visualizar">
+          <span class="visualization-module-switcher-label">Ver indicadores de</span>
+          <div class="visualization-module-actions" role="group" aria-label="Seleccionar módulo">
+            <button class="visualization-module-button active" type="button" data-visualization-module="all" onclick="window.app?.setVisualizationModuleFilter('all')">◉ Consolidado</button>
+            <button class="visualization-module-button is-blocking" type="button" data-visualization-module="blocking" onclick="window.app?.setVisualizationModuleFilter('blocking')">🚫🚨 Bloqueantes</button>
+            <button class="visualization-module-button is-smart" type="button" data-visualization-module="smart" onclick="window.app?.setVisualizationModuleFilter('smart')">🧠⚡ Smart</button>
+          </div>
+          <span class="visualization-module-context" id="visualization-module-context">Mostrando ambos módulos</span>
+        </div>
         <div class="visualization-pane active" id="visualization-pane-overview"></div>
         <div class="visualization-pane" id="visualization-pane-alerts"></div>
         <div class="visualization-pane" id="visualization-pane-editions"></div>
@@ -2720,6 +2729,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=69.0"></script>
+  <script type="module" src="js/app.js?v=70.0"></script>
 </body>
 </html>

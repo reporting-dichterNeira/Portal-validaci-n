@@ -44,6 +44,7 @@ class ValidaFlowApp {
     this.adminExternalAnalysis = { imports: [], alertRecords: [], editRecords: [], platformAuditIds: new Set() };
     this.adminAnalysisSheet = 'core';
     this.visualizationTab = 'overview';
+    this.visualizationModuleFilter = 'all';
     this.visualizationsMounted = false;
     this.historicalBatches = [];
     this.validatorHistoryRows = [];
@@ -189,6 +190,51 @@ class ValidaFlowApp {
     return ['admin', 'supervisor', 'visualizer'].includes(this.currentRole);
   }
 
+  getVisualizationModuleFilter() {
+    if (this.currentView !== 'visualizations' || this.currentRole === 'commercial') return 'all';
+    return ['smart', 'blocking'].includes(this.visualizationModuleFilter)
+      ? this.visualizationModuleFilter
+      : 'all';
+  }
+
+  getVisualizationModuleLabel(module = this.getVisualizationModuleFilter()) {
+    if (module === 'blocking') return 'Alertas Bloqueantes';
+    if (module === 'smart') return 'Validación Smart';
+    return 'Consolidado: Bloqueantes y Smart';
+  }
+
+  updateVisualizationModuleControls() {
+    const activeModule = this.getVisualizationModuleFilter();
+    document.querySelectorAll('.visualization-module-button').forEach(button => {
+      button.classList.toggle('active', button.dataset.visualizationModule === activeModule);
+    });
+    const context = document.getElementById('visualization-module-context');
+    if (context) context.textContent = activeModule === 'all'
+      ? 'Mostrando ambos módulos'
+      : `Mostrando solo ${this.getVisualizationModuleLabel(activeModule)}`;
+  }
+
+  async setVisualizationModuleFilter(module) {
+    const nextModule = ['all', 'smart', 'blocking'].includes(module) ? module : 'all';
+    this.visualizationModuleFilter = nextModule;
+    this.updateVisualizationModuleControls();
+    this.renderAdministratorProductivity();
+    this.renderAdminExternalAnalysis();
+    this.renderReportsView();
+    this.renderDailyReportsView();
+    const refreshExternal = this.canUseExternalAnalysis()
+      ? this.refreshAdminExternalAnalysis().catch(error => console.error('No fue posible actualizar el cruce segmentado:', error))
+      : Promise.resolve();
+    if (nextModule === 'all') {
+      await Promise.all([
+        refreshExternal,
+        ...['smart', 'blocking'].map(item => this.ensureHistoricalReportsLoaded({ module: item }))
+      ]);
+    } else {
+      await Promise.all([refreshExternal, this.ensureHistoricalReportsLoaded({ module: nextModule })]);
+    }
+  }
+
   mountVisualizationContent() {
     if (this.visualizationsMounted) return;
     const move = (sourceId, targetId) => {
@@ -240,6 +286,8 @@ class ValidaFlowApp {
     });
     document.getElementById('btn-subtab-operational')?.classList.toggle('hidden', isCommercial);
     document.getElementById('btn-subtab-executive')?.classList.toggle('hidden', !isCommercial);
+    document.getElementById('visualization-module-switcher')?.classList.toggle('hidden', isCommercial);
+    this.updateVisualizationModuleControls();
     this.switchReportsSubtab(isCommercial ? 'executive' : 'operational');
     this.switchVisualizationTab(isCommercial ? 'committee' : this.visualizationTab || 'overview');
   }
@@ -269,7 +317,13 @@ class ValidaFlowApp {
       this.moveReportsContent('visualization-pane-metrics');
       this.renderReportsView();
       this.renderDailyReportsView();
-      this.ensureHistoricalReportsLoaded();
+      const visualizationModule = this.getVisualizationModuleFilter();
+      if (visualizationModule === 'all' && !isCommercial) {
+        Promise.all(['smart', 'blocking'].map(module => this.ensureHistoricalReportsLoaded({ module })))
+          .catch(error => console.error('No fue posible cargar el histórico segmentado:', error));
+      } else {
+        this.ensureHistoricalReportsLoaded({ module: visualizationModule === 'all' ? this.currentModule : visualizationModule });
+      }
     }
   }
 
@@ -1227,11 +1281,22 @@ class ValidaFlowApp {
     const formatNumber = value => Number(value || 0).toLocaleString('es-CO');
     const alertImport = analysis.imports.find(item => item.dataset_type === 'alerts');
     const editionImport = analysis.imports.find(item => item.dataset_type === 'editions');
-    const platformAlertAudits = analysis.platformAlertAudits || [];
+    const allPlatformAlertAudits = analysis.platformAlertAudits || [];
+    const visualizationModule = this.getVisualizationModuleFilter();
+    const platformAlertAudits = visualizationModule === 'all'
+      ? allPlatformAlertAudits
+      : allPlatformAlertAudits.filter(item => item.audit?._module === visualizationModule || item.audit?.module === visualizationModule);
     // The general export supplies the audit context for the cross. Keep all
     // of its rows visible, including imports created before the rule changed.
-    const alertRows = analysis.alertRecords || [];
-    const platformIds = analysis.platformAuditIds || new Set();
+    const allAlertRows = analysis.alertRecords || [];
+    const platformIds = visualizationModule === 'all'
+      ? (analysis.platformAuditIds || new Set())
+      : new Set(platformAlertAudits.map(item => String(item.audit?.id || '').trim()).filter(Boolean));
+    // El export externo no conserva el módulo. En una vista segmentada se
+    // muestran únicamente los IDs que ValidaFlow identifica en ese módulo.
+    const alertRows = visualizationModule === 'all'
+      ? allAlertRows
+      : allAlertRows.filter(record => platformIds.has(String(record.audit_external_id || '').trim()));
     const availableStudies = [...new Set(alertRows.map(record => String(record.study || '').trim()).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'es'));
     const requestedStudy = this.adminAlertsStudyFilter || 'all';
@@ -1262,9 +1327,10 @@ class ValidaFlowApp {
       return acc;
     }, {})).sort((a, b) => b[1] - a[1]);
 
-    setText('admin-alerts-import-status', alertImport ? `Último export: ${alertImport.source_filename} · ${this.formatExternalImportMonth(alertImport.period_month)} · ${formatNumber(alertImport.row_count)} registros útiles.` : 'Aún no se ha cargado un export general.');
+    const moduleStatus = visualizationModule === 'all' ? '' : ` · Vista: ${this.getVisualizationModuleLabel(visualizationModule)}.`;
+    setText('admin-alerts-import-status', alertImport ? `Último export: ${alertImport.source_filename} · ${this.formatExternalImportMonth(alertImport.period_month)} · ${formatNumber(alertImport.row_count)} registros útiles.${moduleStatus}` : 'Aún no se ha cargado un export general.');
     setText('admin-editions-import-status', editionImport
-      ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles. Cruzado contra ${formatNumber(platformAlertAudits.length)} auditorías con alertas ya validadas en ValidaFlow.`
+      ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles. Cruzado contra ${formatNumber(platformAlertAudits.length)} auditorías con alertas ya validadas en ValidaFlow.${moduleStatus}`
       : 'Carga el export de ediciones para cruzarlo con las alertas validadas en ValidaFlow.');
     setText('admin-alerts-source-count', formatNumber(filteredAlertRows.length));
     setText('admin-alerts-count', formatNumber(filteredAlertRows.length));
@@ -1449,10 +1515,17 @@ class ValidaFlowApp {
       supervisors = [],
       batchCreators = supervisors,
       validators = [],
-      batches = [],
-      audits = [],
+      batches: allBatches = [],
+      audits: allAudits = [],
       operationDate = this.toLocalDateInputValue(new Date())
     } = this.adminData;
+    const visualizationModule = this.getVisualizationModuleFilter();
+    const batches = visualizationModule === 'all'
+      ? allBatches
+      : allBatches.filter(batch => batch.module === visualizationModule);
+    const audits = visualizationModule === 'all'
+      ? allAudits
+      : allAudits.filter(audit => audit._module === visualizationModule || audit.module === visualizationModule);
     const dateInput = document.getElementById('admin-productivity-date');
     if (dateInput && !dateInput.value) dateInput.value = operationDate;
     const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
@@ -1490,6 +1563,10 @@ class ValidaFlowApp {
       if (element) element.textContent = value;
     };
     setText('admin-productivity-date-label', displayDate);
+    const productivityTitle = document.querySelector('#admin-productivity-panel .section-header h2');
+    if (productivityTitle) productivityTitle.textContent = visualizationModule === 'all'
+      ? 'Productividad y avance diario'
+      : `Productividad diaria · ${this.getVisualizationModuleLabel(visualizationModule)}`;
     setText('admin-productivity-batches', number(batches.length));
     setText('admin-productivity-uploaded', number(batches.reduce((total, batch) => total + Number(batch.row_count || 0), 0)));
     setText('admin-productivity-active-validators', number(activeValidatorIds.length));
@@ -2216,6 +2293,18 @@ class ValidaFlowApp {
   }
 
   getReportAuditSource(module = this.currentModule) {
+    const visualizationModule = this.getVisualizationModuleFilter();
+    if (visualizationModule === 'all' && this.currentView === 'visualizations') {
+      return ['smart', 'blocking'].flatMap(item => {
+        const cached = this.auditHistoryByModule[item];
+        return Array.isArray(cached)
+          ? cached
+          : (item === 'blocking' ? (this.blockingAudits || []) : (this.smartAudits || []));
+      });
+    }
+    if (this.currentView === 'visualizations' && ['smart', 'blocking'].includes(visualizationModule)) {
+      module = visualizationModule;
+    }
     const cached = this.auditHistoryByModule[module];
     if (Array.isArray(cached)) return cached;
     return module === 'blocking' ? (this.blockingAudits || []) : (this.smartAudits || []);
@@ -2252,9 +2341,8 @@ class ValidaFlowApp {
     return true;
   }
 
-  async ensureHistoricalReportsLoaded({ force = false } = {}) {
-    if (!this.backend.configured || !(this.isSupervisor || this.isVisualizationRole())) return;
-    const module = this.currentModule;
+  async ensureHistoricalReportsLoaded({ force = false, module = this.currentModule } = {}) {
+    if (!this.backend.configured || !(this.currentRole === 'admin' || this.isSupervisor || this.isVisualizationRole())) return;
     if (!force && Array.isArray(this.auditHistoryByModule[module])) return;
     if (this.auditHistoryLoadPromises[module]) return this.auditHistoryLoadPromises[module];
 
@@ -2269,12 +2357,14 @@ class ValidaFlowApp {
     try {
       const audits = await loadPromise;
       this.auditHistoryByModule[module] = audits;
-      if (this.currentModule === module) {
-        this.setHistoryDateRangeFromAudits(audits);
+      if (this.currentModule === module || (this.currentView === 'visualizations' && (this.visualizationModuleFilter === 'all' || this.visualizationModuleFilter === module))) {
+        if (this.currentModule === module) this.setHistoryDateRangeFromAudits(audits);
         this.renderReportsView();
         this.renderDailyReportsView();
-        this.validatorHistoryLoaded = false;
-        if (audits.length) await this.loadValidatorHistory(true);
+        if (this.currentModule === module) {
+          this.validatorHistoryLoaded = false;
+          if (audits.length) await this.loadValidatorHistory(true);
+        }
       }
     } catch (error) {
       console.error('Error cargando el histórico completo:', error);
