@@ -6,8 +6,8 @@
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, seedSampleValidations } from './sample-data.js?v=21.0';
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
-import { ValidatorUI } from './validator-ui.js?v=32.0';
-import { SupabaseBackend } from './supabase-backend.js?v=43.0';
+import { ValidatorUI } from './validator-ui.js?v=33.0';
+import { SupabaseBackend } from './supabase-backend.js?v=44.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -3943,7 +3943,33 @@ class ValidaFlowApp {
     const close = () => modal?.classList.add('hidden');
     document.getElementById('btn-close-reassign-pending')?.addEventListener('click', close);
     document.getElementById('btn-cancel-reassign-pending')?.addEventListener('click', close);
+    document.getElementById('btn-select-all-reassign-pending')?.addEventListener('click', () => {
+      const checkboxes = [...document.querySelectorAll('.reassign-pending-target-checkbox')];
+      const shouldSelectAll = checkboxes.some(checkbox => !checkbox.checked);
+      checkboxes.forEach(checkbox => { checkbox.checked = shouldSelectAll; });
+      this.updateReassignPendingSelection();
+    });
+    document.getElementById('reassign-pending-targets')?.addEventListener('change', event => {
+      if (event.target.matches('.reassign-pending-target-checkbox')) this.updateReassignPendingSelection();
+    });
     document.getElementById('btn-confirm-reassign-pending')?.addEventListener('click', () => this.confirmReassignPendingAudits());
+  }
+
+  updateReassignPendingSelection() {
+    const checkboxes = [...document.querySelectorAll('.reassign-pending-target-checkbox')];
+    const selectedCount = checkboxes.filter(checkbox => checkbox.checked).length;
+    const summary = document.getElementById('reassign-pending-selection');
+    const selectAllButton = document.getElementById('btn-select-all-reassign-pending');
+    if (summary) {
+      summary.textContent = selectedCount
+        ? `${selectedCount} validador${selectedCount === 1 ? '' : 'es'} seleccionado${selectedCount === 1 ? '' : 's'} para el reparto.`
+        : 'Selecciona al menos un validador.';
+    }
+    if (selectAllButton) {
+      selectAllButton.textContent = checkboxes.length && selectedCount === checkboxes.length
+        ? 'Limpiar selección'
+        : 'Seleccionar todos';
+    }
   }
 
   openReassignPendingAuditsModal(sourceValidatorId) {
@@ -3954,7 +3980,7 @@ class ValidaFlowApp {
       audit => audit.assignedValidatorId === sourceValidatorId && this.isPendingAudit(audit)
     );
     const targets = this.getValidatorsForCurrentProject()
-      .filter(validator => validator.id !== sourceValidatorId)
+      .filter(validator => validator.id !== sourceValidatorId && validator.isActive !== false)
       .sort((a, b) => a.name.localeCompare(b.name, 'es'));
 
     if (!source || !pendingAudits.length) {
@@ -3971,35 +3997,48 @@ class ValidaFlowApp {
       '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
     })[char]);
     const summary = document.getElementById('reassign-pending-summary');
-    const select = document.getElementById('reassign-pending-target');
+    const targetsContainer = document.getElementById('reassign-pending-targets');
     if (summary) {
       summary.textContent = `${source.name} tiene ${pendingAudits.length} auditoría${pendingAudits.length === 1 ? '' : 's'} pendiente${pendingAudits.length === 1 ? '' : 's'} en ${this.currentProject}.`;
     }
-    if (select) {
-      select.innerHTML = `<option value="">Selecciona un validador</option>${targets.map(target => (
-        `<option value="${escapeHtml(target.id)}">${escapeHtml(target.code)} · ${escapeHtml(target.name)}</option>`
-      )).join('')}`;
+    if (targetsContainer) {
+      targetsContainer.innerHTML = targets.map(target => {
+        const currentPendingCount = this.getAuditsForCurrentProject().filter(
+          audit => audit.assignedValidatorId === target.id && this.isPendingAudit(audit)
+        ).length;
+        return `<label class="reassign-pending-target">
+          <input class="reassign-pending-target-checkbox" type="checkbox" value="${escapeHtml(target.id)}">
+          <span class="reassign-pending-target-copy">
+            <strong>${escapeHtml(target.name)}</strong>
+            <small>${escapeHtml(target.code)} · ${currentPendingCount} pendiente${currentPendingCount === 1 ? '' : 's'} actual${currentPendingCount === 1 ? '' : 'es'}</small>
+          </span>
+        </label>`;
+      }).join('');
     }
     modal.dataset.sourceValidatorId = sourceValidatorId;
     modal.dataset.pendingCount = String(pendingAudits.length);
     modal.classList.remove('hidden');
-    select?.focus();
+    this.updateReassignPendingSelection();
+    targetsContainer?.querySelector('input')?.focus();
   }
 
   async confirmReassignPendingAudits() {
     const modal = document.getElementById('modal-reassign-pending-audits');
-    const select = document.getElementById('reassign-pending-target');
     const button = document.getElementById('btn-confirm-reassign-pending');
     const sourceValidatorId = modal?.dataset.sourceValidatorId;
-    const targetValidatorId = select?.value;
+    const targetValidatorIds = [...document.querySelectorAll('.reassign-pending-target-checkbox:checked')]
+      .map(checkbox => checkbox.value)
+      .filter(Boolean);
     const source = this.validators.find(validator => validator.id === sourceValidatorId);
-    const target = this.validators.find(validator => validator.id === targetValidatorId);
+    const targets = targetValidatorIds
+      .map(targetValidatorId => this.validators.find(validator => validator.id === targetValidatorId))
+      .filter(Boolean);
     const pendingAudits = this.getAuditsForCurrentProject().filter(
       audit => audit.assignedValidatorId === sourceValidatorId && this.isPendingAudit(audit)
     );
 
-    if (!source || !target || !pendingAudits.length) {
-      this.showToast('Selecciona un validador destino válido con auditorías pendientes disponibles.', 'warning');
+    if (!source || targets.length !== targetValidatorIds.length || !targets.length || !pendingAudits.length) {
+      this.showToast('Selecciona al menos un validador destino activo con auditorías pendientes disponibles.', 'warning');
       return;
     }
 
@@ -4014,14 +4053,16 @@ class ValidaFlowApp {
       if (this.backend.configured && this.isSupervisor) {
         const result = await this.backend.reassignPendingAudits({
           sourceValidatorId,
-          targetValidatorId,
+          targetValidatorIds,
           module: this.currentModule
         });
         reassignedCount = result.reassignedCount;
         await this.refreshFromBackend();
         this.channel?.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
       } else {
-        pendingAudits.forEach(audit => { audit.assignedValidatorId = targetValidatorId; });
+        pendingAudits.forEach((audit, index) => {
+          audit.assignedValidatorId = targetValidatorIds[index % targetValidatorIds.length];
+        });
         if (this.currentModule === 'blocking') this.blockingAudits = this.audits;
         else this.smartAudits = this.audits;
         await this.syncStateAcrossTabs();
@@ -4033,7 +4074,7 @@ class ValidaFlowApp {
       modal?.classList.add('hidden');
       this.showToast(
         reassignedCount
-          ? `${reassignedCount} auditoría${reassignedCount === 1 ? '' : 's'} pendiente${reassignedCount === 1 ? '' : 's'} de ${source.name} fueron asignadas a ${target.name}.`
+          ? `${reassignedCount} auditoría${reassignedCount === 1 ? '' : 's'} pendiente${reassignedCount === 1 ? '' : 's'} de ${source.name} fueron repartidas entre ${targets.map(target => target.name).join(', ')}.`
           : 'No había auditorías pendientes para mover; la asignación pudo haber cambiado en otra sesión.',
         reassignedCount ? 'success' : 'info'
       );

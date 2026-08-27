@@ -5009,6 +5009,87 @@ button.supervisor-module-option:hover {
   background: #FAFAFB;
 }
 
+.reassign-pending-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.reassign-pending-label-row label { margin-bottom: 0; }
+
+.reassign-pending-label-row .btn-link {
+  padding: 0;
+  min-height: auto;
+  font-weight: 800;
+}
+
+.reassign-pending-targets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.65rem;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 0.1rem;
+}
+
+.reassign-pending-target {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-elevated);
+  cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.reassign-pending-target:hover { border-color: rgba(13, 92, 171, 0.5); }
+
+.reassign-pending-target:has(input:checked) {
+  border-color: var(--dn-blue);
+  background: var(--dn-blue-light);
+  box-shadow: 0 0 0 2px rgba(13, 92, 171, 0.1);
+}
+
+.reassign-pending-target input {
+  margin: 0.16rem 0 0;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--dn-blue);
+  flex: 0 0 auto;
+}
+
+.reassign-pending-target-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.16rem;
+}
+
+.reassign-pending-target-copy strong {
+  color: var(--dn-navy);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.reassign-pending-target-copy small,
+.reassign-pending-selection {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.reassign-pending-selection {
+  display: block;
+  margin-top: 0.55rem;
+  font-weight: 700;
+}
+
+@media (max-width: 560px) {
+  .reassign-pending-targets { grid-template-columns: 1fr; }
+}
+
 /* La vista previa debe caber siempre dentro de la ventana. El informe se
    desplaza solo en el cuerpo, mientras las acciones para descargar o cerrar
    permanecen disponibles arriba y abajo. */
@@ -7259,6 +7340,14 @@ body.dark-theme {
   gap: 1rem;
 }
 
+.val-productivity-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
 .val-productivity-kicker {
   color: var(--dn-blue);
   font-size: 0.72rem;
@@ -7347,6 +7436,7 @@ body.dark-theme {
 @media (max-width: 620px) {
   .val-productivity-panel { padding: 1rem; }
   .val-productivity-heading { flex-direction: column; }
+  .val-productivity-actions { width: 100%; justify-content: space-between; }
 }
 
 .carryover-summary-list {

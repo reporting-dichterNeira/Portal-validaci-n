@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=47.0" />
+  <link rel="stylesheet" href="css/styles.css?v=48.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -478,7 +478,12 @@
               <h4>Resumen diario</h4>
               <p>Consulta las jornadas en las que has validado auditorías.</p>
             </div>
-            <span class="badge badge-info" id="val-productivity-range">Histórico</span>
+            <div class="val-productivity-actions">
+              <span class="badge badge-info" id="val-productivity-range">Histórico</span>
+              <button class="btn btn-outline btn-sm" id="btn-val-productivity-excel" type="button" title="Descargar mi resumen diario en Excel">
+                📥 Descargar Excel
+              </button>
+            </div>
           </div>
           <div class="val-productivity-stats">
             <div><span>Días trabajados</span><strong id="val-productivity-days">0</strong></div>
@@ -1978,10 +1983,13 @@
           <span>Las terminadas, las que están en progreso y las asignaciones de los demás validadores no cambian.</span>
         </div>
         <div class="form-group">
-          <label for="reassign-pending-target">Asignar a validador activo</label>
-          <select id="reassign-pending-target" class="form-select">
-            <option value="">Selecciona un validador</option>
-          </select>
+          <div class="reassign-pending-label-row">
+            <label>Repartir entre validadores activos</label>
+            <button class="btn btn-link btn-sm" id="btn-select-all-reassign-pending" type="button">Seleccionar todos</button>
+          </div>
+          <span class="form-hint">Selecciona uno o más validadores. Las auditorías pendientes se repartirán de forma equitativa entre ellos.</span>
+          <div class="reassign-pending-targets" id="reassign-pending-targets" role="group" aria-label="Validadores destino"></div>
+          <span class="reassign-pending-selection" id="reassign-pending-selection" aria-live="polite">Selecciona al menos un validador.</span>
         </div>
       </div>
 
@@ -2729,6 +2737,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=72.0"></script>
+  <script type="module" src="js/app.js?v=73.0"></script>
 </body>
 </html>

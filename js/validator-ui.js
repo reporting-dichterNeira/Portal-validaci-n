@@ -33,6 +33,7 @@ export class ValidatorUI {
     this.valPortalProgress = document.getElementById('val-portal-progress');
     this.valProgressBar = document.getElementById('val-progress-bar');
     this.btnValLogout = document.getElementById('btn-val-logout');
+    this.btnProductivityExcel = document.getElementById('btn-val-productivity-excel');
 
     // Lista de auditorías (Master)
     this.auditListContainer = document.getElementById('val-audit-list');
@@ -69,6 +70,10 @@ export class ValidatorUI {
     // Cerrar sesión del validador
     this.btnValLogout?.addEventListener('click', () => {
       this.logout();
+    });
+
+    this.btnProductivityExcel?.addEventListener('click', () => {
+      this.exportProductivityExcel();
     });
 
     // Filtros de estado (Todas / Pendientes / Completadas)
@@ -279,6 +284,98 @@ export class ValidatorUI {
         <td><strong>${day.completed}</strong></td>
       </tr>
     `).join('');
+  }
+
+  exportProductivityExcel() {
+    if (!this.currentValidator) {
+      this.app.showToast('Inicia sesión con tu código para descargar tu productividad.', 'warning');
+      return;
+    }
+    if (typeof XLSX === 'undefined') {
+      this.app.showToast('La herramienta de Excel aún no está disponible. Intenta nuevamente.', 'error');
+      return;
+    }
+
+    const rows = [...this.productivityRows]
+      .filter(row => row.operationDate)
+      .sort((first, second) => {
+        const byDate = String(second.operationDate).localeCompare(String(first.operationDate));
+        return byDate || String(first.module || '').localeCompare(String(second.module || ''));
+      });
+    if (!rows.length) {
+      this.app.showToast('Aún no hay productividad diaria disponible para descargar.', 'info');
+      return;
+    }
+
+    const completed = rows.reduce((total, row) => total + Number(row.completedAudits || 0), 0);
+    const daysWorked = new Set(rows.filter(row => Number(row.completedAudits || 0) > 0).map(row => row.operationDate)).size;
+    const totalAssigned = rows.reduce((total, row) => total + Number(row.totalAudits || 0), 0);
+    const totalSeconds = rows.reduce((total, row) => total + Number(row.totalDurationSeconds || 0), 0);
+    const timedAudits = rows.reduce((total, row) => total + Number(row.timedAudits || 0), 0);
+    const toDuration = seconds => {
+      const value = Math.max(0, Math.round(Number(seconds || 0)));
+      const hours = Math.floor(value / 3600);
+      const minutes = Math.floor((value % 3600) / 60);
+      const remainingSeconds = value % 60;
+      return hours ? `${hours}h ${minutes}m ${remainingSeconds}s` : `${minutes}m ${remainingSeconds}s`;
+    };
+    const moduleLabel = module => module === 'blocking' ? 'Alertas Bloqueantes' : 'Validación Smart';
+    const dateFormatter = new Intl.DateTimeFormat('es-NI', {
+      timeZone: 'America/Managua', dateStyle: 'medium'
+    });
+    const formatOperationDate = value => value
+      ? dateFormatter.format(new Date(`${value}T12:00:00`))
+      : '—';
+
+    const summaryRows = [
+      ['RESUMEN DE PRODUCTIVIDAD DIARIA', ''],
+      ['Validador', this.currentValidator.name || '—'],
+      ['Código único', this.currentValidator.code || '—'],
+      ['Fecha de descarga', formatNicaraguaDateTime(new Date())],
+      ['Días trabajados', daysWorked],
+      ['Auditorías validadas', completed],
+      ['Auditorías asignadas', totalAssigned],
+      ['Avance histórico', totalAssigned ? completed / totalAssigned : 0],
+      ['Tiempo total registrado', toDuration(totalSeconds)],
+      ['Tiempo promedio por auditoría', timedAudits ? toDuration(totalSeconds / timedAudits) : '—']
+    ];
+    const detailRows = rows.map(row => ({
+      'Jornada': formatOperationDate(row.operationDate),
+      'Fecha (YYYY-MM-DD)': row.operationDate,
+      'Módulo': moduleLabel(row.module),
+      'Auditorías asignadas': Number(row.totalAudits || 0),
+      'Validadas': Number(row.completedAudits || 0),
+      'En progreso': Number(row.inProgressAudits || 0),
+      'Pendientes': Number(row.pendingAudits || 0),
+      '% avance': Number(row.totalAudits || 0) ? Number(row.completedAudits || 0) / Number(row.totalAudits || 0) : 0,
+      'Auditorías con tiempo': Number(row.timedAudits || 0),
+      'Tiempo total': toDuration(row.totalDurationSeconds),
+      'Tiempo promedio': Number(row.timedAudits || 0) ? toDuration(row.averageDurationSeconds) : '—',
+      'Primera actividad (Nicaragua)': formatNicaraguaDateTime(row.firstActivityAt),
+      'Última actividad (Nicaragua)': formatNicaraguaDateTime(row.lastActivityAt)
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows);
+    summarySheet['!cols'] = [{ wch: 33 }, { wch: 34 }];
+    summarySheet.B8.z = '0%';
+    XLSX.utils.book_append_sheet(workbook, summarySheet, 'Resumen');
+
+    const detailSheet = XLSX.utils.json_to_sheet(detailRows);
+    detailSheet['!cols'] = [
+      { wch: 22 }, { wch: 18 }, { wch: 24 }, { wch: 20 }, { wch: 12 },
+      { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 22 }, { wch: 18 },
+      { wch: 18 }, { wch: 31 }, { wch: 31 }
+    ];
+    for (let rowIndex = 2; rowIndex <= detailRows.length + 1; rowIndex++) {
+      const cell = detailSheet[`H${rowIndex}`];
+      if (cell) cell.z = '0%';
+    }
+    XLSX.utils.book_append_sheet(workbook, detailSheet, 'Detalle diario');
+
+    const safeCode = String(this.currentValidator.code || 'validador').replace(/[^a-z0-9_-]/gi, '_');
+    XLSX.writeFile(workbook, `Mi_productividad_${safeCode}.xlsx`);
+    this.app.showToast('Tu resumen diario se está descargando en Excel.', 'success');
   }
 
   renderAuditList() {
