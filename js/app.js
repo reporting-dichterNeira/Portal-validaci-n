@@ -324,6 +324,9 @@ class ValidaFlowApp {
       const paneTab = pane.id.replace('visualization-pane-', '');
       pane.classList.toggle('active', paneTab === visiblePane);
     });
+    // Cambio de nota compara exports mensuales completos por PDV y sub-KPI;
+    // no depende del módulo Smart/Bloqueantes.
+    document.getElementById('visualization-module-switcher')?.classList.toggle('hidden', target === 'score-changes');
 
     if (target === 'overview') {
       await this.loadAdministratorPanel({ visualOnly: true });
