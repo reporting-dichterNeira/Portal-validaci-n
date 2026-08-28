@@ -766,7 +766,7 @@
               <h2>Export general con contexto de auditoría</h2>
               <p>Carga el export consolidado para enriquecer las alertas con auditor, PDV, país, ciudad y canal. El sistema conserva la última versión que subas para cada mes.</p>
             </div>
-            <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis()">↻ Actualizar</button>
+            <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis({ force: true })">↻ Actualizar</button>
           </div>
           <div class="admin-analysis-upload">
             <label class="admin-analysis-period" for="admin-alerts-export-period">Mes del consolidado <input class="form-control" type="month" id="admin-alerts-export-period" required /></label>
@@ -815,7 +815,7 @@
               <h2>Impacto de ediciones sobre alertas</h2>
               <p>Carga el consolidado de ediciones del mes. Se conserva solamente la última versión subida para ese mes.</p>
             </div>
-            <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis()">↻ Actualizar</button>
+            <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis({ force: true })">↻ Actualizar</button>
           </div>
           <div class="admin-analysis-upload">
             <label class="admin-analysis-period" for="admin-editions-export-period">Mes del consolidado <input class="form-control" type="month" id="admin-editions-export-period" required /></label>
@@ -878,7 +878,7 @@
               <h2>Cambio de nota: sub-KPIs de 0 a 1 y de 1 a 0</h2>
               <p>Carga primero el archivo del mes anterior y después el del mes actual. Se comparan el ID de PDV y el sub-KPI para identificar mejoras de nota 0 a 1 y caídas de 1 a 0.</p>
             </div>
-            <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis()">↻ Actualizar</button>
+            <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis({ force: true })">↻ Actualizar</button>
           </div>
           <div class="admin-analysis-upload">
             <label class="admin-analysis-period" for="admin-score-changes-period">Mes del archivo <input class="form-control" type="month" id="admin-score-changes-period" required /></label>
@@ -2828,6 +2828,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=88.0"></script>
+  <script type="module" src="js/app.js?v=89.0"></script>
 </body>
 </html>

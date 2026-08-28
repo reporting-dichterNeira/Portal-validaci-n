@@ -42,6 +42,11 @@ class ValidaFlowApp {
     this.pendingStaffRole = 'supervisor';
     this.adminData = { countries: [], studies: [], supervisors: [], assignments: [] };
     this.adminExternalAnalysis = { imports: [], alertRecords: [], editRecords: [], noteScoreImports: [], noteScoreRecords: [], platformAuditIds: new Set() };
+    // Los tres análisis reutilizan la misma base externa. Evita descargar los
+    // mismos miles de filas cada vez que el usuario cambia de pestaña.
+    this.adminExternalAnalysisLoadedAt = 0;
+    this.adminExternalAnalysisLoadPromise = null;
+    this.adminExternalAnalysisCacheMs = 2 * 60 * 1000;
     this.adminAlertsStudyFilter = 'all';
     this.adminAlertsAuditorFilter = 'all';
     this.adminAlertsFilteredRows = [];
@@ -309,6 +314,12 @@ class ValidaFlowApp {
     this.updateVisualizationModuleControls();
     this.switchReportsSubtab(isCommercial ? 'executive' : 'operational');
     this.switchVisualizationTab(isCommercial ? 'committee' : this.visualizationTab || 'overview');
+    // Se precarga mientras el usuario ve el resumen inicial. Cuando abre
+    // Export, Ediciones o Cambio de nota, la información ya está lista o la
+    // pestaña se conecta a esta misma solicitud en curso.
+    if (!isCommercial) {
+      this.refreshAdminExternalAnalysis().catch(error => console.error('No fue posible precargar los cruces de visualización:', error));
+    }
   }
 
   async switchVisualizationTab(tabId) {
@@ -1057,6 +1068,7 @@ class ValidaFlowApp {
       await this.backend.deleteAdminAnalysisImport(datasetType, importInfo.period_month);
       this.adminExternalImports = (this.adminExternalImports || []).filter(item => !(item.dataset_type === datasetType && item.period_month === importInfo.period_month));
       this.adminExternalAnalysis = null;
+      this.invalidateAdminExternalAnalysisCache();
       this.renderAdminExternalImportDeletionOptions();
       this.showToast(`Se eliminó el ${typeLabel} y sus registros guardados.`, 'success');
     } catch (error) {
@@ -1303,7 +1315,8 @@ class ValidaFlowApp {
       if (!rows.length) throw new Error('No se encontró una columna válida de ID de auditoría en el archivo.');
       this.showToast(`Guardando ${rows.length.toLocaleString('es-CO')} registros útiles…`, 'info');
       await this.backend.replaceAdminAnalysisImport({ datasetType, sourceFilename: file.name, periodMonth, rows });
-      await this.refreshAdminExternalAnalysis();
+      this.invalidateAdminExternalAnalysisCache();
+      await this.refreshAdminExternalAnalysis({ force: true });
       if (inputId) document.getElementById(inputId).value = '';
       this.showToast(`Export de ${datasetType === 'alerts' ? 'general' : 'ediciones'} cargado y cruzado correctamente para ${this.formatExternalImportMonth(periodMonth)}.`, 'success');
     } catch (error) {
@@ -1328,7 +1341,8 @@ class ValidaFlowApp {
       this.showToast(`Guardando ${rows.length.toLocaleString('es-CO')} notas útiles…`, 'info');
       await this.backend.replaceAdminNoteScoreImport({ sourceFilename: file.name, periodMonth, rows });
       this.adminScoreChangeCurrentMonth = `${periodMonth}-01`;
-      await this.refreshAdminExternalAnalysis();
+      this.invalidateAdminExternalAnalysisCache();
+      await this.refreshAdminExternalAnalysis({ force: true });
       if (input) input.value = '';
       this.showToast(`Notas de ${this.formatExternalImportMonth(periodMonth)} cargadas. Selecciona el mes anterior para ver los cambios de 0 a 1.`, 'success');
     } catch (error) {
@@ -1363,46 +1377,68 @@ class ValidaFlowApp {
       .format(new Date(Number(match[1]), Number(match[2]) - 1, 1));
   }
 
-  async refreshAdminExternalAnalysis() {
+  invalidateAdminExternalAnalysisCache() {
+    this.adminExternalAnalysisLoadedAt = 0;
+  }
+
+  async refreshAdminExternalAnalysis({ force = false } = {}) {
     if (!this.canUseExternalAnalysis()) return;
-    try {
-      const analysis = await this.backend.loadAdminExternalAnalysis();
-      let noteScoreAnalysis = { noteScoreImports: [], noteScoreRecords: [] };
-      try {
-        noteScoreAnalysis = await this.backend.loadAdminNoteScoreAnalysis();
-      } catch (noteScoreError) {
-        // Mantiene disponibles los cruces ya publicados mientras se aplica la
-        // migración inicial de Cambio de nota en Supabase.
-        if (!/admin_note_score|does not exist|PGRST204|PGRST205/i.test(String(noteScoreError?.message || noteScoreError))) {
-          throw noteScoreError;
-        }
-        console.info('Cambio de nota estará disponible cuando finalice la migración de datos.');
-      }
-      // Editions are crossed with the alerts already validated in ValidaFlow.
-      // The general export only enriches those rows with auditor/PDV context.
-      const platformAudits = await this.backend.loadAuditHistory({ pageSize: 1000, ignoreScope: true });
-      const platformAuditIds = new Set(platformAudits.map(audit => String(audit.id || '').trim()).filter(Boolean));
-      const platformAlertAudits = platformAudits.reduce((items, audit) => {
-        if (audit.validationStatus !== 'completada') return items;
-        const alertKpis = (Array.isArray(audit.kpis) ? audit.kpis : []).filter(kpi => (
-          kpi?.needsReview || /alerta/i.test(String(kpi?.alertaStatus || ''))
-        ));
-        if (alertKpis.length) {
-          const applicableAlerts = alertKpis.filter(kpi => (
-            audit.validationResults?.[kpi?.name]?.status === 'aplica'
-          ));
-          items.push({ audit, alertCount: alertKpis.length, applicableAlerts });
-        }
-        return items;
-      }, []);
-      this.adminExternalAnalysis = { ...analysis, ...noteScoreAnalysis, platformAudits, platformAuditIds, platformAlertAudits };
+    const isFresh = this.adminExternalAnalysisLoadedAt
+      && (Date.now() - this.adminExternalAnalysisLoadedAt) < this.adminExternalAnalysisCacheMs;
+    if (!force && isFresh) {
       this.renderAdminExternalAnalysis();
-    } catch (error) {
-      console.error('No fue posible cargar el análisis administrativo:', error);
-      ['admin-alerts-import-status', 'admin-editions-import-status', 'admin-score-changes-import-status'].forEach(id => {
-        const element = document.getElementById(id);
-        if (element) element.textContent = error.message || 'No fue posible consultar los datos cargados.';
-      });
+      return;
+    }
+    // Cambiar rápido de pestaña no debe disparar varias consultas iguales.
+    if (this.adminExternalAnalysisLoadPromise) return this.adminExternalAnalysisLoadPromise;
+
+    const request = (async () => {
+      try {
+        const analysis = await this.backend.loadAdminExternalAnalysis();
+        let noteScoreAnalysis = { noteScoreImports: [], noteScoreRecords: [] };
+        try {
+          noteScoreAnalysis = await this.backend.loadAdminNoteScoreAnalysis();
+        } catch (noteScoreError) {
+          // Mantiene disponibles los cruces ya publicados mientras se aplica la
+          // migración inicial de Cambio de nota en Supabase.
+          if (!/admin_note_score|does not exist|PGRST204|PGRST205/i.test(String(noteScoreError?.message || noteScoreError))) {
+            throw noteScoreError;
+          }
+          console.info('Cambio de nota estará disponible cuando finalice la migración de datos.');
+        }
+        // Editions are crossed with the alerts already validated in ValidaFlow.
+        // The general export only enriches those rows with auditor/PDV context.
+        const platformAudits = await this.backend.loadAuditHistory({ pageSize: 1000, ignoreScope: true });
+        const platformAuditIds = new Set(platformAudits.map(audit => String(audit.id || '').trim()).filter(Boolean));
+        const platformAlertAudits = platformAudits.reduce((items, audit) => {
+          if (audit.validationStatus !== 'completada') return items;
+          const alertKpis = (Array.isArray(audit.kpis) ? audit.kpis : []).filter(kpi => (
+            kpi?.needsReview || /alerta/i.test(String(kpi?.alertaStatus || ''))
+          ));
+          if (alertKpis.length) {
+            const applicableAlerts = alertKpis.filter(kpi => (
+              audit.validationResults?.[kpi?.name]?.status === 'aplica'
+            ));
+            items.push({ audit, alertCount: alertKpis.length, applicableAlerts });
+          }
+          return items;
+        }, []);
+        this.adminExternalAnalysis = { ...analysis, ...noteScoreAnalysis, platformAudits, platformAuditIds, platformAlertAudits };
+        this.adminExternalAnalysisLoadedAt = Date.now();
+        this.renderAdminExternalAnalysis();
+      } catch (error) {
+        console.error('No fue posible cargar el análisis administrativo:', error);
+        ['admin-alerts-import-status', 'admin-editions-import-status', 'admin-score-changes-import-status'].forEach(id => {
+          const element = document.getElementById(id);
+          if (element) element.textContent = error.message || 'No fue posible consultar los datos cargados.';
+        });
+      }
+    })();
+    this.adminExternalAnalysisLoadPromise = request;
+    try {
+      return await request;
+    } finally {
+      if (this.adminExternalAnalysisLoadPromise === request) this.adminExternalAnalysisLoadPromise = null;
     }
   }
 
