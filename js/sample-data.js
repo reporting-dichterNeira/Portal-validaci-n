@@ -88,14 +88,24 @@ export const DEFAULT_VALIDATORS = [
   { id: "val-ln-4", code: "VAL-LN04", name: "Patricia Ramos", email: "patricia.ramos@dichter-neira.com", estudio: "Lindley" }
 ];
 
+export const TIPIFICACIONES_POR_DECISION = {
+  aplica: [
+    'Evidencia de campo confirma la alerta',
+    'Incumplimiento confirmado en el PDV',
+    'Desviación crítica que requiere corrección'
+  ],
+  no_aplica: [
+    'Falso positivo: evidencia de campo correcta',
+    'Excepción autorizada por canal o formato',
+    'Evidencia válida no detectada por la regla'
+  ]
+};
+
+// Se conserva para compatibilidad con jornadas históricas y preferencias
+// locales antiguas. Las nuevas decisiones usan TIPIFICACIONES_POR_DECISION.
 export const DEFAULT_TIPIFICACIONES = [
-  "Falso positivo de regla smart / Evidencia de campo correcta",
-  "Criterio de canal / Excepción autorizada en PDV",
-  "Material POP o Producto visible en otra sección del PDV",
-  "Ángulo de foto o iluminación no interpretado por la regla",
-  "Elemento o marca no aplica en este formato de tienda",
-  "Foto complementaria válida en otra parte de la encuesta",
-  "Otro falso positivo (detallar en observaciones)"
+  ...TIPIFICACIONES_POR_DECISION.aplica,
+  ...TIPIFICACIONES_POR_DECISION.no_aplica
 ];
 
 /**

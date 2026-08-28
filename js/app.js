@@ -3,10 +3,10 @@
  * Incluye Motor de Control de Calidad y Detección de Anomalías
  */
 
-import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, seedSampleValidations } from './sample-data.js?v=21.0';
+import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
-import { ValidatorUI } from './validator-ui.js?v=33.0';
+import { ValidatorUI } from './validator-ui.js?v=34.0';
 import { SupabaseBackend } from './supabase-backend.js?v=46.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
@@ -192,6 +192,11 @@ class ValidaFlowApp {
 
   canUseExternalAnalysis() {
     return ['admin', 'supervisor', 'visualizer'].includes(this.currentRole);
+  }
+
+  getTipificacionesForDecision(decision) {
+    const normalizedDecision = decision === 'aplica' ? 'aplica' : 'no_aplica';
+    return [...TIPIFICACIONES_POR_DECISION[normalizedDecision]];
   }
 
   getVisualizationModuleFilter() {
@@ -3278,7 +3283,7 @@ class ValidaFlowApp {
           <td><strong>${index + 1}. ${kpi.name}</strong></td>
           <td><span class="badge ${kpi.needsReview ? 'badge-warning' : 'badge-secondary'}">${kpi.originalValue || (kpi.needsReview ? 'Revisar' : 'OK')}</span></td>
           <td>${decisionBadgeHtml}</td>
-          <td>${status === 'no_aplica' ? `<span class="tipif-tag">${tipificacion}</span>` : '—'}</td>
+          <td>${['aplica', 'no_aplica'].includes(status) ? `<span class="tipif-tag">${tipificacion}</span>` : '—'}</td>
           <td>${observaciones !== '—' ? `<span class="obs-tag">"${observaciones}"</span>` : '—'}</td>
           <td>${decisionTime}</td>
         </tr>
@@ -3372,7 +3377,7 @@ class ValidaFlowApp {
                     <th>KPI / Alerta</th>
                     <th>Alerta Reportada</th>
                     <th>¿Aplicó? (Decisión)</th>
-                    <th>Tipificación del Rechazo</th>
+                    <th>Tipología de la Decisión</th>
                     <th>Observaciones Registradas</th>
                     <th>Hora de Respuesta Final<br>(Nicaragua)</th>
                   </tr>
@@ -5644,19 +5649,33 @@ class ValidaFlowApp {
     radioAplica?.addEventListener('change', () => {
       lblAplica?.classList.add('active');
       lblNoAplica?.classList.remove('active');
-      if (tipifGroup) tipifGroup.style.display = 'none';
+      if (tipifGroup) tipifGroup.style.display = 'block';
+      this.populateResolveTipificationOptions('aplica');
     });
 
     radioNoAplica?.addEventListener('change', () => {
       lblNoAplica?.classList.add('active');
       lblAplica?.classList.remove('active');
       if (tipifGroup) tipifGroup.style.display = 'block';
+      this.populateResolveTipificationOptions('no_aplica');
     });
 
     // 2. Confirmar resolución de la consulta
     document.getElementById('btn-confirm-resolve-query')?.addEventListener('click', () => {
       this.submitResolveQuery();
     });
+  }
+
+  populateResolveTipificationOptions(decision, selectedValue = '') {
+    const select = document.getElementById('modal-resolve-tipif');
+    const label = document.getElementById('modal-resolve-tipif-label');
+    if (!select) return;
+    const options = this.getTipificacionesForDecision(decision);
+    const selected = options.includes(selectedValue) ? selectedValue : '';
+    select.innerHTML = `<option value="">-- Selecciona una tipología --</option>${options.map(option => `<option value="${option}" ${option === selected ? 'selected' : ''}>${option}</option>`).join('')}`;
+    if (label) label.textContent = decision === 'aplica'
+      ? '2. Tipología de la alerta que aplica:'
+      : '2. Tipología del por qué no aplica:';
   }
 
   getAllValidatorQueries() {
@@ -5894,15 +5913,6 @@ class ValidaFlowApp {
     if (elKpi) elKpi.textContent = kpiName;
     if (elDoubt) elDoubt.textContent = `"${res.dudaText || 'Sin descripción'}"`;
 
-    // Llenar opciones de tipificación
-    const tipifSelect = document.getElementById('modal-resolve-tipif');
-    if (tipifSelect) {
-      tipifSelect.innerHTML = this.tipificaciones.map(t => {
-        const isSel = (res.supervisorTipificacion || res.tipificacion) === t ? 'selected' : '';
-        return `<option value="${t}" ${isSel}>${t}</option>`;
-      }).join('');
-    }
-
     // Configurar estado inicial de la decisión
     const curDecision = res.supervisorDecision || (res.status === 'no_aplica' ? 'no_aplica' : 'aplica');
     const radioAplica = document.querySelector('input[name="modal_resolve_decision"][value="aplica"]');
@@ -5920,8 +5930,9 @@ class ValidaFlowApp {
       if (radioAplica) radioAplica.checked = true;
       lblAplica?.classList.add('active');
       lblNoAplica?.classList.remove('active');
-      if (tipifGroup) tipifGroup.style.display = 'none';
+      if (tipifGroup) tipifGroup.style.display = 'block';
     }
+    this.populateResolveTipificationOptions(curDecision, res.supervisorTipificacion || res.tipificacion || '');
 
     const instTextarea = document.getElementById('modal-resolve-instructions');
     if (instTextarea) {
@@ -5945,9 +5956,14 @@ class ValidaFlowApp {
     const radioDecision = document.querySelector('input[name="modal_resolve_decision"]:checked');
     const decision = radioDecision?.value || 'aplica';
     const tipifSelect = document.getElementById('modal-resolve-tipif');
-    const tipificacion = decision === 'no_aplica' ? (tipifSelect?.value || '') : '';
+    const tipificacion = tipifSelect?.value || '';
     const instTextarea = document.getElementById('modal-resolve-instructions');
     const instructions = instTextarea?.value.trim() || '';
+
+    if (!tipificacion) {
+      this.showToast('Selecciona la tipología correspondiente a la decisión.', 'warning');
+      return;
+    }
 
     if (!audit.validationResults) audit.validationResults = {};
     const prev = audit.validationResults[kpiName] || {};

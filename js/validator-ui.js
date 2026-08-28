@@ -535,7 +535,8 @@ export class ValidatorUI {
       const supervisorResponse = result.supervisorResponse || '';
       const observaciones = result.observaciones || '';
 
-      const tipificacionesOptions = this.app.tipificaciones.map(t => {
+      const tipificacionDecision = status === 'aplica' ? 'aplica' : 'no_aplica';
+      const tipificacionesOptions = this.app.getTipificacionesForDecision(tipificacionDecision).map(t => {
         const isSel = tipificacion === t ? 'selected' : '';
         return `<option value="${t}" ${isSel}>${t}</option>`;
       }).join('');
@@ -583,14 +584,14 @@ export class ValidatorUI {
             </label>
           </div>
 
-          <!-- Menú condicional de tipificación cuando NO APLICA (Falso Positivo) -->
-          <div class="tipificacion-container ${status === 'no_aplica' ? 'visible' : 'hidden'}" id="tipif_box_${index}">
+          <!-- Tipología obligatoria para cada decisión final -->
+          <div class="tipificacion-container ${['aplica', 'no_aplica'].includes(status) ? 'visible' : 'hidden'}" id="tipif_box_${index}">
             <div class="tipificacion-header">
               <span class="tipif-icon">🛡️</span>
-              <label for="tipif_select_${index}"><strong>Tipificación del por qué NO aplicó:</strong></label>
+              <label for="tipif_select_${index}" id="tipif_label_${index}"><strong>${status === 'aplica' ? 'Tipología de la alerta que aplica:' : 'Tipología del por qué no aplica:'}</strong></label>
             </div>
             <select class="form-select tipif-select" id="tipif_select_${index}" data-kpi="${kpi.name}">
-              <option value="">-- Selecciona el motivo de no aplicación --</option>
+              <option value="">-- Selecciona una tipología --</option>
               ${tipificacionesOptions}
             </select>
 
@@ -719,6 +720,7 @@ export class ValidatorUI {
       const radioDuda = card.querySelector(`input[value="duda"]`);
       const tipifBox = card.querySelector(`#tipif_box_${index}`);
       const tipifSelect = card.querySelector(`#tipif_select_${index}`);
+      const tipifLabel = card.querySelector(`#tipif_label_${index}`);
       const dudaBox = card.querySelector(`#duda_box_${index}`);
       const dudaInput = card.querySelector(`#duda_input_${index}`);
       const obsTextarea = card.querySelector(`#obs_${index}`);
@@ -727,14 +729,26 @@ export class ValidatorUI {
       const labelNoAplica = radioNoAplica?.closest('.kpi-radio-btn');
       const labelDuda = radioDuda?.closest('.kpi-radio-btn');
 
+      const populateTipifications = decision => {
+        if (!tipifSelect) return '';
+        const currentValue = audit.validationResults[kpiName]?.tipificacion || tipifSelect.value || '';
+        const options = this.app.getTipificacionesForDecision(decision);
+        const selectedValue = options.includes(currentValue) ? currentValue : '';
+        tipifSelect.innerHTML = `<option value="">-- Selecciona una tipología --</option>${options.map(option => `<option value="${option}" ${option === selectedValue ? 'selected' : ''}>${option}</option>`).join('')}`;
+        if (tipifLabel) {
+          tipifLabel.innerHTML = `<strong>${decision === 'aplica' ? 'Tipología de la alerta que aplica:' : 'Tipología del por qué no aplica:'}</strong>`;
+        }
+        return selectedValue;
+      };
+
       // 1. Cambio a Aplica
       radioAplica?.addEventListener('change', () => {
         labelAplica?.classList.add('active-aplica');
         labelNoAplica?.classList.remove('active-no-aplica');
         labelDuda?.classList.remove('active-duda');
 
-        tipifBox?.classList.remove('visible');
-        tipifBox?.classList.add('hidden');
+        tipifBox?.classList.remove('hidden');
+        tipifBox?.classList.add('visible');
         dudaBox?.classList.remove('visible');
         dudaBox?.classList.add('hidden');
         card.classList.add('answered');
@@ -742,7 +756,8 @@ export class ValidatorUI {
 
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].status = 'aplica';
-        audit.validationResults[kpiName].tipificacion = '';
+        audit.validationResults[kpiName].tipificacion = populateTipifications('aplica');
+        setTimeout(() => tipifSelect?.focus(), 150);
         const decisionAt = new Date().toISOString();
         // This is deliberately separate from updatedAt: observations can be
         // edited later, but the PDV history must retain when the validator
@@ -766,11 +781,10 @@ export class ValidatorUI {
         card.classList.add('answered');
         card.classList.remove('card-has-doubt');
 
-        setTimeout(() => tipifSelect?.focus(), 150);
-
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].status = 'no_aplica';
-        audit.validationResults[kpiName].tipificacion = tipifSelect?.value || '';
+        audit.validationResults[kpiName].tipificacion = populateTipifications('no_aplica');
+        setTimeout(() => tipifSelect?.focus(), 150);
         const decisionAt = new Date().toISOString();
         audit.validationResults[kpiName].decisionAt = decisionAt;
         audit.validationResults[kpiName].updatedAt = decisionAt;
@@ -795,6 +809,7 @@ export class ValidatorUI {
 
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].status = 'duda';
+        audit.validationResults[kpiName].tipificacion = '';
         audit.validationResults[kpiName].dudaText = dudaInput?.value.trim() || '';
         audit.validationResults[kpiName].dudaCreatedAt = audit.validationResults[kpiName].dudaCreatedAt || new Date().toISOString();
         audit.validationResults[kpiName].updatedAt = new Date().toISOString();
@@ -890,7 +905,7 @@ export class ValidatorUI {
         audit.validationResults[kpiName] = {
           ...previous,
           status: 'aplica',
-          tipificacion: '',
+          tipificacion: tipifSelect?.value || '',
           observaciones: obsTextarea?.value.trim() || '',
           updatedAt: new Date().toISOString(),
           decisionAt: previous.decisionAt || null
@@ -939,7 +954,7 @@ export class ValidatorUI {
       const res = audit.validationResults[kpi.name];
       if (!res || !res.status) {
         unselectedKpis.push(kpi.name);
-      } else if (res.status === 'no_aplica' && !res.tipificacion) {
+      } else if (['aplica', 'no_aplica'].includes(res.status) && !res.tipificacion) {
         missingTipification.push(kpi.name);
       } else if (res.status === 'duda') {
         hasDoubts = true;
@@ -956,7 +971,7 @@ export class ValidatorUI {
     }
 
     if (missingTipification.length > 0) {
-      const msg = `Debes seleccionar la tipificación para los KPIs marcados como "No Aplica".`;
+      const msg = 'Debes seleccionar una tipología para cada KPI marcado como Aplica o No Aplica.';
       if (errorMsgBox) errorMsgBox.innerHTML = `<span class="text-danger">⚠️ ${msg}</span>`;
       this.app.showToast(msg, 'warning');
       return;
