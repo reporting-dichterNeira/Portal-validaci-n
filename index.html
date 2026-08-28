@@ -876,6 +876,11 @@
             <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminScoreChangeAnalysis()">📥 Cargar notas del mes</button>
           </div>
           <p class="form-help" id="admin-score-changes-import-status">Carga los dos meses que quieres comparar.</p>
+          <section class="admin-analysis-card admin-analysis-imports-card">
+            <h3>🗂️ Bases de notas cargadas</h3>
+            <p class="form-help">Verifica aquí el mes y la fecha de carga antes de subir el otro archivo.</p>
+            <div id="admin-score-changes-import-list" class="admin-analysis-ranking"><span class="text-muted">Aún no hay archivos cargados.</span></div>
+          </section>
           <div class="admin-analysis-filter-bar">
             <label for="admin-score-changes-previous-month">Mes anterior</label>
             <select id="admin-score-changes-previous-month" class="form-select"><option value="">Sin carga disponible</option></select>
@@ -2803,6 +2808,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=80.0"></script>
+  <script type="module" src="js/app.js?v=81.0"></script>
 </body>
 </html>

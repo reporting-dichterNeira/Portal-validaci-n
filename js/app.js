@@ -1668,6 +1668,18 @@ class ValidaFlowApp {
       ? `Archivos disponibles: ${imports.map(item => `${this.formatExternalImportMonth(item.period_month)} (${formatNumber(item.row_count)} registros)`).join(' · ')}.`
       : 'Carga primero el archivo del mes anterior y después el del mes actual.';
     setText('admin-score-changes-import-status', importSummary);
+    const importList = document.getElementById('admin-score-changes-import-list');
+    if (importList) {
+      const formatImportedAt = value => {
+        const date = new Date(value || '');
+        return Number.isNaN(date.getTime())
+          ? 'fecha no disponible'
+          : new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+      };
+      importList.innerHTML = imports.length
+        ? imports.map(item => `<div class="admin-analysis-ranking-row"><div><strong>${escapeHtml(this.formatExternalImportMonth(item.period_month))}</strong><small>${escapeHtml(item.source_filename || 'Archivo sin nombre')} · ${formatNumber(item.row_count)} registros · ${escapeHtml(formatImportedAt(item.imported_at))}</small></div><span class="badge badge-success">Cargada</span></div>`).join('')
+        : '<span class="text-muted">Aún no hay archivos cargados. Sube primero el mes anterior.</span>';
+    }
 
     const previousMonth = this.adminScoreChangePreviousMonth;
     const currentMonth = this.adminScoreChangeCurrentMonth;
