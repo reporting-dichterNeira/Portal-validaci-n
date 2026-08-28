@@ -1138,6 +1138,17 @@ class ValidaFlowApp {
   parseExternalExportDate(value) {
     const raw = String(value || '').trim();
     if (!raw) return null;
+    // Algunos Excel conservan fechas como número de serie (p. ej. 46245).
+    // Date("46245") lo interpreta como el año 46245 y Supabase lo rechaza;
+    // conviértelo desde el origen de fechas de Excel antes de serializarlo.
+    if (/^\d{4,6}(?:\.\d+)?$/.test(raw)) {
+      const excelSerial = Number(raw);
+      if (excelSerial >= 20000 && excelSerial <= 70000) {
+        const excelEpochUtc = Date.UTC(1899, 11, 30);
+        const dateFromExcel = new Date(excelEpochUtc + (excelSerial * 86400000));
+        if (!Number.isNaN(dateFromExcel.getTime())) return dateFromExcel.toISOString();
+      }
+    }
     const date = new Date(raw);
     return Number.isNaN(date.getTime()) ? null : date.toISOString();
   }
