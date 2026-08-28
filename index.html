@@ -774,6 +774,11 @@
             <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminExternalAnalysis('alerts')">📥 Cargar export general</button>
           </div>
           <p class="form-help" id="admin-alerts-import-status">Aún no se ha cargado un export de auditorías.</p>
+          <section class="admin-analysis-card admin-analysis-imports-card">
+            <h3>🗂️ Exports generales cargados</h3>
+            <p class="form-help">Todos los supervisores con acceso pueden ver los meses cargados. Actualizar reemplaza únicamente la versión de ese mismo mes.</p>
+            <div id="admin-alerts-import-list" class="admin-analysis-ranking"><span class="text-muted">Aún no hay exports generales cargados.</span></div>
+          </section>
           <div class="admin-analysis-filter-bar">
             <label for="admin-alerts-study-filter">Filtrar por estudio</label>
             <select id="admin-alerts-study-filter" class="form-select"><option value="all">Todos los estudios</option></select>
@@ -818,6 +823,11 @@
             <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminExternalAnalysis('editions')">📥 Cargar export de ediciones</button>
           </div>
           <p class="form-help" id="admin-editions-import-status">Primero carga la base de alertas y luego el export de ediciones.</p>
+          <section class="admin-analysis-card admin-analysis-imports-card">
+            <h3>🗂️ Exports de ediciones cargados</h3>
+            <p class="form-help">Todos los supervisores con acceso pueden ver los meses cargados. Actualizar reemplaza únicamente la versión de ese mismo mes.</p>
+            <div id="admin-editions-import-list" class="admin-analysis-ranking"><span class="text-muted">Aún no hay exports de ediciones cargados.</span></div>
+          </section>
 
           <div class="stats-grid admin-analysis-stats">
             <div class="stat-card"><div class="stat-icon-wrapper icon-magenta">🚨</div><div class="stat-details"><span class="stat-label">Alertas analizadas</span><strong class="stat-value" id="admin-editions-alerts-count">0</strong></div></div>
@@ -2812,6 +2822,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=83.0"></script>
+  <script type="module" src="js/app.js?v=84.0"></script>
 </body>
 </html>

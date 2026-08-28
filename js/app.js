@@ -1321,6 +1321,26 @@ class ValidaFlowApp {
     }
   }
 
+  prepareAdminMonthlyImportUpdate(datasetType, periodMonth) {
+    const target = {
+      alerts: { period: 'admin-alerts-export-period', file: 'admin-alerts-export-input', label: 'export general' },
+      editions: { period: 'admin-editions-export-period', file: 'admin-editions-export-input', label: 'export de ediciones' },
+      notes: { period: 'admin-score-changes-period', file: 'admin-score-changes-input', label: 'archivo de notas' }
+    }[datasetType];
+    if (!target) return;
+    const month = String(periodMonth || '').slice(0, 7);
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      this.showToast('No fue posible identificar el mes de este export.', 'error');
+      return;
+    }
+    const periodInput = document.getElementById(target.period);
+    const fileInput = document.getElementById(target.file);
+    if (periodInput) periodInput.value = month;
+    fileInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    fileInput?.focus();
+    this.showToast(`Selecciona el nuevo ${target.label} para ${this.formatExternalImportMonth(month)}. Al cargarlo, reemplazará solo ese mes.`, 'info');
+  }
+
   formatExternalImportMonth(value) {
     const match = String(value || '').match(/^(\d{4})-(\d{2})/);
     if (!match) return 'el mes seleccionado';
@@ -1376,8 +1396,11 @@ class ValidaFlowApp {
     const escapeHtml = value => String(value ?? '—').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
     const setText = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
     const formatNumber = value => Number(value || 0).toLocaleString('es-CO');
-    const alertImport = analysis.imports.find(item => item.dataset_type === 'alerts');
-    const editionImport = analysis.imports.find(item => item.dataset_type === 'editions');
+    const sortImportsByMonth = items => items.slice().sort((a, b) => String(b.period_month || '').localeCompare(String(a.period_month || '')));
+    const alertImports = sortImportsByMonth(analysis.imports.filter(item => item.dataset_type === 'alerts'));
+    const editionImports = sortImportsByMonth(analysis.imports.filter(item => item.dataset_type === 'editions'));
+    const alertImport = alertImports[0];
+    const editionImport = editionImports[0];
     const allPlatformAlertAudits = analysis.platformAlertAudits || [];
     const visualizationModule = this.getVisualizationModuleFilter();
     const platformAlertAudits = visualizationModule === 'all'
@@ -1480,12 +1503,27 @@ class ValidaFlowApp {
       acc[key] = (acc[key] || 0) + (valueField ? Number(record[valueField] || 0) : 1);
       return acc;
     }, {})).sort((a, b) => b[1] - a[1]);
+    const formatImportedAt = value => {
+      const date = new Date(value || '');
+      return Number.isNaN(date.getTime())
+        ? 'fecha no disponible'
+        : new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+    };
+    const renderImportList = (id, items, datasetType, emptyMessage) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.innerHTML = items.length
+        ? items.map(item => `<div class="admin-analysis-ranking-row"><div><strong>${escapeHtml(this.formatExternalImportMonth(item.period_month))}</strong><small>${escapeHtml(item.source_filename || 'Archivo sin nombre')} · ${formatNumber(item.row_count)} registros · ${escapeHtml(formatImportedAt(item.imported_at))}</small></div><button class="btn btn-outline btn-sm" type="button" onclick="window.app?.prepareAdminMonthlyImportUpdate('${datasetType}', '${String(item.period_month || '').slice(0, 10)}')">Actualizar</button></div>`).join('')
+        : `<span class="text-muted">${emptyMessage}</span>`;
+    };
 
     const moduleStatus = visualizationModule === 'all' ? '' : ` · Vista: ${this.getVisualizationModuleLabel(visualizationModule)}.`;
     setText('admin-alerts-import-status', alertImport ? `Último export: ${alertImport.source_filename} · ${this.formatExternalImportMonth(alertImport.period_month)} · ${formatNumber(alertImport.row_count)} registros útiles.${moduleStatus}` : 'Aún no se ha cargado un export general.');
     setText('admin-editions-import-status', editionImport
       ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles. Cruzado contra ${formatNumber(platformAlertAudits.length)} auditorías con alertas ya validadas en ValidaFlow.${moduleStatus}`
       : 'Carga el export de ediciones para cruzarlo con las alertas validadas en ValidaFlow.');
+    renderImportList('admin-alerts-import-list', alertImports, 'alerts', 'Aún no hay exports generales cargados.');
+    renderImportList('admin-editions-import-list', editionImports, 'editions', 'Aún no hay exports de ediciones cargados.');
     setText('admin-alerts-source-count', formatNumber(filteredAlertRows.length));
     setText('admin-alerts-count', formatNumber(filteredAlertRows.length));
     setText('admin-alerts-matched-count', formatNumber(matchedAlerts.length));
@@ -1680,7 +1718,7 @@ class ValidaFlowApp {
           : new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
       };
       importList.innerHTML = imports.length
-        ? imports.map(item => `<div class="admin-analysis-ranking-row"><div><strong>${escapeHtml(this.formatExternalImportMonth(item.period_month))}</strong><small>${escapeHtml(item.source_filename || 'Archivo sin nombre')} · ${formatNumber(item.row_count)} registros · ${escapeHtml(formatImportedAt(item.imported_at))}</small></div><span class="badge badge-success">Cargada</span></div>`).join('')
+        ? imports.map(item => `<div class="admin-analysis-ranking-row"><div><strong>${escapeHtml(this.formatExternalImportMonth(item.period_month))}</strong><small>${escapeHtml(item.source_filename || 'Archivo sin nombre')} · ${formatNumber(item.row_count)} registros · ${escapeHtml(formatImportedAt(item.imported_at))}</small></div><button class="btn btn-outline btn-sm" type="button" onclick="window.app?.prepareAdminMonthlyImportUpdate('notes', '${String(item.period_month || '').slice(0, 10)}')">Actualizar</button></div>`).join('')
         : '<span class="text-muted">Aún no hay archivos cargados. Sube primero el mes anterior.</span>';
     }
 
