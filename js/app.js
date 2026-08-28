@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=34.0';
-import { SupabaseBackend } from './supabase-backend.js?v=47.0';
+import { SupabaseBackend } from './supabase-backend.js?v=48.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -48,6 +48,8 @@ class ValidaFlowApp {
     this.adminAlertCrossByAuditId = new Map();
     this.adminScoreChangePreviousMonth = '';
     this.adminScoreChangeCurrentMonth = '';
+    this.adminScoreChangeStudyFilter = 'all';
+    this.adminScoreChangeDirectionFilter = 'all';
     this.adminScoreChangeRows = [];
     this.adminAnalysisSheet = 'core';
     this.visualizationTab = 'overview';
@@ -1256,6 +1258,7 @@ class ValidaFlowApp {
         audit_external_id: this.getExternalExportValue(row, ['id auditoria', 'id audito', 'audit id']) || null,
         pdv_id: pdvId,
         source: this.getExternalExportValue(row, ['origen', 'origin']) || null,
+        study: this.getExternalExportValue(row, ['estudio', 'study', 'survey']) || null,
         subkpi,
         wave: this.getExternalExportValue(row, ['ola id', 'olaid', 'ola', 'wave']) || null,
         kpi: this.getExternalExportValue(row, ['kpi']) || null,
@@ -1696,9 +1699,44 @@ class ValidaFlowApp {
       }
       return items;
     }, []);
-    this.adminScoreChangeRows = changeRows;
-    const zeroToOneRows = changeRows.filter(item => item.direction === 'up');
-    const oneToZeroRows = changeRows.filter(item => item.direction === 'down');
+    const studyName = row => String(row?.study || row?.source || 'Sin estudio').trim() || 'Sin estudio';
+    const availableStudies = [...new Set([...previousRows, ...currentRows].map(studyName))]
+      .sort((a, b) => a.localeCompare(b, 'es'));
+    const activeStudy = this.adminScoreChangeStudyFilter === 'all' || availableStudies.includes(this.adminScoreChangeStudyFilter)
+      ? this.adminScoreChangeStudyFilter
+      : 'all';
+    this.adminScoreChangeStudyFilter = activeStudy;
+    const studyFilter = document.getElementById('admin-score-changes-study-filter');
+    if (studyFilter) {
+      studyFilter.innerHTML = `<option value="all">Todos los estudios</option>${availableStudies.map(study => `<option value="${escapeHtml(study)}">${escapeHtml(study)}</option>`).join('')}`;
+      studyFilter.value = activeStudy;
+      if (studyFilter.dataset.filterBound !== 'true') {
+        studyFilter.addEventListener('change', event => this.setAdminScoreChangeStudyFilter(event.target.value));
+        studyFilter.dataset.filterBound = 'true';
+      }
+    }
+    const allowedDirections = new Set(['all', 'up', 'down']);
+    const activeDirection = allowedDirections.has(this.adminScoreChangeDirectionFilter)
+      ? this.adminScoreChangeDirectionFilter
+      : 'all';
+    this.adminScoreChangeDirectionFilter = activeDirection;
+    const directionFilter = document.getElementById('admin-score-changes-direction-filter');
+    if (directionFilter) {
+      directionFilter.value = activeDirection;
+      if (directionFilter.dataset.filterBound !== 'true') {
+        directionFilter.addEventListener('change', event => this.setAdminScoreChangeDirectionFilter(event.target.value));
+        directionFilter.dataset.filterBound = 'true';
+      }
+    }
+    const filteredChangeRows = changeRows.filter(item => (
+      (activeStudy === 'all' || studyName(item.current) === activeStudy)
+      && (activeDirection === 'all' || item.direction === activeDirection)
+    ));
+    this.adminScoreChangeRows = filteredChangeRows;
+    const zeroToOneRows = filteredChangeRows.filter(item => item.direction === 'up');
+    const oneToZeroRows = filteredChangeRows.filter(item => item.direction === 'down');
+    const filteredPreviousRows = activeStudy === 'all' ? previousRows : previousRows.filter(row => studyName(row) === activeStudy);
+    const filteredCurrentRows = activeStudy === 'all' ? currentRows : currentRows.filter(row => studyName(row) === activeStudy);
     const rank = (rows, getter) => Object.entries(rows.reduce((counts, row) => {
       const label = getter(row) || 'Sin dato';
       counts[label] = (counts[label] || 0) + 1;
@@ -1711,23 +1749,23 @@ class ValidaFlowApp {
         ? rows.slice(0, 6).map(([label, count]) => `<div class="admin-analysis-ranking-row"><strong>${escapeHtml(label)}</strong><span>${formatNumber(count)}</span></div>`).join('')
         : '<span class="text-muted">No hay cambios de 0 a 1 ni de 1 a 0 para la comparación elegida.</span>';
     };
-    setText('admin-score-changes-previous-count', formatNumber(previousRows.length));
-    setText('admin-score-changes-current-count', formatNumber(currentRows.length));
+    setText('admin-score-changes-previous-count', formatNumber(filteredPreviousRows.length));
+    setText('admin-score-changes-current-count', formatNumber(filteredCurrentRows.length));
     setText('admin-score-changes-zero-to-one-count', formatNumber(zeroToOneRows.length));
     setText('admin-score-changes-one-to-zero-count', formatNumber(oneToZeroRows.length));
-    setText('admin-score-changes-pdv-count', formatNumber(new Set(changeRows.map(item => item.current.pdv_id)).size));
+    setText('admin-score-changes-pdv-count', formatNumber(new Set(filteredChangeRows.map(item => item.current.pdv_id)).size));
     setText('admin-score-changes-filter-count', previousMonth && currentMonth
-      ? `${formatNumber(changeRows.length)} cambios encontrados al comparar ${this.formatExternalImportMonth(previousMonth)} → ${this.formatExternalImportMonth(currentMonth)}: ${formatNumber(zeroToOneRows.length)} mejoras y ${formatNumber(oneToZeroRows.length)} caídas.`
+      ? `${formatNumber(filteredChangeRows.length)} de ${formatNumber(changeRows.length)} cambios al comparar ${this.formatExternalImportMonth(previousMonth)} → ${this.formatExternalImportMonth(currentMonth)}: ${formatNumber(zeroToOneRows.length)} mejoras y ${formatNumber(oneToZeroRows.length)} caídas.`
       : 'Selecciona el mes anterior y el mes actual.');
-    renderRanking('admin-score-changes-top-kpis', rank(changeRows, item => item.current.kpi || item.current.subkpi));
-    renderRanking('admin-score-changes-top-pdvs', rank(changeRows, item => item.current.pdv_id));
+    renderRanking('admin-score-changes-top-kpis', rank(filteredChangeRows, item => item.current.kpi || item.current.subkpi));
+    renderRanking('admin-score-changes-top-pdvs', rank(filteredChangeRows, item => item.current.pdv_id));
     const tbody = document.getElementById('admin-score-changes-tbody');
     if (tbody) {
-      tbody.innerHTML = changeRows.length ? changeRows
+      tbody.innerHTML = filteredChangeRows.length ? filteredChangeRows
         .sort((a, b) => String(a.direction).localeCompare(String(b.direction)) || String(a.current.pdv_id).localeCompare(String(b.current.pdv_id), 'es') || String(a.current.subkpi).localeCompare(String(b.current.subkpi), 'es'))
         .slice(0, 500)
-        .map(({ previous, current, changeType, direction }) => `<tr><td><span class="badge ${direction === 'up' ? 'badge-success' : 'badge-warning'}">${changeType}</span></td><td><strong>${escapeHtml(current.pdv_id)}</strong></td><td>${escapeHtml(current.subkpi)}</td><td>${escapeHtml(current.kpi)}</td><td>${escapeHtml(current.source)}</td><td><code>${escapeHtml(previous.audit_external_id)}</code></td><td><code>${escapeHtml(current.audit_external_id)}</code></td><td>${formatScore(previous.score)}</td><td><strong class="${direction === 'up' ? 'text-success' : 'text-magenta'}">${formatScore(current.score)}</strong></td></tr>`).join('')
-        : `<tr><td colspan="9" class="text-center text-muted">${previousMonth && currentMonth ? 'No hay sub-KPIs que hayan pasado de 0 a 1 ni de 1 a 0 entre los meses seleccionados.' : 'Carga y selecciona el mes anterior y el actual para comparar.'}</td></tr>`;
+        .map(({ previous, current, changeType, direction }) => `<tr><td><span class="badge ${direction === 'up' ? 'badge-success' : 'badge-warning'}">${changeType}</span></td><td>${escapeHtml(studyName(current))}</td><td><strong>${escapeHtml(current.pdv_id)}</strong></td><td>${escapeHtml(current.subkpi)}</td><td>${escapeHtml(current.kpi)}</td><td>${escapeHtml(current.source)}</td><td><code>${escapeHtml(previous.audit_external_id)}</code></td><td><code>${escapeHtml(current.audit_external_id)}</code></td><td>${formatScore(previous.score)}</td><td><strong class="${direction === 'up' ? 'text-success' : 'text-magenta'}">${formatScore(current.score)}</strong></td></tr>`).join('')
+        : `<tr><td colspan="10" class="text-center text-muted">${previousMonth && currentMonth ? 'No hay sub-KPIs que cumplan los filtros seleccionados.' : 'Carga y selecciona el mes anterior y el actual para comparar.'}</td></tr>`;
     }
   }
 
@@ -1735,6 +1773,16 @@ class ValidaFlowApp {
     const month = String(value || '');
     if (which === 'previous') this.adminScoreChangePreviousMonth = month;
     else this.adminScoreChangeCurrentMonth = month;
+    this.renderAdminExternalAnalysis();
+  }
+
+  setAdminScoreChangeStudyFilter(study) {
+    this.adminScoreChangeStudyFilter = String(study || 'all');
+    this.renderAdminExternalAnalysis();
+  }
+
+  setAdminScoreChangeDirectionFilter(direction) {
+    this.adminScoreChangeDirectionFilter = String(direction || 'all');
     this.renderAdminExternalAnalysis();
   }
 
@@ -1752,6 +1800,7 @@ class ValidaFlowApp {
       'Mes anterior': this.formatExternalImportMonth(this.adminScoreChangePreviousMonth),
       'Mes actual': this.formatExternalImportMonth(this.adminScoreChangeCurrentMonth),
       Cambio: changeType,
+      Estudio: current.study || current.source || '',
       'Punto de venta (ID PDV)': current.pdv_id || '',
       'Sub-KPI afectado': current.subkpi || '',
       KPI: current.kpi || '',
@@ -1762,7 +1811,7 @@ class ValidaFlowApp {
       'Nota actual': Number(current.score || 0)
     }));
     const worksheet = XLSX.utils.json_to_sheet(output);
-    worksheet['!cols'] = [{ wch: 19 }, { wch: 19 }, { wch: 23 }, { wch: 44 }, { wch: 28 }, { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 15 }, { wch: 14 }];
+    worksheet['!cols'] = [{ wch: 19 }, { wch: 19 }, { wch: 14 }, { wch: 24 }, { wch: 23 }, { wch: 44 }, { wch: 28 }, { wch: 22 }, { wch: 22 }, { wch: 15 }, { wch: 14 }];
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Cambios de nota');
     XLSX.writeFile(workbook, `cambios_nota_${this.adminScoreChangePreviousMonth || 'anterior'}_${this.adminScoreChangeCurrentMonth || 'actual'}.xlsx`);

@@ -928,7 +928,7 @@ export class SupabaseBackend {
         }),
       this.loadAllAdminAnalysisRows(
         'admin_note_score_records',
-        'audit_external_id, period_month, pdv_id, source, subkpi, wave, kpi, score'
+        'audit_external_id, period_month, pdv_id, source, study, subkpi, wave, kpi, score'
       )
     ]);
     return { noteScoreImports, noteScoreRecords };
