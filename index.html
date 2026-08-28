@@ -860,6 +860,47 @@
             <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Auditor</th><th>País / ciudad</th><th>Alerta</th><th>Modificaciones</th><th>Usuario fin 1ra validación</th><th>Usuario fin últ. validación</th><th>Validador ValidaFlow</th><th>Estado</th><th>Detalle</th></tr></thead><tbody id="admin-editions-analysis-tbody"><tr><td colspan="11" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
           </section>
         </section>
+
+        <section class="glass-panel admin-analysis-sheet hidden" id="admin-score-changes-analysis-sheet" aria-live="polite">
+          <div class="section-header admin-analysis-header">
+            <div>
+              <div class="corporate-badge">Comparación mensual por ID de PDV</div>
+              <h2>Cambio de nota: sub-KPIs de 0 a 1</h2>
+              <p>Carga primero el archivo del mes anterior y después el del mes actual. Se comparan el ID de PDV y el sub-KPI para identificar los casos que pasaron exactamente de nota 0 a nota 1.</p>
+            </div>
+            <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis()">↻ Actualizar</button>
+          </div>
+          <div class="admin-analysis-upload">
+            <label class="admin-analysis-period" for="admin-score-changes-period">Mes del archivo <input class="form-control" type="month" id="admin-score-changes-period" required /></label>
+            <input class="form-control" type="file" id="admin-score-changes-input" accept=".xlsx,.xls,.csv,.txt" />
+            <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminScoreChangeAnalysis()">📥 Cargar notas del mes</button>
+          </div>
+          <p class="form-help" id="admin-score-changes-import-status">Carga los dos meses que quieres comparar.</p>
+          <div class="admin-analysis-filter-bar">
+            <label for="admin-score-changes-previous-month">Mes anterior</label>
+            <select id="admin-score-changes-previous-month" class="form-select"><option value="">Sin carga disponible</option></select>
+            <label for="admin-score-changes-current-month">Mes actual</label>
+            <select id="admin-score-changes-current-month" class="form-select"><option value="">Sin carga disponible</option></select>
+            <span class="form-help" id="admin-score-changes-filter-count">—</span>
+          </div>
+
+          <div class="stats-grid admin-analysis-stats">
+            <div class="stat-card"><div class="stat-icon-wrapper icon-blue">🧾</div><div class="stat-details"><span class="stat-label">Registros mes anterior</span><strong class="stat-value" id="admin-score-changes-previous-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-purple">🧾</div><div class="stat-details"><span class="stat-label">Registros mes actual</span><strong class="stat-value" id="admin-score-changes-current-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-emerald">↑</div><div class="stat-details"><span class="stat-label">Sub-KPIs que pasaron 0 → 1</span><strong class="stat-value text-success" id="admin-score-changes-zero-to-one-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-magenta">🏪</div><div class="stat-details"><span class="stat-label">Puntos de venta afectados</span><strong class="stat-value" id="admin-score-changes-pdv-count">0</strong></div></div>
+          </div>
+
+          <div class="admin-analysis-grid admin-analysis-grid-two">
+            <section class="admin-analysis-card"><h3>🎯 KPIs con más cambios de 0 a 1</h3><div id="admin-score-changes-top-kpis" class="admin-analysis-ranking"><span class="text-muted">Carga los dos meses para comparar.</span></div></section>
+            <section class="admin-analysis-card"><h3>🏪 Puntos de venta con más cambios</h3><div id="admin-score-changes-top-pdvs" class="admin-analysis-ranking"><span class="text-muted">Carga los dos meses para comparar.</span></div></section>
+          </div>
+
+          <section class="admin-analysis-card admin-analysis-table-card">
+            <div class="admin-analysis-table-heading"><div><h3>Detalle de cambios 0 → 1</h3><p class="form-help">Cada fila corresponde al mismo punto de venta y sub-KPI en ambos meses.</p></div><button class="btn btn-success btn-sm" type="button" onclick="window.app?.exportAdminScoreChangesTable()">📊 Descargar cambios</button></div>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>Punto de venta (ID PDV)</th><th>Sub-KPI afectado</th><th>KPI</th><th>Origen</th><th>ID auditoría anterior</th><th>ID auditoría actual</th><th>Nota anterior</th><th>Nota actual</th></tr></thead><tbody id="admin-score-changes-tbody"><tr><td colspan="8" class="text-center text-muted">Carga los dos meses para comparar.</td></tr></tbody></table></div>
+          </section>
+        </section>
       </div>
     </div>
 
@@ -884,6 +925,7 @@
           <button class="visualization-tab active" data-visualization-tab="overview" type="button" onclick="window.app?.switchVisualizationTab('overview')">📡 Seguimiento diario</button>
           <button class="visualization-tab" data-visualization-tab="alerts" type="button" onclick="window.app?.switchVisualizationTab('alerts')">🔗 Cruce de alertas</button>
           <button class="visualization-tab" data-visualization-tab="editions" type="button" onclick="window.app?.switchVisualizationTab('editions')">✏️ Ediciones</button>
+          <button class="visualization-tab" data-visualization-tab="score-changes" type="button" onclick="window.app?.switchVisualizationTab('score-changes')">🔁 Cambio de nota</button>
           <button class="visualization-tab" data-visualization-tab="metrics" type="button" onclick="window.app?.switchVisualizationTab('metrics')">📊 Métricas & exportaciones</button>
           <button class="visualization-tab hidden" data-visualization-tab="committee" type="button" onclick="window.app?.switchVisualizationTab('committee')">👔 Comité Ejecutivo</button>
         </nav>
@@ -899,6 +941,7 @@
         <div class="visualization-pane active" id="visualization-pane-overview"></div>
         <div class="visualization-pane" id="visualization-pane-alerts"></div>
         <div class="visualization-pane" id="visualization-pane-editions"></div>
+        <div class="visualization-pane" id="visualization-pane-score-changes"></div>
         <div class="visualization-pane" id="visualization-pane-metrics"></div>
         <div class="visualization-pane" id="visualization-pane-committee"></div>
       </div>
@@ -2759,6 +2802,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=78.0"></script>
+  <script type="module" src="js/app.js?v=79.0"></script>
 </body>
 </html>

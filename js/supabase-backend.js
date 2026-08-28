@@ -795,6 +795,40 @@ export class SupabaseBackend {
     if (importError) throw importError;
   }
 
+  async replaceAdminNoteScoreImport({ sourceFilename, periodMonth, rows }) {
+    this.ensureConfigured();
+    const normalizedMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(periodMonth || ''))
+      ? `${periodMonth}-01`
+      : null;
+    if (!normalizedMonth) throw new Error('Selecciona el mes de referencia del archivo de notas.');
+
+    const { error: deleteError } = await this.client
+      .from('admin_note_score_records')
+      .delete()
+      .eq('period_month', normalizedMonth);
+    if (deleteError) throw deleteError;
+
+    const rowsForMonth = rows.map(row => ({ ...row, period_month: normalizedMonth }));
+    for (let offset = 0; offset < rowsForMonth.length; offset += 500) {
+      const { error } = await this.client
+        .from('admin_note_score_records')
+        .insert(rowsForMonth.slice(offset, offset + 500));
+      if (error) throw error;
+    }
+
+    const { data: { user } } = await this.client.auth.getUser();
+    const { error: importError } = await this.client
+      .from('admin_note_score_imports')
+      .upsert({
+        period_month: normalizedMonth,
+        source_filename: String(sourceFilename || 'archivo_sin_nombre'),
+        row_count: rows.length,
+        imported_at: new Date().toISOString(),
+        imported_by: user?.id || null
+      }, { onConflict: 'period_month' });
+    if (importError) throw importError;
+  }
+
   async loadAdminAnalysisImports() {
     this.ensureConfigured();
     const { data, error } = await this.client
@@ -879,6 +913,25 @@ export class SupabaseBackend {
       alertRecords,
       editRecords
     };
+  }
+
+  async loadAdminNoteScoreAnalysis() {
+    this.ensureConfigured();
+    const [noteScoreImports, noteScoreRecords] = await Promise.all([
+      this.client
+        .from('admin_note_score_imports')
+        .select('period_month, source_filename, row_count, imported_at')
+        .order('period_month', { ascending: false })
+        .then(({ data, error }) => {
+          if (error) throw error;
+          return data || [];
+        }),
+      this.loadAllAdminAnalysisRows(
+        'admin_note_score_records',
+        'audit_external_id, period_month, pdv_id, source, subkpi, wave, kpi, score'
+      )
+    ]);
+    return { noteScoreImports, noteScoreRecords };
   }
 
   async createSupervisor({ username, displayName, password, studyIds, module, modules = [] }) {

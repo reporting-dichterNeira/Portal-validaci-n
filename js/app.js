@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=34.0';
-import { SupabaseBackend } from './supabase-backend.js?v=46.0';
+import { SupabaseBackend } from './supabase-backend.js?v=47.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -41,11 +41,14 @@ class ValidaFlowApp {
     this.currentAssignments = [];
     this.pendingStaffRole = 'supervisor';
     this.adminData = { countries: [], studies: [], supervisors: [], assignments: [] };
-    this.adminExternalAnalysis = { imports: [], alertRecords: [], editRecords: [], platformAuditIds: new Set() };
+    this.adminExternalAnalysis = { imports: [], alertRecords: [], editRecords: [], noteScoreImports: [], noteScoreRecords: [], platformAuditIds: new Set() };
     this.adminAlertsStudyFilter = 'all';
     this.adminAlertsAuditorFilter = 'all';
     this.adminAlertsFilteredRows = [];
     this.adminAlertCrossByAuditId = new Map();
+    this.adminScoreChangePreviousMonth = '';
+    this.adminScoreChangeCurrentMonth = '';
+    this.adminScoreChangeRows = [];
     this.adminAnalysisSheet = 'core';
     this.visualizationTab = 'overview';
     this.visualizationModuleFilter = 'all';
@@ -254,12 +257,14 @@ class ValidaFlowApp {
     move('admin-productivity-panel', 'visualization-pane-overview');
     move('admin-alerts-analysis-sheet', 'visualization-pane-alerts');
     move('admin-editions-analysis-sheet', 'visualization-pane-editions');
+    move('admin-score-changes-analysis-sheet', 'visualization-pane-score-changes');
     // These sheets were previously switched inside the administrator view
     // through the `hidden` utility. Once they live in independent panes, the
     // pane itself controls visibility, so the legacy class must not hide them.
     document.getElementById('admin-productivity-panel')?.classList.remove('hidden');
     document.getElementById('admin-alerts-analysis-sheet')?.classList.remove('hidden');
     document.getElementById('admin-editions-analysis-sheet')?.classList.remove('hidden');
+    document.getElementById('admin-score-changes-analysis-sheet')?.classList.remove('hidden');
     this.visualizationsMounted = true;
   }
 
@@ -305,7 +310,7 @@ class ValidaFlowApp {
 
   async switchVisualizationTab(tabId) {
     const isCommercial = this.currentRole === 'commercial';
-    const allowedTabs = isCommercial ? ['committee'] : ['overview', 'alerts', 'editions', 'metrics'];
+    const allowedTabs = isCommercial ? ['committee'] : ['overview', 'alerts', 'editions', 'score-changes', 'metrics'];
     const target = allowedTabs.includes(tabId) ? tabId : allowedTabs[0];
     this.visualizationTab = target;
     document.querySelectorAll('.visualization-tab').forEach(button => {
@@ -319,10 +324,13 @@ class ValidaFlowApp {
 
     if (target === 'overview') {
       await this.loadAdministratorPanel({ visualOnly: true });
-    } else if (target === 'alerts' || target === 'editions') {
-      document.getElementById(target === 'alerts'
-        ? 'admin-alerts-analysis-sheet'
-        : 'admin-editions-analysis-sheet')?.classList.remove('hidden');
+    } else if (['alerts', 'editions', 'score-changes'].includes(target)) {
+      const analysisSheetIds = {
+        alerts: 'admin-alerts-analysis-sheet',
+        editions: 'admin-editions-analysis-sheet',
+        'score-changes': 'admin-score-changes-analysis-sheet'
+      };
+      document.getElementById(analysisSheetIds[target])?.classList.remove('hidden');
       await this.refreshAdminExternalAnalysis();
     } else {
       this.moveReportsContent('visualization-pane-metrics');
@@ -1088,11 +1096,12 @@ class ValidaFlowApp {
   }
 
   switchAdminAnalysisSheet(sheet) {
-    const target = ['core', 'alerts', 'editions'].includes(sheet) ? sheet : 'core';
+    const target = ['core', 'alerts', 'editions', 'score-changes'].includes(sheet) ? sheet : 'core';
     this.adminAnalysisSheet = target;
     document.getElementById('admin-core-content')?.classList.toggle('hidden', target !== 'core');
     document.getElementById('admin-alerts-analysis-sheet')?.classList.toggle('hidden', target !== 'alerts');
     document.getElementById('admin-editions-analysis-sheet')?.classList.toggle('hidden', target !== 'editions');
+    document.getElementById('admin-score-changes-analysis-sheet')?.classList.toggle('hidden', target !== 'score-changes');
     document.querySelectorAll('.admin-analysis-tab').forEach(button => {
       button.classList.toggle('active', button.dataset.adminSheet === target);
     });
@@ -1221,6 +1230,44 @@ class ValidaFlowApp {
     return [...records.values()];
   }
 
+  parseExternalScore(value) {
+    const raw = String(value ?? '').trim();
+    if (!raw) return null;
+    // Los archivos de notas suelen usar coma decimal (0,00 / 1,00), pero
+    // también pueden provenir de Excel con punto decimal.
+    const normalized = raw
+      .replace(/\s/g, '')
+      .replace(/[^0-9,.-]/g, '')
+      .replace(/,(?=\d{1,4}$)/, '.')
+      .replace(/,(?=\d{3}(?:[.,]|$))/g, '');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  normalizeScoreChangeRows(rows) {
+    const records = new Map();
+    rows.forEach(row => {
+      const pdvId = this.getExternalExportValue(row, ['id de pdv', 'id pdv', 'pdv id']);
+      const subkpi = this.getExternalExportValue(row, ['subkpi', 'sub kpi']);
+      const score = this.parseExternalScore(this.getExternalExportValue(row, ['nota subkpi', 'nota']));
+      if (!pdvId || !subkpi || score === null) return;
+      const key = `${pdvId.trim().toLowerCase()}::${subkpi.trim().toLowerCase()}`;
+      const record = {
+        audit_external_id: this.getExternalExportValue(row, ['id auditoria', 'id audito', 'audit id']) || null,
+        pdv_id: pdvId,
+        source: this.getExternalExportValue(row, ['origen', 'origin']) || null,
+        subkpi,
+        wave: this.getExternalExportValue(row, ['ola id', 'olaid', 'ola', 'wave']) || null,
+        kpi: this.getExternalExportValue(row, ['kpi']) || null,
+        score
+      };
+      // La comparación es uno a uno por PDV y sub-KPI. Si el archivo trae
+      // un duplicado, se conserva la última fila del consolidado.
+      records.set(key, record);
+    });
+    return [...records.values()];
+  }
+
   async importAdminExternalAnalysis(datasetType) {
     if (!this.canUseExternalAnalysis()) return;
     const inputId = datasetType === 'alerts' ? 'admin-alerts-export-input' : 'admin-editions-export-input';
@@ -1246,6 +1293,31 @@ class ValidaFlowApp {
     }
   }
 
+  async importAdminScoreChangeAnalysis() {
+    if (!this.canUseExternalAnalysis()) return;
+    const input = document.getElementById('admin-score-changes-input');
+    const file = input?.files?.[0];
+    const periodMonth = document.getElementById('admin-score-changes-period')?.value;
+    try {
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(periodMonth || ''))) {
+        throw new Error('Selecciona el mes de referencia antes de cargar el archivo de notas.');
+      }
+      const rawRows = await this.readExternalExportRows(file);
+      const rows = this.normalizeScoreChangeRows(rawRows);
+      if (!rows.length) {
+        throw new Error('No se encontraron las columnas ID_de_PDV, subkpi y nota_subkpi con valores válidos.');
+      }
+      this.showToast(`Guardando ${rows.length.toLocaleString('es-CO')} notas útiles…`, 'info');
+      await this.backend.replaceAdminNoteScoreImport({ sourceFilename: file.name, periodMonth, rows });
+      this.adminScoreChangeCurrentMonth = `${periodMonth}-01`;
+      await this.refreshAdminExternalAnalysis();
+      if (input) input.value = '';
+      this.showToast(`Notas de ${this.formatExternalImportMonth(periodMonth)} cargadas. Selecciona el mes anterior para ver los cambios de 0 a 1.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible cargar el archivo de notas.', 'error');
+    }
+  }
+
   formatExternalImportMonth(value) {
     const match = String(value || '').match(/^(\d{4})-(\d{2})/);
     if (!match) return 'el mes seleccionado';
@@ -1257,6 +1329,17 @@ class ValidaFlowApp {
     if (!this.canUseExternalAnalysis()) return;
     try {
       const analysis = await this.backend.loadAdminExternalAnalysis();
+      let noteScoreAnalysis = { noteScoreImports: [], noteScoreRecords: [] };
+      try {
+        noteScoreAnalysis = await this.backend.loadAdminNoteScoreAnalysis();
+      } catch (noteScoreError) {
+        // Mantiene disponibles los cruces ya publicados mientras se aplica la
+        // migración inicial de Cambio de nota en Supabase.
+        if (!/admin_note_score|does not exist|PGRST204|PGRST205/i.test(String(noteScoreError?.message || noteScoreError))) {
+          throw noteScoreError;
+        }
+        console.info('Cambio de nota estará disponible cuando finalice la migración de datos.');
+      }
       // Editions are crossed with the alerts already validated in ValidaFlow.
       // The general export only enriches those rows with auditor/PDV context.
       const platformAudits = await this.backend.loadAuditHistory({ pageSize: 1000, ignoreScope: true });
@@ -1274,11 +1357,11 @@ class ValidaFlowApp {
         }
         return items;
       }, []);
-      this.adminExternalAnalysis = { ...analysis, platformAudits, platformAuditIds, platformAlertAudits };
+      this.adminExternalAnalysis = { ...analysis, ...noteScoreAnalysis, platformAudits, platformAuditIds, platformAlertAudits };
       this.renderAdminExternalAnalysis();
     } catch (error) {
       console.error('No fue posible cargar el análisis administrativo:', error);
-      ['admin-alerts-import-status', 'admin-editions-import-status'].forEach(id => {
+      ['admin-alerts-import-status', 'admin-editions-import-status', 'admin-score-changes-import-status'].forEach(id => {
         const element = document.getElementById(id);
         if (element) element.textContent = error.message || 'No fue posible consultar los datos cargados.';
       });
@@ -1551,6 +1634,120 @@ class ValidaFlowApp {
         return `<tr><td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(month))}</td><td>${escapeHtml(auditor)}</td><td>${escapeHtml(country)}<small>${escapeHtml(city)}</small></td><td>${escapeHtml(alertLabel)}${appliesLabel}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.first_validator || '—')}</td><td>${escapeHtml(edit?.last_validator || '—')}</td><td>${escapeHtml(validaFlowValidator)}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td><td><button class="btn btn-outline btn-sm" type="button" onclick="window.app?.showEditionAuditDetail(decodeURIComponent('${detailKey}'))">Ver detalle</button></td></tr>`;
       }).join('') : '<tr><td colspan="11" class="text-center text-muted">No hay auditorías que cumplan con el filtro seleccionado.</td></tr>';
     }
+    this.renderAdminScoreChangeAnalysis(analysis);
+  }
+
+  renderAdminScoreChangeAnalysis(analysis) {
+    const escapeHtml = value => String(value ?? '—').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+    const setText = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
+    const formatNumber = value => Number(value || 0).toLocaleString('es-CO');
+    const formatScore = value => Number(value || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const imports = (analysis.noteScoreImports || []).slice().sort((a, b) => String(b.period_month).localeCompare(String(a.period_month)));
+    const months = imports.map(item => String(item.period_month || '').slice(0, 10)).filter(Boolean);
+    const selectPrevious = document.getElementById('admin-score-changes-previous-month');
+    const selectCurrent = document.getElementById('admin-score-changes-current-month');
+    const mostRecent = months[0] || '';
+    if (!this.adminScoreChangeCurrentMonth || !months.includes(this.adminScoreChangeCurrentMonth)) {
+      this.adminScoreChangeCurrentMonth = mostRecent;
+    }
+    if (!this.adminScoreChangePreviousMonth || !months.includes(this.adminScoreChangePreviousMonth) || this.adminScoreChangePreviousMonth === this.adminScoreChangeCurrentMonth) {
+      const currentIndex = months.indexOf(this.adminScoreChangeCurrentMonth);
+      this.adminScoreChangePreviousMonth = months[currentIndex + 1] || '';
+    }
+    const monthOptions = `<option value="">Selecciona un mes</option>${months.map(month => `<option value="${escapeHtml(month)}">${escapeHtml(this.formatExternalImportMonth(month))}</option>`).join('')}`;
+    [selectPrevious, selectCurrent].forEach((select, index) => {
+      if (!select) return;
+      select.innerHTML = monthOptions;
+      select.value = index === 0 ? this.adminScoreChangePreviousMonth : this.adminScoreChangeCurrentMonth;
+      if (select.dataset.filterBound !== 'true') {
+        select.addEventListener('change', event => this.setAdminScoreChangeMonth(index === 0 ? 'previous' : 'current', event.target.value));
+        select.dataset.filterBound = 'true';
+      }
+    });
+    const importSummary = imports.length
+      ? `Archivos disponibles: ${imports.map(item => `${this.formatExternalImportMonth(item.period_month)} (${formatNumber(item.row_count)} registros)`).join(' · ')}.`
+      : 'Carga primero el archivo del mes anterior y después el del mes actual.';
+    setText('admin-score-changes-import-status', importSummary);
+
+    const previousMonth = this.adminScoreChangePreviousMonth;
+    const currentMonth = this.adminScoreChangeCurrentMonth;
+    const previousRows = (analysis.noteScoreRecords || []).filter(row => String(row.period_month || '').slice(0, 10) === previousMonth);
+    const currentRows = (analysis.noteScoreRecords || []).filter(row => String(row.period_month || '').slice(0, 10) === currentMonth);
+    const keyFor = row => `${String(row.pdv_id || '').trim().toLowerCase()}::${String(row.subkpi || '').trim().toLowerCase()}`;
+    const previousByKey = new Map(previousRows.map(row => [keyFor(row), row]));
+    const zeroToOneRows = currentRows.reduce((items, row) => {
+      const previous = previousByKey.get(keyFor(row));
+      if (previous && Math.abs(Number(previous.score)) < 0.0001 && Math.abs(Number(row.score) - 1) < 0.0001) {
+        items.push({ previous, current: row });
+      }
+      return items;
+    }, []);
+    this.adminScoreChangeRows = zeroToOneRows;
+    const rank = (rows, getter) => Object.entries(rows.reduce((counts, row) => {
+      const label = getter(row) || 'Sin dato';
+      counts[label] = (counts[label] || 0) + 1;
+      return counts;
+    }, {})).sort((a, b) => b[1] - a[1]);
+    const renderRanking = (id, rows) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.innerHTML = rows.length
+        ? rows.slice(0, 6).map(([label, count]) => `<div class="admin-analysis-ranking-row"><strong>${escapeHtml(label)}</strong><span>${formatNumber(count)}</span></div>`).join('')
+        : '<span class="text-muted">No hay cambios de 0 a 1 para la comparación elegida.</span>';
+    };
+    setText('admin-score-changes-previous-count', formatNumber(previousRows.length));
+    setText('admin-score-changes-current-count', formatNumber(currentRows.length));
+    setText('admin-score-changes-zero-to-one-count', formatNumber(zeroToOneRows.length));
+    setText('admin-score-changes-pdv-count', formatNumber(new Set(zeroToOneRows.map(item => item.current.pdv_id)).size));
+    setText('admin-score-changes-filter-count', previousMonth && currentMonth
+      ? `${formatNumber(zeroToOneRows.length)} cambios encontrados al comparar ${this.formatExternalImportMonth(previousMonth)} → ${this.formatExternalImportMonth(currentMonth)}.`
+      : 'Selecciona el mes anterior y el mes actual.');
+    renderRanking('admin-score-changes-top-kpis', rank(zeroToOneRows, item => item.current.kpi || item.current.subkpi));
+    renderRanking('admin-score-changes-top-pdvs', rank(zeroToOneRows, item => item.current.pdv_id));
+    const tbody = document.getElementById('admin-score-changes-tbody');
+    if (tbody) {
+      tbody.innerHTML = zeroToOneRows.length ? zeroToOneRows
+        .sort((a, b) => String(a.current.pdv_id).localeCompare(String(b.current.pdv_id), 'es') || String(a.current.subkpi).localeCompare(String(b.current.subkpi), 'es'))
+        .slice(0, 500)
+        .map(({ previous, current }) => `<tr><td><strong>${escapeHtml(current.pdv_id)}</strong></td><td>${escapeHtml(current.subkpi)}</td><td>${escapeHtml(current.kpi)}</td><td>${escapeHtml(current.source)}</td><td><code>${escapeHtml(previous.audit_external_id)}</code></td><td><code>${escapeHtml(current.audit_external_id)}</code></td><td>${formatScore(previous.score)}</td><td><strong class="text-success">${formatScore(current.score)}</strong></td></tr>`).join('')
+        : `<tr><td colspan="8" class="text-center text-muted">${previousMonth && currentMonth ? 'No hay sub-KPIs que hayan pasado de 0 a 1 entre los meses seleccionados.' : 'Carga y selecciona el mes anterior y el actual para comparar.'}</td></tr>`;
+    }
+  }
+
+  setAdminScoreChangeMonth(which, value) {
+    const month = String(value || '');
+    if (which === 'previous') this.adminScoreChangePreviousMonth = month;
+    else this.adminScoreChangeCurrentMonth = month;
+    this.renderAdminExternalAnalysis();
+  }
+
+  exportAdminScoreChangesTable() {
+    const rows = this.adminScoreChangeRows || [];
+    if (!rows.length) {
+      this.showToast('No hay cambios de 0 a 1 para exportar con los meses seleccionados.', 'warning');
+      return;
+    }
+    if (!window.XLSX) {
+      this.showToast('La librería de Excel aún no está disponible. Intenta nuevamente.', 'error');
+      return;
+    }
+    const output = rows.map(({ previous, current }) => ({
+      'Mes anterior': this.formatExternalImportMonth(this.adminScoreChangePreviousMonth),
+      'Mes actual': this.formatExternalImportMonth(this.adminScoreChangeCurrentMonth),
+      'Punto de venta (ID PDV)': current.pdv_id || '',
+      'Sub-KPI afectado': current.subkpi || '',
+      KPI: current.kpi || '',
+      Origen: current.source || '',
+      'ID auditoría anterior': previous.audit_external_id || '',
+      'ID auditoría actual': current.audit_external_id || '',
+      'Nota anterior': Number(previous.score || 0),
+      'Nota actual': Number(current.score || 0)
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(output);
+    worksheet['!cols'] = [{ wch: 19 }, { wch: 19 }, { wch: 23 }, { wch: 44 }, { wch: 28 }, { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 15 }, { wch: 14 }];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Cambios 0 a 1');
+    XLSX.writeFile(workbook, `cambios_nota_0_a_1_${this.adminScoreChangePreviousMonth || 'anterior'}_${this.adminScoreChangeCurrentMonth || 'actual'}.xlsx`);
   }
 
   showEditionAuditDetail(auditId) {
