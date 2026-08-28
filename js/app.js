@@ -293,7 +293,8 @@ class ValidaFlowApp {
     if (roleEl) roleEl.textContent = roleLabel;
     if (subtitle) subtitle.textContent = isCommercial
       ? 'Consulta el Informe Ejecutivo de Calidad y KPIs preparado para Comité y Comercial.'
-      : 'Indicadores, cruces, ediciones, exportaciones y reportes en un solo espacio.';
+      : 'Indicadores, cruces, ediciones y reportes en un solo espacio. Descarga en Power BI los tres exports mensuales para actualizarlos aquí.';
+    document.getElementById('visualization-powerbi-link')?.classList.toggle('hidden', isCommercial);
 
     document.querySelectorAll('.visualization-tab').forEach(button => {
       const tab = button.dataset.visualizationTab;

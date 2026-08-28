@@ -935,10 +935,16 @@
             <h1 class="hub-title">Portal de Visualizaciones</h1>
             <p class="hub-subtitle" id="visualization-portal-subtitle">Indicadores, cruces, ediciones, exportaciones y reportes en un solo espacio.</p>
           </div>
-          <div class="hub-user-pill">
-            <span class="hub-user-avatar">📈</span>
-            <div class="hub-user-meta"><span class="hub-user-role" id="visualization-user-role">Acceso de visualización</span><strong class="hub-user-name" id="visualization-user-name">Usuario</strong></div>
-            <button class="btn btn-outline btn-sm" onclick="window.app?.logoutSupervisor()">Cerrar Sesión 🚪</button>
+          <div class="visualization-header-actions">
+            <a class="visualization-powerbi-link" id="visualization-powerbi-link" href="https://app.powerbi.com/links/ZRtorqXOu3?ctid=05e4f087-3719-4046-8fa3-286b1f5110f2&amp;pbi_source=linkShare&amp;bookmarkGuid=df97ad57-04d6-4fe5-94b9-8fd0d764a36d" target="_blank" rel="noopener noreferrer">
+              <span>📊 Abrir Power BI ↗</span>
+              <small>Descarga allí los 3 exports mensuales</small>
+            </a>
+            <div class="hub-user-pill">
+              <span class="hub-user-avatar">📈</span>
+              <div class="hub-user-meta"><span class="hub-user-role" id="visualization-user-role">Acceso de visualización</span><strong class="hub-user-name" id="visualization-user-name">Usuario</strong></div>
+              <button class="btn btn-outline btn-sm" onclick="window.app?.logoutSupervisor()">Cerrar Sesión 🚪</button>
+            </div>
           </div>
         </div>
         <nav class="visualization-tabs" id="visualization-nav-tabs" aria-label="Secciones de visualización">
@@ -2822,6 +2828,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=85.0"></script>
+  <script type="module" src="js/app.js?v=86.0"></script>
 </body>
 </html>
