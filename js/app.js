@@ -1174,7 +1174,7 @@ class ValidaFlowApp {
   normalizeAlertExportRows(rows) {
     const records = new Map();
     rows.forEach(row => {
-      const auditId = this.getExternalExportValue(row, ['id audito', 'id auditoria', 'audit id']);
+      const auditId = this.getExternalExportValue(row, ['id de audito', 'id audito', 'id auditoria', 'id auditor', 'audit id']);
       if (!auditId) return;
       const auditStatus = this.getExternalExportValue(row, ['estado']);
       const alertStatus = this.getExternalExportValue(row, ['substatus', 'sub status']);
@@ -1189,13 +1189,13 @@ class ValidaFlowApp {
         audit_status: auditStatus || null,
         alert_status: alertStatus || null,
         alert_label: alertLabel || null,
-        pdv_id: this.getExternalExportValue(row, ['id pdv', 'pdv id']) || null,
+        pdv_id: this.getExternalExportValue(row, ['id de pdv', 'id pdv', 'pdv id']) || null,
         pdv_name: this.getExternalExportValue(row, ['nombre de pdv', 'nombre pdv', 'pdv name']) || null,
         country: this.getExternalExportValue(row, ['pais', 'country']) || null,
         channel: this.getExternalExportValue(row, ['canal', 'channel']) || null,
         city: this.getExternalExportValue(row, ['ciudad', 'city']) || null,
         auditor: this.getExternalExportValue(row, ['auditor']) || null,
-        audit_date: this.parseExternalExportDateOnly(this.getExternalExportValue(row, ['fecha audito', 'fecha auditoria', 'audit date'])),
+        audit_date: this.parseExternalExportDateOnly(this.getExternalExportValue(row, ['fecha del audito', 'fecha de audito', 'fecha audito', 'fecha auditoria', 'audit date'])),
         wave: this.getExternalExportValue(row, ['ola', 'wave']) || null,
         study: this.getExternalExportValue(row, ['survey', 'estudio', 'study']) || null
       };
@@ -1208,23 +1208,23 @@ class ValidaFlowApp {
   normalizeEditionExportRows(rows) {
     const records = new Map();
     rows.forEach(row => {
-      const auditId = this.getExternalExportValue(row, ['id auditoria', 'id audito', 'audit id']);
+      const auditId = this.getExternalExportValue(row, ['id auditoria', 'id auditor', 'id audito', 'id de audito', 'audit id']);
       if (!auditId) return;
       const record = {
         audit_external_id: auditId,
         study: this.getExternalExportValue(row, ['estudio', 'study']) || null,
-        country: this.getExternalExportValue(row, ['pais', 'country']) || null,
+        country: this.getExternalExportValue(row, ['pais', 'pa s', 'country']) || null,
         audit_status: this.getExternalExportValue(row, ['estado', 'status']) || null,
         wave: this.getExternalExportValue(row, ['ola', 'wave']) || null,
         modifications_count: this.parseExternalExportInteger(this.getExternalExportValue(row, ['modificaciones'])),
         question_detail: this.getExternalExportValue(row, ['detalle por pregunta', 'detalle pregunta', 'question detail', 'details by question']) || null,
         status_changes_count: this.parseExternalExportInteger(this.getExternalExportValue(row, ['cambio de estados', 'status changes'])),
-        first_validation_started_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['inicio primera validacion'])),
-        first_validation_completed_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['fin primera validacion'])),
-        first_validator: this.getExternalExportValue(row, ['usuario fin 1ra validacion']) || null,
-        last_validation_started_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['inicio ultima validacion'])),
-        last_validation_completed_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['fin ultima validacion'])),
-        last_validator: this.getExternalExportValue(row, ['usuario fin ult validacion']) || null
+        first_validation_started_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['inicio primera validacion', 'inicio primera validaci'])),
+        first_validation_completed_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['fin primera validacion', 'fin primera validaci'])),
+        first_validator: this.getExternalExportValue(row, ['usuario fin 1ra validacion', 'usuario fin 1ra validaci']) || null,
+        last_validation_started_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['inicio ultima validacion', 'inicio ultima validaci'])),
+        last_validation_completed_at: this.parseExternalExportDate(this.getExternalExportValue(row, ['fin ultima validacion', 'fin ultima validaci'])),
+        last_validator: this.getExternalExportValue(row, ['usuario fin ult validacion', 'usuario fin ult validaci']) || null
       };
       const current = records.get(auditId);
       if (!current || record.modifications_count >= current.modifications_count) records.set(auditId, record);
