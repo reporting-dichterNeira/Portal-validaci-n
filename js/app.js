@@ -1675,14 +1675,18 @@ class ValidaFlowApp {
     const currentRows = (analysis.noteScoreRecords || []).filter(row => String(row.period_month || '').slice(0, 10) === currentMonth);
     const keyFor = row => `${String(row.pdv_id || '').trim().toLowerCase()}::${String(row.subkpi || '').trim().toLowerCase()}`;
     const previousByKey = new Map(previousRows.map(row => [keyFor(row), row]));
-    const zeroToOneRows = currentRows.reduce((items, row) => {
+    const changeRows = currentRows.reduce((items, row) => {
       const previous = previousByKey.get(keyFor(row));
       if (previous && Math.abs(Number(previous.score)) < 0.0001 && Math.abs(Number(row.score) - 1) < 0.0001) {
-        items.push({ previous, current: row });
+        items.push({ previous, current: row, changeType: '0 → 1', direction: 'up' });
+      } else if (previous && Math.abs(Number(previous.score) - 1) < 0.0001 && Math.abs(Number(row.score)) < 0.0001) {
+        items.push({ previous, current: row, changeType: '1 → 0', direction: 'down' });
       }
       return items;
     }, []);
-    this.adminScoreChangeRows = zeroToOneRows;
+    this.adminScoreChangeRows = changeRows;
+    const zeroToOneRows = changeRows.filter(item => item.direction === 'up');
+    const oneToZeroRows = changeRows.filter(item => item.direction === 'down');
     const rank = (rows, getter) => Object.entries(rows.reduce((counts, row) => {
       const label = getter(row) || 'Sin dato';
       counts[label] = (counts[label] || 0) + 1;
@@ -1693,24 +1697,25 @@ class ValidaFlowApp {
       if (!element) return;
       element.innerHTML = rows.length
         ? rows.slice(0, 6).map(([label, count]) => `<div class="admin-analysis-ranking-row"><strong>${escapeHtml(label)}</strong><span>${formatNumber(count)}</span></div>`).join('')
-        : '<span class="text-muted">No hay cambios de 0 a 1 para la comparación elegida.</span>';
+        : '<span class="text-muted">No hay cambios de 0 a 1 ni de 1 a 0 para la comparación elegida.</span>';
     };
     setText('admin-score-changes-previous-count', formatNumber(previousRows.length));
     setText('admin-score-changes-current-count', formatNumber(currentRows.length));
     setText('admin-score-changes-zero-to-one-count', formatNumber(zeroToOneRows.length));
-    setText('admin-score-changes-pdv-count', formatNumber(new Set(zeroToOneRows.map(item => item.current.pdv_id)).size));
+    setText('admin-score-changes-one-to-zero-count', formatNumber(oneToZeroRows.length));
+    setText('admin-score-changes-pdv-count', formatNumber(new Set(changeRows.map(item => item.current.pdv_id)).size));
     setText('admin-score-changes-filter-count', previousMonth && currentMonth
-      ? `${formatNumber(zeroToOneRows.length)} cambios encontrados al comparar ${this.formatExternalImportMonth(previousMonth)} → ${this.formatExternalImportMonth(currentMonth)}.`
+      ? `${formatNumber(changeRows.length)} cambios encontrados al comparar ${this.formatExternalImportMonth(previousMonth)} → ${this.formatExternalImportMonth(currentMonth)}: ${formatNumber(zeroToOneRows.length)} mejoras y ${formatNumber(oneToZeroRows.length)} caídas.`
       : 'Selecciona el mes anterior y el mes actual.');
-    renderRanking('admin-score-changes-top-kpis', rank(zeroToOneRows, item => item.current.kpi || item.current.subkpi));
-    renderRanking('admin-score-changes-top-pdvs', rank(zeroToOneRows, item => item.current.pdv_id));
+    renderRanking('admin-score-changes-top-kpis', rank(changeRows, item => item.current.kpi || item.current.subkpi));
+    renderRanking('admin-score-changes-top-pdvs', rank(changeRows, item => item.current.pdv_id));
     const tbody = document.getElementById('admin-score-changes-tbody');
     if (tbody) {
-      tbody.innerHTML = zeroToOneRows.length ? zeroToOneRows
-        .sort((a, b) => String(a.current.pdv_id).localeCompare(String(b.current.pdv_id), 'es') || String(a.current.subkpi).localeCompare(String(b.current.subkpi), 'es'))
+      tbody.innerHTML = changeRows.length ? changeRows
+        .sort((a, b) => String(a.direction).localeCompare(String(b.direction)) || String(a.current.pdv_id).localeCompare(String(b.current.pdv_id), 'es') || String(a.current.subkpi).localeCompare(String(b.current.subkpi), 'es'))
         .slice(0, 500)
-        .map(({ previous, current }) => `<tr><td><strong>${escapeHtml(current.pdv_id)}</strong></td><td>${escapeHtml(current.subkpi)}</td><td>${escapeHtml(current.kpi)}</td><td>${escapeHtml(current.source)}</td><td><code>${escapeHtml(previous.audit_external_id)}</code></td><td><code>${escapeHtml(current.audit_external_id)}</code></td><td>${formatScore(previous.score)}</td><td><strong class="text-success">${formatScore(current.score)}</strong></td></tr>`).join('')
-        : `<tr><td colspan="8" class="text-center text-muted">${previousMonth && currentMonth ? 'No hay sub-KPIs que hayan pasado de 0 a 1 entre los meses seleccionados.' : 'Carga y selecciona el mes anterior y el actual para comparar.'}</td></tr>`;
+        .map(({ previous, current, changeType, direction }) => `<tr><td><span class="badge ${direction === 'up' ? 'badge-success' : 'badge-warning'}">${changeType}</span></td><td><strong>${escapeHtml(current.pdv_id)}</strong></td><td>${escapeHtml(current.subkpi)}</td><td>${escapeHtml(current.kpi)}</td><td>${escapeHtml(current.source)}</td><td><code>${escapeHtml(previous.audit_external_id)}</code></td><td><code>${escapeHtml(current.audit_external_id)}</code></td><td>${formatScore(previous.score)}</td><td><strong class="${direction === 'up' ? 'text-success' : 'text-magenta'}">${formatScore(current.score)}</strong></td></tr>`).join('')
+        : `<tr><td colspan="9" class="text-center text-muted">${previousMonth && currentMonth ? 'No hay sub-KPIs que hayan pasado de 0 a 1 ni de 1 a 0 entre los meses seleccionados.' : 'Carga y selecciona el mes anterior y el actual para comparar.'}</td></tr>`;
     }
   }
 
@@ -1724,16 +1729,17 @@ class ValidaFlowApp {
   exportAdminScoreChangesTable() {
     const rows = this.adminScoreChangeRows || [];
     if (!rows.length) {
-      this.showToast('No hay cambios de 0 a 1 para exportar con los meses seleccionados.', 'warning');
+      this.showToast('No hay cambios de 0 a 1 ni de 1 a 0 para exportar con los meses seleccionados.', 'warning');
       return;
     }
     if (!window.XLSX) {
       this.showToast('La librería de Excel aún no está disponible. Intenta nuevamente.', 'error');
       return;
     }
-    const output = rows.map(({ previous, current }) => ({
+    const output = rows.map(({ previous, current, changeType }) => ({
       'Mes anterior': this.formatExternalImportMonth(this.adminScoreChangePreviousMonth),
       'Mes actual': this.formatExternalImportMonth(this.adminScoreChangeCurrentMonth),
+      Cambio: changeType,
       'Punto de venta (ID PDV)': current.pdv_id || '',
       'Sub-KPI afectado': current.subkpi || '',
       KPI: current.kpi || '',
@@ -1746,8 +1752,8 @@ class ValidaFlowApp {
     const worksheet = XLSX.utils.json_to_sheet(output);
     worksheet['!cols'] = [{ wch: 19 }, { wch: 19 }, { wch: 23 }, { wch: 44 }, { wch: 28 }, { wch: 22 }, { wch: 22 }, { wch: 22 }, { wch: 15 }, { wch: 14 }];
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Cambios 0 a 1');
-    XLSX.writeFile(workbook, `cambios_nota_0_a_1_${this.adminScoreChangePreviousMonth || 'anterior'}_${this.adminScoreChangeCurrentMonth || 'actual'}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Cambios de nota');
+    XLSX.writeFile(workbook, `cambios_nota_${this.adminScoreChangePreviousMonth || 'anterior'}_${this.adminScoreChangeCurrentMonth || 'actual'}.xlsx`);
   }
 
   showEditionAuditDetail(auditId) {
