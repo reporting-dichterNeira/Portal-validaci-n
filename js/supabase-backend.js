@@ -867,18 +867,39 @@ export class SupabaseBackend {
   }
 
   async loadAllAdminAnalysisRows(table, columns) {
-    const rows = [];
     const pageSize = 1000;
-    for (let from = 0; ; from += pageSize) {
+    const loadPage = async from => {
       const { data, error } = await this.client
         .from(table)
         .select(columns)
         .order('id', { ascending: true })
         .range(from, from + pageSize - 1);
       if (error) throw error;
-      const page = data || [];
-      rows.push(...page);
-      if (page.length < pageSize) break;
+      return data || [];
+    };
+
+    // La API limita cada respuesta a 1.000 filas. Antes se descargaba la
+    // siguiente página solo después de terminar la anterior: un export de
+    // 42.000 filas significaba 43 esperas de red consecutivas.
+    const firstPage = await loadPage(0);
+    if (firstPage.length < pageSize) return firstPage;
+
+    const { count, error: countError } = await this.client
+      .from(table)
+      .select('id', { count: 'exact', head: true });
+    if (countError) throw countError;
+    const totalRows = Number(count || firstPage.length);
+    if (totalRows <= firstPage.length) return firstPage;
+
+    const offsets = [];
+    for (let from = pageSize; from < totalRows; from += pageSize) offsets.push(from);
+    const rows = [...firstPage];
+    const concurrentRequests = 4;
+    for (let index = 0; index < offsets.length; index += concurrentRequests) {
+      const pages = await Promise.all(offsets
+        .slice(index, index + concurrentRequests)
+        .map(loadPage));
+      pages.forEach(page => rows.push(...page));
     }
     return rows;
   }

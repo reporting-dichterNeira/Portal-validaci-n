@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=34.0';
-import { SupabaseBackend } from './supabase-backend.js?v=48.0';
+import { SupabaseBackend } from './supabase-backend.js?v=50.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -47,6 +47,7 @@ class ValidaFlowApp {
     this.adminExternalAnalysisLoadedAt = 0;
     this.adminExternalAnalysisLoadPromise = null;
     this.adminExternalAnalysisCacheMs = 2 * 60 * 1000;
+    this.adminExternalAnalysisCacheHydrationPromise = null;
     this.adminAlertsStudyFilter = 'all';
     this.adminAlertsAuditorFilter = 'all';
     this.adminAlertsFilteredRows = [];
@@ -314,11 +315,14 @@ class ValidaFlowApp {
     this.updateVisualizationModuleControls();
     this.switchReportsSubtab(isCommercial ? 'executive' : 'operational');
     this.switchVisualizationTab(isCommercial ? 'committee' : this.visualizationTab || 'overview');
-    // Se precarga mientras el usuario ve el resumen inicial. Cuando abre
-    // Export, Ediciones o Cambio de nota, la información ya está lista o la
-    // pestaña se conecta a esta misma solicitud en curso.
+    // Primero se muestra la última lectura completa guardada en este navegador.
+    // Luego se valida en segundo plano contra Supabase, sin dejar la pantalla
+    // vacía mientras se descargan nuevamente los exports grandes.
     if (!isCommercial) {
-      this.refreshAdminExternalAnalysis().catch(error => console.error('No fue posible precargar los cruces de visualización:', error));
+      this.hydrateAdminExternalAnalysisCache()
+        .catch(error => console.info('No fue posible restaurar la última visualización:', error))
+        .finally(() => this.refreshAdminExternalAnalysis()
+          .catch(error => console.error('No fue posible precargar los cruces de visualización:', error)));
     }
   }
 
@@ -1069,6 +1073,7 @@ class ValidaFlowApp {
       this.adminExternalImports = (this.adminExternalImports || []).filter(item => !(item.dataset_type === datasetType && item.period_month === importInfo.period_month));
       this.adminExternalAnalysis = null;
       this.invalidateAdminExternalAnalysisCache();
+      this.clearAdminExternalAnalysisCache().catch(error => console.info('No fue posible limpiar la caché local del export eliminado:', error));
       this.renderAdminExternalImportDeletionOptions();
       this.showToast(`Se eliminó el ${typeLabel} y sus registros guardados.`, 'success');
     } catch (error) {
@@ -1377,6 +1382,92 @@ class ValidaFlowApp {
       .format(new Date(Number(match[1]), Number(match[2]) - 1, 1));
   }
 
+  getAdminExternalAnalysisCacheKey() {
+    const userId = this.currentProfile?.id || this.currentProfile?.username || this.currentRole || 'operaciones';
+    return `external-analysis:${userId}`;
+  }
+
+  openVisualizationCacheDatabase() {
+    if (typeof indexedDB === 'undefined') return Promise.reject(new Error('El navegador no permite caché local.'));
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('validaflow-visualizations', 1);
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains('analysis')) database.createObjectStore('analysis', { keyPath: 'key' });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error('No se pudo abrir la caché local.'));
+    });
+  }
+
+  async readAdminExternalAnalysisCache() {
+    const database = await this.openVisualizationCacheDatabase();
+    try {
+      return await new Promise((resolve, reject) => {
+        const request = database.transaction('analysis', 'readonly')
+          .objectStore('analysis')
+          .get(this.getAdminExternalAnalysisCacheKey());
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error || new Error('No se pudo leer la caché local.'));
+      });
+    } finally {
+      database.close();
+    }
+  }
+
+  async persistAdminExternalAnalysisCache() {
+    if (!this.adminExternalAnalysis) return;
+    const database = await this.openVisualizationCacheDatabase();
+    try {
+      await new Promise((resolve, reject) => {
+        const request = database.transaction('analysis', 'readwrite')
+          .objectStore('analysis')
+          .put({
+            key: this.getAdminExternalAnalysisCacheKey(),
+            savedAt: this.adminExternalAnalysisLoadedAt || Date.now(),
+            analysis: this.adminExternalAnalysis
+          });
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error || new Error('No se pudo guardar la caché local.'));
+      });
+    } finally {
+      database.close();
+    }
+  }
+
+  async clearAdminExternalAnalysisCache() {
+    const database = await this.openVisualizationCacheDatabase();
+    try {
+      await new Promise((resolve, reject) => {
+        const request = database.transaction('analysis', 'readwrite')
+          .objectStore('analysis')
+          .delete(this.getAdminExternalAnalysisCacheKey());
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error || new Error('No se pudo limpiar la caché local.'));
+      });
+    } finally {
+      database.close();
+    }
+  }
+
+  async hydrateAdminExternalAnalysisCache() {
+    if (this.adminExternalAnalysisCacheHydrationPromise) return this.adminExternalAnalysisCacheHydrationPromise;
+    const request = (async () => {
+      const cached = await this.readAdminExternalAnalysisCache();
+      if (!cached?.analysis || !cached?.savedAt) return false;
+      this.adminExternalAnalysis = cached.analysis;
+      this.adminExternalAnalysisLoadedAt = Number(cached.savedAt) || 0;
+      this.renderAdminExternalAnalysis();
+      return true;
+    })();
+    this.adminExternalAnalysisCacheHydrationPromise = request;
+    try {
+      return await request;
+    } finally {
+      this.adminExternalAnalysisCacheHydrationPromise = null;
+    }
+  }
+
   invalidateAdminExternalAnalysisCache() {
     this.adminExternalAnalysisLoadedAt = 0;
   }
@@ -1394,21 +1485,26 @@ class ValidaFlowApp {
 
     const request = (async () => {
       try {
-        const analysis = await this.backend.loadAdminExternalAnalysis();
-        let noteScoreAnalysis = { noteScoreImports: [], noteScoreRecords: [] };
-        try {
-          noteScoreAnalysis = await this.backend.loadAdminNoteScoreAnalysis();
-        } catch (noteScoreError) {
-          // Mantiene disponibles los cruces ya publicados mientras se aplica la
-          // migración inicial de Cambio de nota en Supabase.
-          if (!/admin_note_score|does not exist|PGRST204|PGRST205/i.test(String(noteScoreError?.message || noteScoreError))) {
-            throw noteScoreError;
-          }
-          console.info('Cambio de nota estará disponible cuando finalice la migración de datos.');
-        }
-        // Editions are crossed with the alerts already validated in ValidaFlow.
-        // The general export only enriches those rows with auditor/PDV context.
-        const platformAudits = await this.backend.loadAuditHistory({ pageSize: 1000, ignoreScope: true });
+        // Los tres orígenes son independientes. Se consultan al mismo tiempo
+        // para que Export general no espere primero Ediciones, luego Notas y
+        // finalmente el historial de ValidaFlow.
+        const analysisPromise = this.backend.loadAdminExternalAnalysis();
+        const noteScorePromise = this.backend.loadAdminNoteScoreAnalysis()
+          .catch(noteScoreError => {
+            // Mantiene disponibles los cruces ya publicados mientras se aplica
+            // la migración inicial de Cambio de nota en Supabase.
+            if (!/admin_note_score|does not exist|PGRST204|PGRST205/i.test(String(noteScoreError?.message || noteScoreError))) {
+              throw noteScoreError;
+            }
+            console.info('Cambio de nota estará disponible cuando finalice la migración de datos.');
+            return { noteScoreImports: [], noteScoreRecords: [] };
+          });
+        const platformAuditsPromise = this.backend.loadAuditHistory({ pageSize: 1000, ignoreScope: true });
+        const [analysis, noteScoreAnalysis, platformAudits] = await Promise.all([
+          analysisPromise,
+          noteScorePromise,
+          platformAuditsPromise
+        ]);
         const platformAuditIds = new Set(platformAudits.map(audit => String(audit.id || '').trim()).filter(Boolean));
         const platformAlertAudits = platformAudits.reduce((items, audit) => {
           if (audit.validationStatus !== 'completada') return items;
@@ -1426,6 +1522,7 @@ class ValidaFlowApp {
         this.adminExternalAnalysis = { ...analysis, ...noteScoreAnalysis, platformAudits, platformAuditIds, platformAlertAudits };
         this.adminExternalAnalysisLoadedAt = Date.now();
         this.renderAdminExternalAnalysis();
+        this.persistAdminExternalAnalysisCache().catch(error => console.info('No fue posible guardar la caché local de visualizaciones:', error));
       } catch (error) {
         console.error('No fue posible cargar el análisis administrativo:', error);
         ['admin-alerts-import-status', 'admin-editions-import-status', 'admin-score-changes-import-status'].forEach(id => {
