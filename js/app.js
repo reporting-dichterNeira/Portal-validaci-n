@@ -1854,6 +1854,17 @@ class ValidaFlowApp {
     if (!this.adminScoreChangeCurrentMonth || !months.includes(this.adminScoreChangeCurrentMonth)) {
       this.adminScoreChangeCurrentMonth = mostRecent;
     }
+    const monthFilter = document.getElementById('admin-score-changes-month-filter');
+    if (monthFilter) {
+      monthFilter.innerHTML = months.length
+        ? months.map(month => `<option value="${escapeHtml(month)}">${escapeHtml(this.formatExternalImportMonth(month))}</option>`).join('')
+        : '<option value="">Sin meses cargados</option>';
+      monthFilter.value = this.adminScoreChangeCurrentMonth;
+      if (monthFilter.dataset.filterBound !== 'true') {
+        monthFilter.addEventListener('change', event => this.setAdminScoreChangeMonth('current', event.target.value));
+        monthFilter.dataset.filterBound = 'true';
+      }
+    }
     const importSummary = imports.length
       ? `Último archivo de notas: ${imports[0].source_filename || 'Archivo sin nombre'} · ${this.formatExternalImportMonth(imports[0].period_month)} · ${formatNumber(imports[0].row_count)} registros. Se muestran los datos de ${this.formatExternalImportMonth(this.adminScoreChangeCurrentMonth)}.`
       : 'Carga el export mensual que trae la nota final de la última medición y del mes actual.';
