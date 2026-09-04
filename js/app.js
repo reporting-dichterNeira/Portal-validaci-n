@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=23.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=34.0';
-import { SupabaseBackend } from './supabase-backend.js?v=50.0';
+import { SupabaseBackend } from './supabase-backend.js?v=51.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -56,6 +56,8 @@ class ValidaFlowApp {
     this.adminScoreChangeCurrentMonth = '';
     this.adminScoreChangeStudyFilter = 'all';
     this.adminScoreChangeDirectionFilter = 'all';
+    this.adminScoreChangeAlertFilter = 'all';
+    this.adminScoreChangeAppliesFilter = 'all';
     this.adminScoreChangeRows = [];
     this.adminAnalysisSheet = 'core';
     this.visualizationTab = 'overview';
@@ -1229,7 +1231,8 @@ class ValidaFlowApp {
         auditor: this.getExternalExportValue(row, ['auditor']) || null,
         audit_date: this.parseExternalExportDateOnly(this.getExternalExportValue(row, ['fecha del audito', 'fecha de audito', 'fecha audito', 'fecha auditoria', 'audit date'])),
         wave: this.getExternalExportValue(row, ['ola', 'wave']) || null,
-        study: this.getExternalExportValue(row, ['survey', 'estudio', 'study']) || null
+        study: this.getExternalExportValue(row, ['survey', 'estudio', 'study']) || null,
+        pdv_note: this.parseExternalScore(this.getExternalExportValue(row, ['nota de pdv', 'nota pdv']))
       };
       const current = records.get(auditId);
       if (!current || (!current.is_alert && record.is_alert)) records.set(auditId, record);
@@ -1283,18 +1286,29 @@ class ValidaFlowApp {
     rows.forEach(row => {
       const pdvId = this.getExternalExportValue(row, ['id de pdv', 'id pdv', 'pdv id']);
       const subkpi = this.getExternalExportValue(row, ['subkpi', 'sub kpi']);
-      const score = this.parseExternalScore(this.getExternalExportValue(row, ['nota subkpi', 'nota']));
+      const previousTotalScore = this.parseExternalScore(this.getExternalExportValue(row, [
+        'nota total mes anterior', 'nota final ultima medicion', 'nota final ultima medicion'
+      ]));
+      const currentTotalScore = this.parseExternalScore(this.getExternalExportValue(row, [
+        'nota total ola actual', 'nota final mes actual', 'nota final mes actual'
+      ]));
+      // Conserva el campo histórico como respaldo para archivos anteriores;
+      // el nuevo reporte se analiza con sus dos notas finales de PDV.
+      const score = currentTotalScore ?? this.parseExternalScore(this.getExternalExportValue(row, ['nota subkpi', 'nota']));
       if (!pdvId || !subkpi || score === null) return;
-      const key = `${pdvId.trim().toLowerCase()}::${subkpi.trim().toLowerCase()}`;
+      const auditId = this.getExternalExportValue(row, ['id auditoria', 'id audito', 'id de audito', 'audit id']) || null;
+      const key = `${String(auditId || pdvId).trim().toLowerCase()}::${subkpi.trim().toLowerCase()}`;
       const record = {
-        audit_external_id: this.getExternalExportValue(row, ['id auditoria', 'id audito', 'audit id']) || null,
+        audit_external_id: auditId,
         pdv_id: pdvId,
         source: this.getExternalExportValue(row, ['origen', 'origin']) || null,
         study: this.getExternalExportValue(row, ['estudio', 'study', 'survey']) || null,
         subkpi,
         wave: this.getExternalExportValue(row, ['ola id', 'olaid', 'ola', 'wave']) || null,
         kpi: this.getExternalExportValue(row, ['kpi']) || null,
-        score
+        score,
+        previous_total_score: previousTotalScore,
+        current_total_score: currentTotalScore ?? score
       };
       // La comparación es uno a uno por PDV y sub-KPI. Si el archivo trae
       // un duplicado, se conserva la última fila del consolidado.
@@ -1341,7 +1355,7 @@ class ValidaFlowApp {
       const rawRows = await this.readExternalExportRows(file);
       const rows = this.normalizeScoreChangeRows(rawRows);
       if (!rows.length) {
-        throw new Error('No se encontraron las columnas ID_de_PDV, subkpi y nota_subkpi con valores válidos.');
+        throw new Error('No se encontraron las columnas ID_de_PDV, subkpi y Nota total ola actual con valores válidos.');
       }
       this.showToast(`Guardando ${rows.length.toLocaleString('es-CO')} notas útiles…`, 'info');
       await this.backend.replaceAdminNoteScoreImport({ sourceFilename: file.name, periodMonth, rows });
@@ -1349,7 +1363,7 @@ class ValidaFlowApp {
       this.invalidateAdminExternalAnalysisCache();
       await this.refreshAdminExternalAnalysis({ force: true });
       if (input) input.value = '';
-      this.showToast(`Notas de ${this.formatExternalImportMonth(periodMonth)} cargadas. Selecciona el mes anterior para ver los cambios de 0 a 1.`, 'success');
+      this.showToast(`Notas de PDV de ${this.formatExternalImportMonth(periodMonth)} cargadas y cruzadas con Alertas Bloqueantes.`, 'success');
     } catch (error) {
       this.showToast(error.message || 'No fue posible cargar el archivo de notas.', 'error');
     }
@@ -1830,32 +1844,19 @@ class ValidaFlowApp {
     const escapeHtml = value => String(value ?? '—').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
     const setText = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
     const formatNumber = value => Number(value || 0).toLocaleString('es-CO');
-    const formatScore = value => Number(value || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const formatScore = value => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+      ? Number(value).toLocaleString('es-CO', { maximumFractionDigits: 2 })
+      : '—';
+    const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
     const imports = (analysis.noteScoreImports || []).slice().sort((a, b) => String(b.period_month).localeCompare(String(a.period_month)));
     const months = imports.map(item => String(item.period_month || '').slice(0, 10)).filter(Boolean);
-    const selectPrevious = document.getElementById('admin-score-changes-previous-month');
-    const selectCurrent = document.getElementById('admin-score-changes-current-month');
     const mostRecent = months[0] || '';
     if (!this.adminScoreChangeCurrentMonth || !months.includes(this.adminScoreChangeCurrentMonth)) {
       this.adminScoreChangeCurrentMonth = mostRecent;
     }
-    if (!this.adminScoreChangePreviousMonth || !months.includes(this.adminScoreChangePreviousMonth) || this.adminScoreChangePreviousMonth === this.adminScoreChangeCurrentMonth) {
-      const currentIndex = months.indexOf(this.adminScoreChangeCurrentMonth);
-      this.adminScoreChangePreviousMonth = months[currentIndex + 1] || '';
-    }
-    const monthOptions = `<option value="">Selecciona un mes</option>${months.map(month => `<option value="${escapeHtml(month)}">${escapeHtml(this.formatExternalImportMonth(month))}</option>`).join('')}`;
-    [selectPrevious, selectCurrent].forEach((select, index) => {
-      if (!select) return;
-      select.innerHTML = monthOptions;
-      select.value = index === 0 ? this.adminScoreChangePreviousMonth : this.adminScoreChangeCurrentMonth;
-      if (select.dataset.filterBound !== 'true') {
-        select.addEventListener('change', event => this.setAdminScoreChangeMonth(index === 0 ? 'previous' : 'current', event.target.value));
-        select.dataset.filterBound = 'true';
-      }
-    });
     const importSummary = imports.length
-      ? `Archivos disponibles: ${imports.map(item => `${this.formatExternalImportMonth(item.period_month)} (${formatNumber(item.row_count)} registros)`).join(' · ')}.`
-      : 'Carga primero el archivo del mes anterior y después el del mes actual.';
+      ? `Último archivo de notas: ${imports[0].source_filename || 'Archivo sin nombre'} · ${this.formatExternalImportMonth(imports[0].period_month)} · ${formatNumber(imports[0].row_count)} registros. Se muestran los datos de ${this.formatExternalImportMonth(this.adminScoreChangeCurrentMonth)}.`
+      : 'Carga el export mensual que trae la nota final de la última medición y del mes actual.';
     setText('admin-score-changes-import-status', importSummary);
     const importList = document.getElementById('admin-score-changes-import-list');
     if (importList) {
@@ -1867,26 +1868,13 @@ class ValidaFlowApp {
       };
       importList.innerHTML = imports.length
         ? imports.map(item => `<div class="admin-analysis-ranking-row"><div><strong>${escapeHtml(this.formatExternalImportMonth(item.period_month))}</strong><small>${escapeHtml(item.source_filename || 'Archivo sin nombre')} · ${formatNumber(item.row_count)} registros · ${escapeHtml(formatImportedAt(item.imported_at))}</small></div><button class="btn btn-outline btn-sm" type="button" onclick="window.app?.prepareAdminMonthlyImportUpdate('notes', '${String(item.period_month || '').slice(0, 10)}')">Actualizar</button></div>`).join('')
-        : '<span class="text-muted">Aún no hay archivos cargados. Sube primero el mes anterior.</span>';
+        : '<span class="text-muted">Aún no hay archivos cargados.</span>';
     }
 
-    const previousMonth = this.adminScoreChangePreviousMonth;
     const currentMonth = this.adminScoreChangeCurrentMonth;
-    const previousRows = (analysis.noteScoreRecords || []).filter(row => String(row.period_month || '').slice(0, 10) === previousMonth);
     const currentRows = (analysis.noteScoreRecords || []).filter(row => String(row.period_month || '').slice(0, 10) === currentMonth);
-    const keyFor = row => `${String(row.pdv_id || '').trim().toLowerCase()}::${String(row.subkpi || '').trim().toLowerCase()}`;
-    const previousByKey = new Map(previousRows.map(row => [keyFor(row), row]));
-    const changeRows = currentRows.reduce((items, row) => {
-      const previous = previousByKey.get(keyFor(row));
-      if (previous && Math.abs(Number(previous.score)) < 0.0001 && Math.abs(Number(row.score) - 1) < 0.0001) {
-        items.push({ previous, current: row, changeType: '0 → 1', direction: 'up' });
-      } else if (previous && Math.abs(Number(previous.score) - 1) < 0.0001 && Math.abs(Number(row.score)) < 0.0001) {
-        items.push({ previous, current: row, changeType: '1 → 0', direction: 'down' });
-      }
-      return items;
-    }, []);
     const studyName = row => String(row?.study || row?.source || 'Sin estudio').trim() || 'Sin estudio';
-    const availableStudies = [...new Set([...previousRows, ...currentRows].map(studyName))]
+    const availableStudies = [...new Set(currentRows.map(studyName))]
       .sort((a, b) => a.localeCompare(b, 'es'));
     const activeStudy = this.adminScoreChangeStudyFilter === 'all' || availableStudies.includes(this.adminScoreChangeStudyFilter)
       ? this.adminScoreChangeStudyFilter
@@ -1901,7 +1889,85 @@ class ValidaFlowApp {
         studyFilter.dataset.filterBound = 'true';
       }
     }
-    const allowedDirections = new Set(['all', 'up', 'down']);
+    const alertFilter = ['all', 'yes', 'no'].includes(this.adminScoreChangeAlertFilter)
+      ? this.adminScoreChangeAlertFilter
+      : 'all';
+    this.adminScoreChangeAlertFilter = alertFilter;
+    const alertFilterElement = document.getElementById('admin-score-changes-alert-filter');
+    if (alertFilterElement) {
+      alertFilterElement.value = alertFilter;
+      if (alertFilterElement.dataset.filterBound !== 'true') {
+        alertFilterElement.addEventListener('change', event => this.setAdminScoreChangeAlertFilter(event.target.value));
+        alertFilterElement.dataset.filterBound = 'true';
+      }
+    }
+    const appliesFilter = ['all', 'yes', 'no', 'pending'].includes(this.adminScoreChangeAppliesFilter)
+      ? this.adminScoreChangeAppliesFilter
+      : 'all';
+    this.adminScoreChangeAppliesFilter = appliesFilter;
+    const appliesFilterElement = document.getElementById('admin-score-changes-applies-filter');
+    if (appliesFilterElement) {
+      appliesFilterElement.value = appliesFilter;
+      if (appliesFilterElement.dataset.filterBound !== 'true') {
+        appliesFilterElement.addEventListener('change', event => this.setAdminScoreChangeAppliesFilter(event.target.value));
+        appliesFilterElement.dataset.filterBound = 'true';
+      }
+    }
+    const platformAuditsById = new Map((analysis.platformAudits || []).map(audit => [normalize(audit?.id), audit]));
+    const alertContextByAuditId = new Map((analysis.alertRecords || []).map(record => [normalize(record?.audit_external_id), record]));
+    const alertContextByPdvId = new Map((analysis.alertRecords || []).map(record => [normalize(record?.pdv_id), record]).filter(([key]) => key));
+    const pdvNoteKey = (pdvId, score) => Number.isFinite(Number(score))
+      ? `${normalize(pdvId)}::${Number(score)}`
+      : '';
+    const alertContextByPdvNote = new Map((analysis.alertRecords || [])
+      .map(record => [pdvNoteKey(record?.pdv_id, record?.pdv_note), record])
+      .filter(([key]) => key));
+    const noteRows = currentRows.map(record => {
+      const audit = platformAuditsById.get(normalize(record.audit_external_id)) || null;
+      const currentScore = Number(record.current_total_score ?? record.score);
+      const alertContext = alertContextByAuditId.get(normalize(record.audit_external_id))
+        || alertContextByPdvNote.get(pdvNoteKey(record.pdv_id, currentScore))
+        || alertContextByPdvId.get(normalize(record.pdv_id))
+        || null;
+      const alertKpis = (Array.isArray(audit?.kpis) ? audit.kpis : []).filter(kpi => (
+        kpi?.needsReview || /alerta/i.test(String(kpi?.alertaStatus || ''))
+      ));
+      const matchingKpis = alertKpis.filter(kpi => {
+        const kpiName = normalize(kpi?.name);
+        const subkpiName = normalize(record.subkpi);
+        return kpiName && subkpiName && (kpiName === subkpiName || kpiName.includes(subkpiName) || subkpiName.includes(kpiName));
+      });
+      const relevantKpis = matchingKpis.length ? matchingKpis : alertKpis;
+      const decisions = relevantKpis.map(kpi => audit?.validationResults?.[kpi?.name] || {});
+      const applies = decisions.some(decision => String(decision?.status || '').toLowerCase() === 'aplica');
+      const noApplies = decisions.length > 0 && decisions.every(decision => String(decision?.status || '').toLowerCase() === 'no_aplica');
+      const tipologies = [...new Set(decisions.map(decision => String(decision?.tipificacion || '').trim()).filter(Boolean))];
+      const previousScore = record.previous_total_score === null || record.previous_total_score === undefined || record.previous_total_score === ''
+        ? NaN
+        : Number(record.previous_total_score);
+      const hasPrevious = Number.isFinite(previousScore);
+      const hasCurrent = Number.isFinite(currentScore);
+      const variation = hasPrevious && hasCurrent ? currentScore - previousScore : null;
+      // The supervisor export is the primary link: it carries "Nota de PDV".
+      // Validation data completes the answer and gives us the decision and
+      // typology for the matching blocking alert.  The ID/PDV fallback keeps
+      // older monthly files visible until they are uploaded again.
+      const hasAlertExportMatch = Boolean(alertContext?.is_alert);
+      const isBlockingFromPlatform = audit?._module === 'blocking' && relevantKpis.length > 0;
+      return {
+        record,
+        study: studyName(record),
+        previousScore: hasPrevious ? previousScore : null,
+        currentScore: hasCurrent ? currentScore : null,
+        variation,
+        direction: variation === null ? 'equal' : variation > 0 ? 'up' : variation < 0 ? 'down' : 'equal',
+        alertedBlocking: isBlockingFromPlatform || (!audit && hasAlertExportMatch),
+        applies: applies ? 'yes' : noApplies ? 'no' : 'pending',
+        tipologies,
+        alertContext
+      };
+    });
+    const allowedDirections = new Set(['all', 'up', 'down', 'equal']);
     const activeDirection = allowedDirections.has(this.adminScoreChangeDirectionFilter)
       ? this.adminScoreChangeDirectionFilter
       : 'all';
@@ -1914,15 +1980,13 @@ class ValidaFlowApp {
         directionFilter.dataset.filterBound = 'true';
       }
     }
-    const filteredChangeRows = changeRows.filter(item => (
-      (activeStudy === 'all' || studyName(item.current) === activeStudy)
+    const filteredChangeRows = noteRows.filter(item => (
+      (activeStudy === 'all' || item.study === activeStudy)
+      && (alertFilter === 'all' || (alertFilter === 'yes') === item.alertedBlocking)
+      && (appliesFilter === 'all' || appliesFilter === item.applies)
       && (activeDirection === 'all' || item.direction === activeDirection)
     ));
     this.adminScoreChangeRows = filteredChangeRows;
-    const zeroToOneRows = filteredChangeRows.filter(item => item.direction === 'up');
-    const oneToZeroRows = filteredChangeRows.filter(item => item.direction === 'down');
-    const filteredPreviousRows = activeStudy === 'all' ? previousRows : previousRows.filter(row => studyName(row) === activeStudy);
-    const filteredCurrentRows = activeStudy === 'all' ? currentRows : currentRows.filter(row => studyName(row) === activeStudy);
     const rank = (rows, getter) => Object.entries(rows.reduce((counts, row) => {
       const label = getter(row) || 'Sin dato';
       counts[label] = (counts[label] || 0) + 1;
@@ -1933,25 +1997,35 @@ class ValidaFlowApp {
       if (!element) return;
       element.innerHTML = rows.length
         ? rows.slice(0, 6).map(([label, count]) => `<div class="admin-analysis-ranking-row"><strong>${escapeHtml(label)}</strong><span>${formatNumber(count)}</span></div>`).join('')
-        : '<span class="text-muted">No hay cambios de 0 a 1 ni de 1 a 0 para la comparación elegida.</span>';
+        : '<span class="text-muted">No hay registros que cumplan con los filtros elegidos.</span>';
     };
-    setText('admin-score-changes-previous-count', formatNumber(filteredPreviousRows.length));
-    setText('admin-score-changes-current-count', formatNumber(filteredCurrentRows.length));
-    setText('admin-score-changes-zero-to-one-count', formatNumber(zeroToOneRows.length));
-    setText('admin-score-changes-one-to-zero-count', formatNumber(oneToZeroRows.length));
-    setText('admin-score-changes-pdv-count', formatNumber(new Set(filteredChangeRows.map(item => item.current.pdv_id)).size));
-    setText('admin-score-changes-filter-count', previousMonth && currentMonth
-      ? `${formatNumber(filteredChangeRows.length)} de ${formatNumber(changeRows.length)} cambios al comparar ${this.formatExternalImportMonth(previousMonth)} → ${this.formatExternalImportMonth(currentMonth)}: ${formatNumber(zeroToOneRows.length)} mejoras y ${formatNumber(oneToZeroRows.length)} caídas.`
-      : 'Selecciona el mes anterior y el mes actual.');
-    renderRanking('admin-score-changes-top-kpis', rank(filteredChangeRows, item => item.current.kpi || item.current.subkpi));
-    renderRanking('admin-score-changes-top-pdvs', rank(filteredChangeRows, item => item.current.pdv_id));
+    const currentScoreRows = filteredChangeRows.filter(item => item.currentScore !== null);
+    const previousScoreRows = filteredChangeRows.filter(item => item.previousScore !== null);
+    const averageScore = (rows, field) => rows.length
+      ? rows.reduce((total, item) => total + Number(item[field] || 0), 0) / rows.length
+      : null;
+    const variationRows = filteredChangeRows.filter(item => item.variation !== null);
+    const averageVariation = variationRows.length ? variationRows.reduce((total, item) => total + item.variation, 0) / variationRows.length : null;
+    const blockingRows = filteredChangeRows.filter(item => item.alertedBlocking);
+    const applicableRows = filteredChangeRows.filter(item => item.applies === 'yes');
+    setText('admin-score-changes-previous-count', formatNumber(filteredChangeRows.length));
+    setText('admin-score-changes-current-count', formatScore(averageScore(previousScoreRows, 'previousScore')));
+    setText('admin-score-changes-zero-to-one-count', formatScore(averageScore(currentScoreRows, 'currentScore')));
+    setText('admin-score-changes-one-to-zero-count', averageVariation === null ? '—' : `${averageVariation > 0 ? '+' : ''}${formatScore(averageVariation)}`);
+    setText('admin-score-changes-pdv-count', formatNumber(blockingRows.length));
+    setText('admin-score-changes-applies-count', formatNumber(applicableRows.length));
+    setText('admin-score-changes-filter-count', currentMonth
+      ? `${formatNumber(filteredChangeRows.length)} de ${formatNumber(noteRows.length)} registros del mes ${this.formatExternalImportMonth(currentMonth)}. ${formatNumber(blockingRows.length)} alertaron en Bloqueantes y ${formatNumber(applicableRows.length)} aplicaban el error.`
+      : 'Carga un export de notas para empezar el cruce.');
+    renderRanking('admin-score-changes-top-kpis', rank(blockingRows, item => item.record.subkpi));
+    renderRanking('admin-score-changes-top-pdvs', rank(blockingRows, item => item.record.pdv_id));
     const tbody = document.getElementById('admin-score-changes-tbody');
     if (tbody) {
       tbody.innerHTML = filteredChangeRows.length ? filteredChangeRows
-        .sort((a, b) => String(a.direction).localeCompare(String(b.direction)) || String(a.current.pdv_id).localeCompare(String(b.current.pdv_id), 'es') || String(a.current.subkpi).localeCompare(String(b.current.subkpi), 'es'))
+        .sort((a, b) => Number(b.alertedBlocking) - Number(a.alertedBlocking) || String(a.record.pdv_id).localeCompare(String(b.record.pdv_id), 'es') || String(a.record.subkpi).localeCompare(String(b.record.subkpi), 'es'))
         .slice(0, 500)
-        .map(({ previous, current, changeType, direction }) => `<tr><td><span class="badge ${direction === 'up' ? 'badge-success' : 'badge-warning'}">${changeType}</span></td><td>${escapeHtml(studyName(current))}</td><td><strong>${escapeHtml(current.pdv_id)}</strong></td><td>${escapeHtml(current.subkpi)}</td><td>${escapeHtml(current.kpi)}</td><td>${escapeHtml(current.source)}</td><td><code>${escapeHtml(previous.audit_external_id)}</code></td><td><code>${escapeHtml(current.audit_external_id)}</code></td><td>${formatScore(previous.score)}</td><td><strong class="${direction === 'up' ? 'text-success' : 'text-magenta'}">${formatScore(current.score)}</strong></td></tr>`).join('')
-        : `<tr><td colspan="10" class="text-center text-muted">${previousMonth && currentMonth ? 'No hay sub-KPIs que cumplan los filtros seleccionados.' : 'Carga y selecciona el mes anterior y el actual para comparar.'}</td></tr>`;
+        .map(item => `<tr><td><strong>${escapeHtml(item.record.pdv_id)}</strong></td><td>${formatScore(item.previousScore)}</td><td><strong class="${item.direction === 'up' ? 'text-success' : item.direction === 'down' ? 'text-magenta' : ''}">${formatScore(item.currentScore)}</strong></td><td><span class="badge ${item.alertedBlocking ? 'badge-warning' : 'badge-secondary'}">${item.alertedBlocking ? 'Sí' : 'No'}</span></td><td><span class="badge ${item.applies === 'yes' ? 'badge-success' : item.applies === 'no' ? 'badge-secondary' : 'badge-warning'}">${item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : 'Sin decisión'}</span></td><td>${escapeHtml(item.tipologies.join(' · ') || '—')}</td><td>${escapeHtml(item.record.subkpi)}</td></tr>`).join('')
+        : `<tr><td colspan="7" class="text-center text-muted">${currentMonth ? 'No hay registros que cumplan los filtros seleccionados.' : 'Carga un export de notas para ver el cruce.'}</td></tr>`;
     }
   }
 
@@ -1972,35 +2046,40 @@ class ValidaFlowApp {
     this.renderAdminExternalAnalysis();
   }
 
+  setAdminScoreChangeAlertFilter(filter) {
+    this.adminScoreChangeAlertFilter = String(filter || 'all');
+    this.renderAdminExternalAnalysis();
+  }
+
+  setAdminScoreChangeAppliesFilter(filter) {
+    this.adminScoreChangeAppliesFilter = String(filter || 'all');
+    this.renderAdminExternalAnalysis();
+  }
+
   exportAdminScoreChangesTable() {
     const rows = this.adminScoreChangeRows || [];
     if (!rows.length) {
-      this.showToast('No hay cambios de 0 a 1 ni de 1 a 0 para exportar con los meses seleccionados.', 'warning');
+      this.showToast('No hay registros de notas que cumplan los filtros para exportar.', 'warning');
       return;
     }
     if (!window.XLSX) {
       this.showToast('La librería de Excel aún no está disponible. Intenta nuevamente.', 'error');
       return;
     }
-    const output = rows.map(({ previous, current, changeType }) => ({
-      'Mes anterior': this.formatExternalImportMonth(this.adminScoreChangePreviousMonth),
-      'Mes actual': this.formatExternalImportMonth(this.adminScoreChangeCurrentMonth),
-      Cambio: changeType,
-      Estudio: current.study || current.source || '',
-      'Punto de venta (ID PDV)': current.pdv_id || '',
-      'Sub-KPI afectado': current.subkpi || '',
-      KPI: current.kpi || '',
-      Origen: current.source || '',
-      'ID auditoría anterior': previous.audit_external_id || '',
-      'ID auditoría actual': current.audit_external_id || '',
-      'Nota anterior': Number(previous.score || 0),
-      'Nota actual': Number(current.score || 0)
+    const output = rows.map(item => ({
+      'ID PDV': item.record.pdv_id || '',
+      'Nota final última medición': item.previousScore ?? '',
+      'Nota final mes actual': item.currentScore ?? '',
+      'Alertó en Bloqueantes': item.alertedBlocking ? 'Sí' : 'No',
+      'Aplicaba el error': item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : 'Sin decisión',
+      Tipología: item.tipologies.join(' · ') || '',
+      'Sub-KPI afectado': item.record.subkpi || ''
     }));
     const worksheet = XLSX.utils.json_to_sheet(output);
-    worksheet['!cols'] = [{ wch: 19 }, { wch: 19 }, { wch: 14 }, { wch: 24 }, { wch: 23 }, { wch: 44 }, { wch: 28 }, { wch: 22 }, { wch: 22 }, { wch: 15 }, { wch: 14 }];
+    worksheet['!cols'] = [{ wch: 18 }, { wch: 26 }, { wch: 24 }, { wch: 22 }, { wch: 20 }, { wch: 36 }, { wch: 44 }];
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Cambios de nota');
-    XLSX.writeFile(workbook, `cambios_nota_${this.adminScoreChangePreviousMonth || 'anterior'}_${this.adminScoreChangeCurrentMonth || 'actual'}.xlsx`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Notas y bloqueantes');
+    XLSX.writeFile(workbook, `notas_pdv_bloqueantes_${String(this.adminScoreChangeCurrentMonth || 'sin_mes').slice(0, 7)}.xlsx`);
   }
 
   showEditionAuditDetail(auditId) {

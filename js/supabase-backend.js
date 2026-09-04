@@ -777,7 +777,11 @@ export class SupabaseBackend {
 
     const rowsForMonth = rows.map(row => ({ ...row, period_month: normalizedMonth }));
     for (let offset = 0; offset < rowsForMonth.length; offset += 500) {
-      const { error } = await this.client.from(table).insert(rowsForMonth.slice(offset, offset + 500));
+      const page = rowsForMonth.slice(offset, offset + 500);
+      let { error } = await this.client.from(table).insert(page);
+      if (error && datasetType === 'alerts' && /pdv_note|PGRST204/i.test(`${error.code || ''} ${error.message || ''}`)) {
+        ({ error } = await this.client.from(table).insert(page.map(({ pdv_note, ...legacyRow }) => legacyRow)));
+      }
       if (error) throw error;
     }
 
@@ -810,9 +814,17 @@ export class SupabaseBackend {
 
     const rowsForMonth = rows.map(row => ({ ...row, period_month: normalizedMonth }));
     for (let offset = 0; offset < rowsForMonth.length; offset += 500) {
-      const { error } = await this.client
+      const page = rowsForMonth.slice(offset, offset + 500);
+      let { error } = await this.client
         .from('admin_note_score_records')
-        .insert(rowsForMonth.slice(offset, offset + 500));
+        .insert(page);
+      // Allows the portal to keep accepting the former export during the
+      // short transition while the new database migration is deployed.
+      if (error && /previous_total_score|current_total_score|PGRST204/i.test(`${error.code || ''} ${error.message || ''}`)) {
+        ({ error } = await this.client
+          .from('admin_note_score_records')
+          .insert(page.map(({ previous_total_score, current_total_score, ...legacyRow }) => legacyRow)));
+      }
       if (error) throw error;
     }
 
@@ -906,7 +918,8 @@ export class SupabaseBackend {
 
   async loadAdminExternalAnalysis() {
     this.ensureConfigured();
-    const alertColumns = 'audit_external_id, period_month, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, country, channel, city, auditor, audit_date, wave, study';
+    const alertColumns = 'audit_external_id, period_month, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, pdv_note, country, channel, city, auditor, audit_date, wave, study';
+    const legacyAlertColumns = alertColumns.replace(', pdv_note', '');
     const editColumns = 'audit_external_id, period_month, study, country, audit_status, wave, modifications_count, question_detail, status_changes_count, first_validation_started_at, first_validation_completed_at, first_validator, last_validation_started_at, last_validation_completed_at, last_validator';
     const legacyEditColumns = editColumns.replace(', question_detail', '');
     let imports;
@@ -922,10 +935,10 @@ export class SupabaseBackend {
       // The presentation remains usable while the one-time database migration
       // is being applied. New detail values become available automatically
       // after the column exists and the monthly file is uploaded again.
-      if (!/question_detail|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
+      if (!/question_detail|pdv_note|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
       [imports, alertRecords, editRecords] = await Promise.all([
         this.loadAdminAnalysisImports(),
-        this.loadAllAdminAnalysisRows('admin_alert_export_records', alertColumns),
+        this.loadAllAdminAnalysisRows('admin_alert_export_records', legacyAlertColumns),
         this.loadAllAdminAnalysisRows('admin_edit_export_records', legacyEditColumns)
       ]);
     }
@@ -938,21 +951,30 @@ export class SupabaseBackend {
 
   async loadAdminNoteScoreAnalysis() {
     this.ensureConfigured();
-    const [noteScoreImports, noteScoreRecords] = await Promise.all([
-      this.client
-        .from('admin_note_score_imports')
-        .select('period_month, source_filename, row_count, imported_at')
-        .order('period_month', { ascending: false })
-        .then(({ data, error }) => {
-          if (error) throw error;
-          return data || [];
-        }),
-      this.loadAllAdminAnalysisRows(
-        'admin_note_score_records',
-        'audit_external_id, period_month, pdv_id, source, study, subkpi, wave, kpi, score'
-      )
-    ]);
-    return { noteScoreImports, noteScoreRecords };
+    const loadImports = () => this.client
+      .from('admin_note_score_imports')
+      .select('period_month, source_filename, row_count, imported_at')
+      .order('period_month', { ascending: false })
+      .then(({ data, error }) => {
+        if (error) throw error;
+        return data || [];
+      });
+    const expandedColumns = 'audit_external_id, period_month, pdv_id, source, study, subkpi, wave, kpi, score, previous_total_score, current_total_score';
+    const legacyColumns = 'audit_external_id, period_month, pdv_id, source, study, subkpi, wave, kpi, score';
+    try {
+      const [noteScoreImports, noteScoreRecords] = await Promise.all([
+        loadImports(),
+        this.loadAllAdminAnalysisRows('admin_note_score_records', expandedColumns)
+      ]);
+      return { noteScoreImports, noteScoreRecords };
+    } catch (error) {
+      if (!/previous_total_score|current_total_score|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
+      const [noteScoreImports, noteScoreRecords] = await Promise.all([
+        loadImports(),
+        this.loadAllAdminAnalysisRows('admin_note_score_records', legacyColumns)
+      ]);
+      return { noteScoreImports, noteScoreRecords };
+    }
   }
 
   async createSupervisor({ username, displayName, password, studyIds, module, modules = [] }) {
