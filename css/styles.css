@@ -3931,6 +3931,22 @@ button.supervisor-module-option:hover {
 .score-highlight-variation.is-down { color: var(--dn-magenta); }
 .score-highlight-variation.is-neutral { color: var(--text-muted); }
 
+/* Cada registro de Cambio de nota representa un PDV completo. Acentuar el
+   inicio de la siguiente fila evita que los tres sub-KPIs se confundan con
+   el PDV siguiente al desplazarse horizontalmente por la tabla. */
+#admin-score-changes-tbody tr + tr > td {
+  border-top: 3px solid rgba(13, 92, 171, 0.24) !important;
+}
+
+#admin-score-changes-tbody tr:nth-child(even) > td {
+  background: rgba(13, 92, 171, 0.025);
+}
+
+#admin-score-changes-tbody tr > td:first-child {
+  border-left: 4px solid rgba(13, 92, 171, 0.55);
+  font-variant-numeric: tabular-nums;
+}
+
 .edition-audit-detail-modal {
   max-width: 720px !important;
 }
