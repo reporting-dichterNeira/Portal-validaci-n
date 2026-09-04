@@ -1901,7 +1901,7 @@ class ValidaFlowApp {
         alertFilterElement.dataset.filterBound = 'true';
       }
     }
-    const appliesFilter = ['all', 'yes', 'no', 'pending'].includes(this.adminScoreChangeAppliesFilter)
+    const appliesFilter = ['all', 'yes', 'no', 'pending', 'not_alerted'].includes(this.adminScoreChangeAppliesFilter)
       ? this.adminScoreChangeAppliesFilter
       : 'all';
     this.adminScoreChangeAppliesFilter = appliesFilter;
@@ -1937,8 +1937,7 @@ class ValidaFlowApp {
         const subkpiName = normalize(record.subkpi);
         return kpiName && subkpiName && (kpiName === subkpiName || kpiName.includes(subkpiName) || subkpiName.includes(kpiName));
       });
-      const relevantKpis = matchingKpis.length ? matchingKpis : alertKpis;
-      const decisions = relevantKpis.map(kpi => audit?.validationResults?.[kpi?.name] || {});
+      const decisions = matchingKpis.map(kpi => audit?.validationResults?.[kpi?.name] || {});
       const applies = decisions.some(decision => String(decision?.status || '').toLowerCase() === 'aplica');
       const noApplies = decisions.length > 0 && decisions.every(decision => String(decision?.status || '').toLowerCase() === 'no_aplica');
       const tipologies = [...new Set(decisions.map(decision => String(decision?.tipificacion || '').trim()).filter(Boolean))];
@@ -1952,8 +1951,12 @@ class ValidaFlowApp {
       // Validation data completes the answer and gives us the decision and
       // typology for the matching blocking alert.  The ID/PDV fallback keeps
       // older monthly files visible until they are uploaded again.
-      const hasAlertExportMatch = Boolean(alertContext?.is_alert);
-      const isBlockingFromPlatform = audit?._module === 'blocking' && relevantKpis.length > 0;
+      const alertName = normalize(alertContext?.alert_label || alertContext?.alert_status);
+      const subkpiName = normalize(record.subkpi);
+      const isMatchingExportAlert = Boolean(alertContext?.is_alert && alertName && subkpiName
+        && (alertName === subkpiName || alertName.includes(subkpiName) || subkpiName.includes(alertName)));
+      const isBlockingFromPlatform = audit?._module === 'blocking' && matchingKpis.length > 0;
+      const alertedBlocking = isBlockingFromPlatform || (!audit && isMatchingExportAlert);
       return {
         record,
         study: studyName(record),
@@ -1961,9 +1964,9 @@ class ValidaFlowApp {
         currentScore: hasCurrent ? currentScore : null,
         variation,
         direction: variation === null ? 'equal' : variation > 0 ? 'up' : variation < 0 ? 'down' : 'equal',
-        alertedBlocking: isBlockingFromPlatform || (!audit && hasAlertExportMatch),
-        applies: applies ? 'yes' : noApplies ? 'no' : 'pending',
-        tipologies,
+        alertedBlocking,
+        applies: !alertedBlocking ? 'not_alerted' : applies ? 'yes' : noApplies ? 'no' : 'pending',
+        tipologies: alertedBlocking ? tipologies : [],
         alertContext
       };
     });
@@ -2024,7 +2027,7 @@ class ValidaFlowApp {
       tbody.innerHTML = filteredChangeRows.length ? filteredChangeRows
         .sort((a, b) => Number(b.alertedBlocking) - Number(a.alertedBlocking) || String(a.record.pdv_id).localeCompare(String(b.record.pdv_id), 'es') || String(a.record.subkpi).localeCompare(String(b.record.subkpi), 'es'))
         .slice(0, 500)
-        .map(item => `<tr><td><strong>${escapeHtml(item.record.pdv_id)}</strong></td><td>${formatScore(item.previousScore)}</td><td><strong class="${item.direction === 'up' ? 'text-success' : item.direction === 'down' ? 'text-magenta' : ''}">${formatScore(item.currentScore)}</strong></td><td><span class="badge ${item.alertedBlocking ? 'badge-warning' : 'badge-secondary'}">${item.alertedBlocking ? 'Sí' : 'No'}</span></td><td><span class="badge ${item.applies === 'yes' ? 'badge-success' : item.applies === 'no' ? 'badge-secondary' : 'badge-warning'}">${item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : 'Sin decisión'}</span></td><td>${escapeHtml(item.tipologies.join(' · ') || '—')}</td><td>${escapeHtml(item.record.subkpi)}</td></tr>`).join('')
+        .map(item => `<tr><td><strong>${escapeHtml(item.record.pdv_id)}</strong></td><td>${formatScore(item.previousScore)}</td><td><strong class="${item.direction === 'up' ? 'text-success' : item.direction === 'down' ? 'text-magenta' : ''}">${formatScore(item.currentScore)}</strong></td><td><span class="badge ${item.alertedBlocking ? 'badge-warning' : 'badge-secondary'}">${item.alertedBlocking ? 'Sí' : 'No alertó'}</span></td><td><span class="badge ${item.applies === 'yes' ? 'badge-success' : item.applies === 'no' || item.applies === 'not_alerted' ? 'badge-secondary' : 'badge-warning'}">${item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : item.applies === 'not_alerted' ? 'No corresponde' : 'Pendiente de validación'}</span></td><td>${escapeHtml(item.tipologies.join(' · ') || '—')}</td><td>${escapeHtml(item.record.subkpi)}</td></tr>`).join('')
         : `<tr><td colspan="7" class="text-center text-muted">${currentMonth ? 'No hay registros que cumplan los filtros seleccionados.' : 'Carga un export de notas para ver el cruce.'}</td></tr>`;
     }
   }
@@ -2070,8 +2073,8 @@ class ValidaFlowApp {
       'ID PDV': item.record.pdv_id || '',
       'Nota final última medición': item.previousScore ?? '',
       'Nota final mes actual': item.currentScore ?? '',
-      'Alertó en Bloqueantes': item.alertedBlocking ? 'Sí' : 'No',
-      'Aplicaba el error': item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : 'Sin decisión',
+      'Alertó en Bloqueantes': item.alertedBlocking ? 'Sí' : 'No alertó',
+      'Aplicaba el error': item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : item.applies === 'not_alerted' ? 'No corresponde' : 'Pendiente de validación',
       Tipología: item.tipologies.join(' · ') || '',
       'Sub-KPI afectado': item.record.subkpi || ''
     }));
