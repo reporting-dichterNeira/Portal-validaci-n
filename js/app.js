@@ -1957,12 +1957,12 @@ class ValidaFlowApp {
       const alertKpis = (Array.isArray(audit?.kpis) ? audit.kpis : []).filter(kpi => (
         kpi?.needsReview || /alerta/i.test(String(kpi?.alertaStatus || ''))
       ));
-      const matchingKpis = alertKpis.filter(kpi => {
-        const kpiName = normalize(kpi?.name);
-        const subkpiName = normalize(record.subkpi);
-        return kpiName && subkpiName && (kpiName === subkpiName || kpiName.includes(subkpiName) || subkpiName.includes(kpiName));
-      });
-      const decisions = matchingKpis.map(kpi => audit?.validationResults?.[kpi?.name] || {});
+      // El export de notas trae el nombre técnico del sub-KPI, mientras que
+      // ValidaFlow puede guardar el nombre operativo de la alerta. El vínculo
+      // fiable entre ambas fuentes es la auditoría/PDV; por eso se evalúan
+      // todas las alertas bloqueantes de esa auditoría, no solo una igualdad
+      // literal de nombres que dejaría cruces válidos por fuera.
+      const decisions = alertKpis.map(kpi => audit?.validationResults?.[kpi?.name] || {});
       const applies = decisions.some(decision => String(decision?.status || '').toLowerCase() === 'aplica');
       const noApplies = decisions.length > 0 && decisions.every(decision => String(decision?.status || '').toLowerCase() === 'no_aplica');
       const tipologies = [...new Set(decisions.map(decision => String(decision?.tipificacion || '').trim()).filter(Boolean))];
@@ -1991,7 +1991,7 @@ class ValidaFlowApp {
       const subkpiName = normalize(record.subkpi);
       const isMatchingExportAlert = Boolean(alertContext?.is_alert && alertName && subkpiName
         && (alertName === subkpiName || alertName.includes(subkpiName) || subkpiName.includes(alertName)));
-      const isBlockingFromPlatform = audit?._module === 'blocking' && matchingKpis.length > 0;
+      const isBlockingFromPlatform = audit?._module === 'blocking' && alertKpis.length > 0;
       const alertedBlocking = isBlockingFromPlatform || (!audit && isMatchingExportAlert);
       return {
         record,
