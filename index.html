@@ -906,7 +906,7 @@
           </div>
 
           <div class="stats-grid admin-analysis-stats">
-            <div class="stat-card"><div class="stat-icon-wrapper icon-blue">🏪</div><div class="stat-details"><span class="stat-label">PDV / sub-KPIs analizados</span><strong class="stat-value" id="admin-score-changes-previous-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-blue">🏪</div><div class="stat-details"><span class="stat-label">PDV analizados</span><strong class="stat-value" id="admin-score-changes-previous-count">0</strong></div></div>
             <div class="stat-card"><div class="stat-icon-wrapper icon-purple">📉</div><div class="stat-details"><span class="stat-label">Nota final última medición</span><strong class="stat-value" id="admin-score-changes-current-count">0</strong></div></div>
             <div class="stat-card"><div class="stat-icon-wrapper icon-emerald">📈</div><div class="stat-details"><span class="stat-label">Nota final mes actual</span><strong class="stat-value text-success" id="admin-score-changes-zero-to-one-count">0</strong></div></div>
             <div class="stat-card"><div class="stat-icon-wrapper icon-magenta">↕</div><div class="stat-details"><span class="stat-label">Variación promedio</span><strong class="stat-value" id="admin-score-changes-one-to-zero-count">0</strong></div></div>
@@ -920,8 +920,8 @@
           </div>
 
           <section class="admin-analysis-card admin-analysis-table-card">
-            <div class="admin-analysis-table-heading"><div><h3>Detalle de notas y alertas bloqueantes</h3><p class="form-help">El cruce se realiza por ID de auditoría y PDV contra las alertas que los supervisores cargaron y fueron validadas en ValidaFlow.</p></div><button class="btn btn-success btn-sm" type="button" onclick="window.app?.exportAdminScoreChangesTable()">📊 Descargar tabla filtrada</button></div>
-            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID PDV</th><th>Nota final última medición</th><th>Nota final mes actual</th><th>Alertó en Bloqueantes</th><th>Aplicaba el error</th><th>Tipología</th><th>Sub-KPI afectado</th></tr></thead><tbody id="admin-score-changes-tbody"><tr><td colspan="7" class="text-center text-muted">Carga un export de notas para ver el cruce.</td></tr></tbody></table></div>
+            <div class="admin-analysis-table-heading"><div><h3>Detalle de notas y alertas bloqueantes</h3><p class="form-help">Cada PDV muestra el sub-KPI cuya diferencia absoluta entre <em>Obtenidos</em> y <em>Obtenido Anterior por subkpi</em> fue mayor.</p></div><button class="btn btn-success btn-sm" type="button" onclick="window.app?.exportAdminScoreChangesTable()">📊 Descargar tabla filtrada</button></div>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID PDV</th><th>Nota final última medición</th><th>Nota final mes actual</th><th>Alertó en Bloqueantes</th><th>Aplicaba el error</th><th>Tipología</th><th>Sub-KPI con mayor variación</th><th>Variación del sub-KPI</th></tr></thead><tbody id="admin-score-changes-tbody"><tr><td colspan="8" class="text-center text-muted">Carga un export de notas para ver el cruce.</td></tr></tbody></table></div>
           </section>
         </section>
       </div>
@@ -2831,6 +2831,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=94.0"></script>
+  <script type="module" src="js/app.js?v=95.0"></script>
 </body>
 </html>

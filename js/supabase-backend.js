@@ -820,10 +820,10 @@ export class SupabaseBackend {
         .insert(page);
       // Allows the portal to keep accepting the former export during the
       // short transition while the new database migration is deployed.
-      if (error && /previous_total_score|current_total_score|PGRST204/i.test(`${error.code || ''} ${error.message || ''}`)) {
+      if (error && /previous_total_score|current_total_score|previous_subkpi_score|current_subkpi_score|PGRST204/i.test(`${error.code || ''} ${error.message || ''}`)) {
         ({ error } = await this.client
           .from('admin_note_score_records')
-          .insert(page.map(({ previous_total_score, current_total_score, ...legacyRow }) => legacyRow)));
+          .insert(page.map(({ previous_total_score, current_total_score, previous_subkpi_score, current_subkpi_score, ...legacyRow }) => legacyRow)));
       }
       if (error) throw error;
     }
@@ -959,7 +959,7 @@ export class SupabaseBackend {
         if (error) throw error;
         return data || [];
       });
-    const expandedColumns = 'audit_external_id, period_month, pdv_id, source, study, subkpi, wave, kpi, score, previous_total_score, current_total_score';
+    const expandedColumns = 'audit_external_id, period_month, pdv_id, source, study, subkpi, wave, kpi, score, previous_total_score, current_total_score, previous_subkpi_score, current_subkpi_score';
     const legacyColumns = 'audit_external_id, period_month, pdv_id, source, study, subkpi, wave, kpi, score';
     try {
       const [noteScoreImports, noteScoreRecords] = await Promise.all([
@@ -968,7 +968,7 @@ export class SupabaseBackend {
       ]);
       return { noteScoreImports, noteScoreRecords };
     } catch (error) {
-      if (!/previous_total_score|current_total_score|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
+      if (!/previous_total_score|current_total_score|previous_subkpi_score|current_subkpi_score|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
       const [noteScoreImports, noteScoreRecords] = await Promise.all([
         loadImports(),
         this.loadAllAdminAnalysisRows('admin_note_score_records', legacyColumns)
