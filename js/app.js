@@ -1208,8 +1208,12 @@ class ValidaFlowApp {
   normalizeAlertExportRows(rows) {
     const records = new Map();
     rows.forEach(row => {
-      const auditId = this.getExternalExportValue(row, ['id de audito', 'id audito', 'id auditoria', 'id auditor', 'audit id']);
-      if (!auditId) return;
+      const importedAuditId = this.getExternalExportValue(row, ['id de audito', 'id audito', 'id auditoria', 'id auditor', 'audit id']);
+      // Los Excel de Power BI incluyen filas de contexto como “Filtros
+      // aplicados”. Nunca son auditorías: el ID válido se compone solo de
+      // dígitos. También normalizamos el sufijo .0 de algunos Excel.
+      const auditId = String(importedAuditId || '').trim().replace(/\.0+$/, '');
+      if (!/^\d+$/.test(auditId)) return;
       const auditStatus = this.getExternalExportValue(row, ['estado']);
       const alertStatus = this.getExternalExportValue(row, ['substatus', 'sub status']);
       const alertLabel = this.getExternalExportValue(row, ['alerta']);
@@ -1582,7 +1586,9 @@ class ValidaFlowApp {
       : allPlatformAudits.filter(audit => audit?._module === visualizationModule || audit?.module === visualizationModule);
     // The general export supplies the audit context for the cross. Keep all
     // of its rows visible, including imports created before the rule changed.
-    const allAlertRows = analysis.alertRecords || [];
+    // Oculta también los registros de contexto que pudieron haberse guardado
+    // antes de aplicar la validación estricta del ID de auditoría.
+    const allAlertRows = (analysis.alertRecords || []).filter(record => /^\d+$/.test(String(record?.audit_external_id || '').trim()));
     const platformIds = visualizationModule === 'all'
       ? (analysis.platformAuditIds || new Set())
       : new Set(platformAlertAudits.map(item => String(item.audit?.id || '').trim()).filter(Boolean));
@@ -2223,11 +2229,13 @@ class ValidaFlowApp {
       return;
     }
     const exportRows = rows.map(item => {
-      const { record, matched, summary } = item;
+      const { record, audit, matched, summary } = item;
       return {
         'ID auditoría': item.auditId,
         Mes: this.formatExternalImportMonth(record.period_month),
         Estudio: record.study || '',
+        'Fecha auditoría': record.audit_date || audit?.fecha || '',
+        'Fecha validación en ValidaFlow': audit?.fechaValidacion || audit?.completedAt || '',
         Auditor: record.auditor || '',
         PDV: record.pdv_id || '',
         'Nombre PDV': record.pdv_name || '',
@@ -2245,9 +2253,9 @@ class ValidaFlowApp {
     });
     const worksheet = XLSX.utils.json_to_sheet(exportRows);
     worksheet['!cols'] = [
-      { wch: 15 }, { wch: 18 }, { wch: 24 }, { wch: 26 }, { wch: 16 }, { wch: 34 },
-      { wch: 20 }, { wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 16 }, { wch: 16 },
-      { wch: 18 }, { wch: 52 }, { wch: 18 }, { wch: 52 }, { wch: 20 }
+      { wch: 15 }, { wch: 18 }, { wch: 24 }, { wch: 18 }, { wch: 28 }, { wch: 26 },
+      { wch: 16 }, { wch: 34 }, { wch: 20 }, { wch: 22 }, { wch: 18 }, { wch: 18 },
+      { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 52 }, { wch: 18 }, { wch: 52 }, { wch: 20 }
     ];
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Cruce de alertas');
