@@ -2010,21 +2010,44 @@ class ValidaFlowApp {
       };
     });
     // The final PDV score is repeated for each sub-KPI in the new export.
-    // Present one row per PDV/audit and keep the sub-KPI whose absolute
-    // difference between "Obtenidos" and "Obtenido Anterior por subkpi" is greatest.
+    // Present one row per PDV/audit. When the final note improves, highlight
+    // the three sub-KPIs with the best current score; when it falls, surface
+    // the three with the lowest current score. This keeps the explanation of
+    // the PDV result aligned with the direction of its final note.
     const rowsByPdv = new Map();
     noteRows.forEach(item => {
       const key = `${normalize(item.study)}::${normalize(item.record.pdv_id)}::${normalize(item.record.audit_external_id)}`;
-      const current = rowsByPdv.get(key);
-      const currentMagnitude = current?.subkpiVariation === null || current?.subkpiVariation === undefined
-        ? -1
-        : Math.abs(current.subkpiVariation);
-      const candidateMagnitude = item.subkpiVariation === null || item.subkpiVariation === undefined
-        ? -1
-        : Math.abs(item.subkpiVariation);
-      if (!current || candidateMagnitude > currentMagnitude) rowsByPdv.set(key, item);
+      const group = rowsByPdv.get(key) || [];
+      group.push(item);
+      rowsByPdv.set(key, group);
     });
-    const pdvRows = [...rowsByPdv.values()];
+    const pdvRows = [...rowsByPdv.values()].map(items => {
+      const representative = items.reduce((selected, candidate) => {
+        const selectedMagnitude = selected?.subkpiVariation === null || selected?.subkpiVariation === undefined
+          ? -1
+          : Math.abs(selected.subkpiVariation);
+        const candidateMagnitude = candidate.subkpiVariation === null || candidate.subkpiVariation === undefined
+          ? -1
+          : Math.abs(candidate.subkpiVariation);
+        return !selected || candidateMagnitude > selectedMagnitude ? candidate : selected;
+      }, null);
+      const scoreRows = items.filter(item => item.currentSubkpiScore !== null);
+      const direction = representative?.direction || 'equal';
+      const highlightedSubkpis = scoreRows.slice().sort((a, b) => {
+        if (direction === 'up') return b.currentSubkpiScore - a.currentSubkpiScore;
+        if (direction === 'down') return a.currentSubkpiScore - b.currentSubkpiScore;
+        return Math.abs(b.subkpiVariation || 0) - Math.abs(a.subkpiVariation || 0);
+      }).slice(0, 3);
+      return {
+        ...representative,
+        highlightedSubkpis,
+        highlightedSubkpiNames: highlightedSubkpis.map(item => item.record.subkpi).join(' || ') || representative?.record?.subkpi || '—',
+        highlightedSubkpiVariations: highlightedSubkpis.map(item => item.subkpiVariation === null
+          ? '—'
+          : `${item.subkpiVariation > 0 ? '+' : ''}${formatScore(item.subkpiVariation)}`).join(' || ') || '—',
+        maxHighlightedSubkpiVariation: highlightedSubkpis.reduce((maximum, item) => Math.max(maximum, Math.abs(item.subkpiVariation || 0)), 0)
+      };
+    });
     const allowedDirections = new Set(['all', 'up', 'down', 'equal']);
     const activeDirection = allowedDirections.has(this.adminScoreChangeDirectionFilter)
       ? this.adminScoreChangeDirectionFilter
@@ -2075,14 +2098,14 @@ class ValidaFlowApp {
     setText('admin-score-changes-filter-count', currentMonth
       ? `${formatNumber(filteredChangeRows.length)} de ${formatNumber(pdvRows.length)} PDV del mes ${this.formatExternalImportMonth(currentMonth)}. ${formatNumber(blockingRows.length)} alertaron en Bloqueantes y ${formatNumber(applicableRows.length)} aplicaban el error.`
       : 'Carga un export de notas para empezar el cruce.');
-    renderRanking('admin-score-changes-top-kpis', rank(blockingRows, item => item.record.subkpi));
+    renderRanking('admin-score-changes-top-kpis', rank(blockingRows.flatMap(item => item.highlightedSubkpis || []), item => item.record.subkpi));
     renderRanking('admin-score-changes-top-pdvs', rank(blockingRows, item => item.record.pdv_id));
     const tbody = document.getElementById('admin-score-changes-tbody');
     if (tbody) {
       tbody.innerHTML = filteredChangeRows.length ? filteredChangeRows
-        .sort((a, b) => Number(b.alertedBlocking) - Number(a.alertedBlocking) || Math.abs(b.subkpiVariation || 0) - Math.abs(a.subkpiVariation || 0) || String(a.record.pdv_id).localeCompare(String(b.record.pdv_id), 'es'))
+        .sort((a, b) => Number(b.alertedBlocking) - Number(a.alertedBlocking) || b.maxHighlightedSubkpiVariation - a.maxHighlightedSubkpiVariation || String(a.record.pdv_id).localeCompare(String(b.record.pdv_id), 'es'))
         .slice(0, 500)
-        .map(item => `<tr><td><strong>${escapeHtml(item.record.pdv_id)}</strong></td><td>${formatScore(item.previousScore)}</td><td><strong class="${item.direction === 'up' ? 'text-success' : item.direction === 'down' ? 'text-magenta' : ''}">${formatScore(item.currentScore)}</strong></td><td><span class="badge ${item.alertedBlocking ? 'badge-warning' : 'badge-secondary'}">${item.alertedBlocking ? 'Sí' : 'No alertó'}</span></td><td><span class="badge ${item.applies === 'yes' ? 'badge-success' : item.applies === 'no' || item.applies === 'not_alerted' ? 'badge-secondary' : 'badge-warning'}">${item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : item.applies === 'not_alerted' ? 'No corresponde' : 'Pendiente de validación'}</span></td><td>${escapeHtml(item.tipologies.join(' · ') || '—')}</td><td>${escapeHtml(item.record.subkpi)}</td><td class="${item.subkpiVariation > 0 ? 'text-success' : item.subkpiVariation < 0 ? 'text-magenta' : ''}">${item.subkpiVariation === null ? '—' : `${item.subkpiVariation > 0 ? '+' : ''}${formatScore(item.subkpiVariation)}`}</td></tr>`).join('')
+        .map(item => `<tr><td><strong>${escapeHtml(item.record.pdv_id)}</strong></td><td>${formatScore(item.previousScore)}</td><td><strong class="${item.direction === 'up' ? 'text-success' : item.direction === 'down' ? 'text-magenta' : ''}">${formatScore(item.currentScore)}</strong></td><td><span class="badge ${item.alertedBlocking ? 'badge-warning' : 'badge-secondary'}">${item.alertedBlocking ? 'Sí' : 'No alertó'}</span></td><td><span class="badge ${item.applies === 'yes' ? 'badge-success' : item.applies === 'no' || item.applies === 'not_alerted' ? 'badge-secondary' : 'badge-warning'}">${item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : item.applies === 'not_alerted' ? 'No corresponde' : 'Pendiente de validación'}</span></td><td>${escapeHtml(item.tipologies.join(' · ') || '—')}</td><td>${escapeHtml(item.highlightedSubkpiNames)}</td><td class="${item.direction === 'up' ? 'text-success' : item.direction === 'down' ? 'text-magenta' : ''}">${escapeHtml(item.highlightedSubkpiVariations)}</td></tr>`).join('')
         : `<tr><td colspan="8" class="text-center text-muted">${currentMonth ? 'No hay registros que cumplan los filtros seleccionados.' : 'Carga un export de notas para ver el cruce.'}</td></tr>`;
     }
   }
@@ -2131,13 +2154,11 @@ class ValidaFlowApp {
       'Alertó en Bloqueantes': item.alertedBlocking ? 'Sí' : 'No alertó',
       'Aplicaba el error': item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : item.applies === 'not_alerted' ? 'No corresponde' : 'Pendiente de validación',
       Tipología: item.tipologies.join(' · ') || '',
-      'Sub-KPI con mayor variación': item.record.subkpi || '',
-      'Obtenido anterior por sub-KPI': item.previousSubkpiScore ?? '',
-      Obtenidos: item.currentSubkpiScore ?? '',
-      'Variación del sub-KPI': item.subkpiVariation ?? ''
+      '3 sub-KPIs destacados': item.highlightedSubkpiNames || '',
+      'Variaciones de sub-KPI': item.highlightedSubkpiVariations || ''
     }));
     const worksheet = XLSX.utils.json_to_sheet(output);
-    worksheet['!cols'] = [{ wch: 18 }, { wch: 26 }, { wch: 24 }, { wch: 22 }, { wch: 20 }, { wch: 36 }, { wch: 44 }, { wch: 27 }, { wch: 18 }, { wch: 18 }];
+    worksheet['!cols'] = [{ wch: 18 }, { wch: 26 }, { wch: 24 }, { wch: 22 }, { wch: 20 }, { wch: 36 }, { wch: 72 }, { wch: 34 }];
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Notas y bloqueantes');
     XLSX.writeFile(workbook, `notas_pdv_bloqueantes_${String(this.adminScoreChangeCurrentMonth || 'sin_mes').slice(0, 7)}.xlsx`);
