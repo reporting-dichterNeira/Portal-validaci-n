@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=50.0" />
+  <link rel="stylesheet" href="css/styles.css?v=51.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -921,7 +921,7 @@
 
           <section class="admin-analysis-card admin-analysis-table-card">
             <div class="admin-analysis-table-heading"><div><h3>Detalle de notas y alertas bloqueantes</h3><p class="form-help">Si la nota final aumenta se muestran los tres sub-KPIs con mejor nota; si disminuye, los tres con nota más baja. Los nombres y variaciones se separan con <strong>||</strong>.</p></div><button class="btn btn-success btn-sm" type="button" onclick="window.app?.exportAdminScoreChangesTable()">📊 Descargar tabla filtrada</button></div>
-            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID PDV</th><th>Nota final última medición</th><th>Nota final mes actual</th><th>Alerta Bloqueante en auditoría</th><th>Alguna alerta aplicaba</th><th>Tipología</th><th>3 sub-KPIs destacados</th><th>Variaciones de sub-KPI</th></tr></thead><tbody id="admin-score-changes-tbody"><tr><td colspan="8" class="text-center text-muted">Carga un export de notas para ver el cruce.</td></tr></tbody></table></div>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID PDV</th><th>Nota final última medición</th><th>Nota final mes actual</th><th>Alerta Bloqueante en auditoría</th><th>Alguna alerta aplicaba</th><th>Tipología</th><th>3 sub-KPIs destacados y variación</th></tr></thead><tbody id="admin-score-changes-tbody"><tr><td colspan="7" class="text-center text-muted">Carga un export de notas para ver el cruce.</td></tr></tbody></table></div>
           </section>
         </section>
       </div>
@@ -2831,6 +2831,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=98.0"></script>
+  <script type="module" src="js/app.js?v=99.0"></script>
 </body>
 </html>

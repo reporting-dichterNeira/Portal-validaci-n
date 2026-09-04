@@ -2102,11 +2102,21 @@ class ValidaFlowApp {
     renderRanking('admin-score-changes-top-pdvs', rank(blockingRows, item => item.record.pdv_id));
     const tbody = document.getElementById('admin-score-changes-tbody');
     if (tbody) {
+      const renderHighlightedSubkpis = item => {
+        const entries = item.highlightedSubkpis || [];
+        if (!entries.length) return `<span class="text-muted">${escapeHtml(item.highlightedSubkpiNames || '—')}</span>`;
+        return `<ol class="score-highlight-list">${entries.map((entry, index) => {
+          const variation = entry.subkpiVariation;
+          const variationClass = variation > 0 ? 'is-up' : variation < 0 ? 'is-down' : 'is-neutral';
+          const variationText = variation === null ? '—' : `${variation > 0 ? '+' : ''}${formatScore(variation)}`;
+          return `<li><span class="score-highlight-name"><b>${index + 1}.</b> ${escapeHtml(entry.record.subkpi)}</span><span class="score-highlight-variation ${variationClass}">${variationText}</span></li>`;
+        }).join('')}</ol>`;
+      };
       tbody.innerHTML = filteredChangeRows.length ? filteredChangeRows
         .sort((a, b) => Number(b.alertedBlocking) - Number(a.alertedBlocking) || b.maxHighlightedSubkpiVariation - a.maxHighlightedSubkpiVariation || String(a.record.pdv_id).localeCompare(String(b.record.pdv_id), 'es'))
         .slice(0, 500)
-        .map(item => `<tr><td><strong>${escapeHtml(item.record.pdv_id)}</strong></td><td>${formatScore(item.previousScore)}</td><td><strong class="${item.direction === 'up' ? 'text-success' : item.direction === 'down' ? 'text-magenta' : ''}">${formatScore(item.currentScore)}</strong></td><td><span class="badge ${item.alertedBlocking ? 'badge-warning' : 'badge-secondary'}">${item.alertedBlocking ? 'Sí' : 'No alertó'}</span></td><td><span class="badge ${item.applies === 'yes' ? 'badge-success' : item.applies === 'no' || item.applies === 'not_alerted' ? 'badge-secondary' : 'badge-warning'}">${item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : item.applies === 'not_alerted' ? 'No corresponde' : 'Pendiente de validación'}</span></td><td>${escapeHtml(item.tipologies.join(' · ') || '—')}</td><td>${escapeHtml(item.highlightedSubkpiNames)}</td><td class="${item.direction === 'up' ? 'text-success' : item.direction === 'down' ? 'text-magenta' : ''}">${escapeHtml(item.highlightedSubkpiVariations)}</td></tr>`).join('')
-        : `<tr><td colspan="8" class="text-center text-muted">${currentMonth ? 'No hay registros que cumplan los filtros seleccionados.' : 'Carga un export de notas para ver el cruce.'}</td></tr>`;
+        .map(item => `<tr><td><strong>${escapeHtml(item.record.pdv_id)}</strong></td><td>${formatScore(item.previousScore)}</td><td><strong class="${item.direction === 'up' ? 'text-success' : item.direction === 'down' ? 'text-magenta' : ''}">${formatScore(item.currentScore)}</strong></td><td><span class="badge ${item.alertedBlocking ? 'badge-warning' : 'badge-secondary'}">${item.alertedBlocking ? 'Sí' : 'No alertó'}</span></td><td><span class="badge ${item.applies === 'yes' ? 'badge-success' : item.applies === 'no' || item.applies === 'not_alerted' ? 'badge-secondary' : 'badge-warning'}">${item.applies === 'yes' ? 'Sí' : item.applies === 'no' ? 'No' : item.applies === 'not_alerted' ? 'No corresponde' : 'Pendiente de validación'}</span></td><td>${escapeHtml(item.tipologies.join(' · ') || '—')}</td><td>${renderHighlightedSubkpis(item)}</td></tr>`).join('')
+        : `<tr><td colspan="7" class="text-center text-muted">${currentMonth ? 'No hay registros que cumplan los filtros seleccionados.' : 'Carga un export de notas para ver el cruce.'}</td></tr>`;
     }
   }
 

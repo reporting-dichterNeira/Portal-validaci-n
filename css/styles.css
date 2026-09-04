@@ -3892,6 +3892,45 @@ button.supervisor-module-option:hover {
   min-width: 1380px;
 }
 
+.score-highlight-list {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 350px;
+}
+
+.score-highlight-list li {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.34rem 0.48rem;
+  border-left: 3px solid rgba(0, 86, 145, 0.28);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--bg-surface);
+}
+
+.score-highlight-name {
+  color: var(--dn-navy);
+  line-height: 1.25;
+}
+
+.score-highlight-name b {
+  color: var(--text-muted);
+}
+
+.score-highlight-variation {
+  min-width: 3.7rem;
+  text-align: right;
+  font-weight: 800;
+}
+
+.score-highlight-variation.is-up { color: #00A54E; }
+.score-highlight-variation.is-down { color: var(--dn-magenta); }
+.score-highlight-variation.is-neutral { color: var(--text-muted); }
+
 .edition-audit-detail-modal {
   max-width: 720px !important;
 }
