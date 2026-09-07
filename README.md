@@ -16,6 +16,12 @@ La documentación detallada está en [`docs/`](docs/README.md).
 
 No existe un servidor Node, Java, Python o PHP propio. El navegador se comunica directamente con Supabase mediante `supabase-js`; las reglas RLS y las funciones de PostgreSQL son las que controlan el acceso y las operaciones de datos.
 
+## Autenticación y datos no públicos
+
+La autenticación se realiza **directamente con Supabase Auth**. El portal no guarda contraseñas ni simula sesiones en el navegador: las sesiones de personal se validan con el token emitido por Supabase. Los validadores usan una sesión anónima de Supabase únicamente para canjear su código `VAL-...`; esa sesión no concede lectura abierta de datos.
+
+Las tablas operativas, los lotes y los tres análisis externos tienen **Row Level Security (RLS) habilitado** y políticas por rol, estudio, módulo o asignación. Por tanto, la base no es pública: un visitante, una sesión anónima sin código válido o un usuario sin el permiso correspondiente no puede consultar ni modificar esos registros. El frontend expone solo la clave publicable de Supabase; la clave `service_role` permanece exclusivamente en las variables de entorno de la Edge Function.
+
 ## Arquitectura resumida
 
 ```mermaid

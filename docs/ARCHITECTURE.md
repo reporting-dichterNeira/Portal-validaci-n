@@ -108,11 +108,15 @@ Los roles no son una condición visual únicamente: RLS en PostgreSQL los valida
 
 ## 6. Seguridad
 
+- **Autenticación directa:** las sesiones de personal se crean y verifican directamente con Supabase Auth. El portal no almacena ni valida contraseñas por su cuenta.
+- **Validadores:** Supabase permite una sesión anónima limitada para canjear un código de validador. La RPC `claim_validator_code` vincula esa sesión con un código activo; sin esa vinculación no obtiene acceso a auditorías.
 - La configuración del navegador usa una clave **publishable**. No se debe guardar una clave secreta en el repositorio.
-- RLS está habilitado en las tablas de trabajo e imports externos.
+- **RLS habilitado:** `profiles`, `validators`, `validator_sessions`, `audits`, `countries`, `studies`, `supervisor_assignments`, `upload_batches` y las tablas `admin_*` de imports/análisis se crean con Row Level Security y políticas explícitas. No hay tablas de negocio disponibles para lectura o escritura pública.
 - Los validadores escriben mediante RPC restringidas; no tienen permisos generales para editar todas las auditorías.
 - La Edge Function comprueba el token del usuario y el rol `admin` antes de ejecutar una acción privilegiada.
 - Los datos de cada rol se filtran en la base; ocultar botones en el frontend no sustituye esa protección.
+
+El nombre técnico del esquema `public` de PostgreSQL no significa que la información sea pública en Internet. Supabase expone la API respetando RLS: el rol de la sesión y sus políticas son los que determinan cada fila a la que se puede acceder.
 
 ## 7. Rendimiento y caché
 
