@@ -115,4 +115,3 @@ Los tres procesos guardan la versión más reciente de cada mes, no un archivo h
 | Notas PDV | `admin_note_score_imports` | `admin_note_score_records` | `period_month` |
 
 Actualizar agosto, por ejemplo, reemplaza únicamente la versión normalizada de agosto. Septiembre y cualquier otro mes permanecen disponibles.
-

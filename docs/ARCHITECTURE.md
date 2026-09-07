@@ -125,4 +125,3 @@ Los exports pueden superar decenas de miles de filas. Para evitar que la visuali
 - La caché se invalida después de subir o actualizar un export, para que la siguiente visual refleje los datos nuevos.
 
 Si una persona borró los datos del navegador, cambió de equipo o entra por primera vez, la descarga inicial seguirá dependiendo del volumen de registros y de la red. Eso es normal; las aperturas posteriores deben mostrar primero la información local disponible.
-

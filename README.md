@@ -94,4 +94,3 @@ El portal se publica como sitio estático en GitHub Pages desde el repositorio. 
 - [`docs/DATA_DICTIONARY.md`](docs/DATA_DICTIONARY.md): tablas, cruces y columnas de los tres exports.
 - [`docs/OPERATIONS_GUIDE.md`](docs/OPERATIONS_GUIDE.md): guía para administrador, supervisor, validador y visualizador.
 - [`docs/DEPLOYMENT_AND_MAINTENANCE.md`](docs/DEPLOYMENT_AND_MAINTENANCE.md): despliegue, cambios de esquema, diagnóstico y respaldo.
-

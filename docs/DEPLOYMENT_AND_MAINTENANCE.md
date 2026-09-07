@@ -87,4 +87,3 @@ El proyecto usa parámetros de versión (`?v=...`) para los módulos y CSS. Cuan
 - Haga respaldos periódicos de las tablas operativas y de los registros normalizados de análisis.
 - Para recuperar un mes, vuelva a cargar el archivo fuente correcto; el portal sustituirá la versión normalizada de ese periodo sin afectar los demás meses.
 - No ejecute funciones de purga sin una instrucción explícita y una copia verificable de la base de datos.
-

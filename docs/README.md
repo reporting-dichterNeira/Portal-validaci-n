@@ -11,4 +11,3 @@ Esta carpeta reúne la documentación vigente del Portal de Validación y Contro
 | [Configuración inicial de Supabase](../SUPABASE_SETUP.md) | Crear el primer administrador y configurar el proyecto Supabase. |
 
 La documentación describe el estado del código almacenado en este repositorio. Las migraciones de `supabase/migrations/` son la fuente técnica de referencia para el esquema y las políticas de la base de datos.
-
