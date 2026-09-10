@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=52.0" />
+  <link rel="stylesheet" href="css/styles.css?v=53.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -1809,17 +1809,17 @@
                 <p class="panel-desc">Comparativa de volumen de auditorías, alertas detectadas y tasa de efectividad de ejecución en PDV.</p>
               </div>
             </div>
-            <div class="table-responsive">
+            <div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Comparativa por estudio; desplaza horizontalmente para ver todas las columnas">
               <table class="data-table benchmark-table">
                 <thead>
                   <tr>
                     <th>Estudio / Canal</th>
                     <th>Auditorías</th>
                     <th>Total Alertas</th>
-                    <th>Alertas Confirmadas (Aplica)</th>
-                    <th>Alertas Descartadas (No Aplica)</th>
-                    <th>Tasa de Confirmación</th>
-                    <th>Efectividad de Ejecución en PDV</th>
+                    <th>Confirmadas<span class="benchmark-heading-detail">Aplica</span></th>
+                    <th>Descartadas<span class="benchmark-heading-detail">No aplica</span></th>
+                    <th>Tasa de<span class="benchmark-heading-detail">confirmación</span></th>
+                    <th>Efectividad<span class="benchmark-heading-detail">Ejecución en PDV</span></th>
                   </tr>
                 </thead>
                 <tbody id="exec-benchmark-tbody">
@@ -2475,17 +2475,17 @@
             <h4>🌐 Benchmark de Desempeño y Efectividad por Estudio</h4>
             <span class="text-muted" style="font-size:0.8rem;">Comparativa de volumen, precisión de alertas y tasa de efectividad de ejecución en PDV.</span>
           </div>
-          <div class="table-responsive">
-            <table class="data-table dossier-table">
+          <div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Comparativa por estudio; desplaza horizontalmente para ver todas las columnas">
+            <table class="data-table dossier-table benchmark-table">
               <thead>
                 <tr>
                   <th>Estudio / Canal</th>
                   <th>Auditorías</th>
                   <th>Total Alertas</th>
-                  <th>Confirmadas (Aplica)</th>
-                  <th>Descartadas (No Aplica)</th>
-                  <th>% Precisión Alerta</th>
-                  <th>Efectividad de Ejecución</th>
+                  <th>Confirmadas<span class="benchmark-heading-detail">Aplica</span></th>
+                  <th>Descartadas<span class="benchmark-heading-detail">No aplica</span></th>
+                  <th>Precisión<span class="benchmark-heading-detail">de alerta</span></th>
+                  <th>Efectividad<span class="benchmark-heading-detail">Ejecución en PDV</span></th>
                 </tr>
               </thead>
               <tbody id="dossier-benchmark-tbody">
