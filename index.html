@@ -233,6 +233,10 @@
       }
     };
 
+    window.exportCommercialPPT = function() {
+      if (window.app && window.app.exportCommercialPPT) window.app.exportCommercialPPT();
+    };
+
     window.setDistributionMode = function(mode) {
       if (window.app && window.app.setDistributionMode) {
         window.app.setDistributionMode(mode);
@@ -1653,6 +1657,7 @@
               <button class="btn btn-outline btn-sm" id="btn-preview-commercial-report" onclick="window.openCommercialReportPreview()">
                 <span class="btn-icon">👁️</span> Vista Previa Dossier Comercial
               </button>
+              <button class="btn btn-primary btn-sm" data-export-commercial-ppt onclick="window.exportCommercialPPT()">📊 Descargar PowerPoint (.pptx)</button>
               <button class="btn btn-success btn-sm" id="btn-export-executive-xlsx" onclick="window.exportExecutiveExcel()">
                 <span class="btn-icon">📊</span> Descargar Excel (.xlsx)
               </button>
@@ -2401,7 +2406,8 @@
             <span class="text-muted" style="font-size:0.85rem;" id="commercial-dossier-date-label">Emisión: Agosto 2026 • Cobertura Multiestudio</span>
           </div>
         </div>
-        <div class="dossier-header-actions">
+        <div class="dossier-header-actions" style="flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" data-export-commercial-ppt onclick="window.exportCommercialPPT()">📊 Descargar PowerPoint</button>
           <button class="btn btn-navy btn-glow btn-sm" onclick="window.exportCommercialPDF()">
             📥 Descargar PDF
           </button>
@@ -2569,10 +2575,11 @@
 
       <div class="modal-footer commercial-dossier-footer">
         <span class="text-muted" style="font-size:0.85rem;">dichter & neira • Sistema de Inteligencia Operativa ValidaFlow</span>
-        <div style="display:flex; gap:0.65rem;">
+        <div style="display:flex; flex-wrap:wrap; gap:0.65rem;">
           <button class="btn btn-secondary" onclick="document.getElementById('modal-commercial-report-preview').classList.add('hidden')">Cerrar</button>
           <button class="btn btn-success" onclick="window.exportExecutiveExcel()">📊 Exportar Excel (.xlsx)</button>
           <button class="btn btn-navy btn-glow" onclick="window.exportCommercialPDF()">📥 Descargar PDF</button>
+          <button class="btn btn-primary" data-export-commercial-ppt onclick="window.exportCommercialPPT()">📊 Descargar PowerPoint</button>
         </div>
       </div>
     </div>
@@ -2877,6 +2884,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=103.0"></script>
+  <script type="module" src="js/app.js?v=104.0"></script>
 </body>
 </html>

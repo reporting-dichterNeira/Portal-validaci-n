@@ -6,6 +6,7 @@
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
 import { ExcelParser } from './excel-parser.js?v=25.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
+import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=34.0';
 import { SupabaseBackend } from './supabase-backend.js?v=53.0';
@@ -6057,6 +6058,45 @@ class ValidaFlowApp {
     if (showModal) modal.classList.remove('hidden');
   }
 
+  async exportCommercialPPT() {
+    if (this.exportingCommercialPPT) return;
+    this.exportingCommercialPPT = true;
+    const buttons = [...document.querySelectorAll('[data-export-commercial-ppt]')];
+    buttons.forEach(button => { button.disabled = true; });
+    try {
+      // Snapshot before awaiting the engine so a later filter change cannot
+      // mix studies/modules within the same presentation.
+      this.openCommercialReportPreview(false);
+      const clean = value => String(value ?? '—').replace(/\p{Extended_Pictographic}|[\u{1F1E6}-\u{1F1FF}]/gu, '').replace(/\s+/g, ' ').trim();
+      const value = id => clean(document.getElementById(id)?.textContent);
+      const rows = id => [...document.querySelectorAll(`#${id} tr`)].map(row => [...row.querySelectorAll('td')].map(cell => clean(cell.textContent)));
+      const data = {
+        scope: value('print-meta-scope'), date: value('print-meta-date'),
+        module: this.getVisualizationModuleLabel(this.currentView === 'visualizations' ? this.getVisualizationModuleFilter() : this.currentModule),
+        audits: value('print-kpi-audits'), discarded: value('print-kpi-false-positives'),
+        precision: value('print-kpi-precision'), averageTime: value('print-kpi-sla'), universe: value('print-kpi-universe-total'),
+        universeRows: [
+          ['Sin alerta', value('print-tbl-sin-alerta-count'), value('print-tbl-sin-alerta-pct')],
+          ['Aplica', value('print-tbl-aplica-count'), value('print-tbl-aplica-pct')],
+          ['No aplica', value('print-tbl-editadas-count'), value('print-tbl-editadas-pct').split(' del universo')[0]],
+          ['Pendientes de decisión', value('print-tbl-pending-count'), value('print-tbl-pending-pct')]
+        ],
+        benchmark: rows('print-benchmark-tbody'), topKpis: rows('print-top-kpis-tbody'), reasons: rows('print-reasons-tbody')
+      };
+      this.showToast('Generando PowerPoint con los indicadores seleccionados...', 'info');
+      const PptxGenJS = await loadPowerPointEngine();
+      const presentation = buildExecutivePowerPoint(PptxGenJS, data);
+      await presentation.writeFile({ fileName: `indicadores-validaflow-${getNicaraguaDateKey(new Date())}.pptx` });
+      this.showToast('PowerPoint descargado correctamente.', 'success');
+    } catch (error) {
+      console.error('No fue posible generar PowerPoint:', error);
+      this.showToast(error.message || 'No fue posible descargar PowerPoint. Intenta nuevamente.', 'error');
+    } finally {
+      this.exportingCommercialPPT = false;
+      buttons.forEach(button => { button.disabled = false; });
+    }
+  }
+
   async exportCommercialPDF() {
     const JsPDF = window.jspdf?.jsPDF;
     if (typeof JsPDF !== 'function') {
@@ -6114,16 +6154,16 @@ class ValidaFlowApp {
         pdf.line(margin, y - 4, margin, y + 5);
         pdf.setTextColor(0, 43, 73);
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(11);
+        pdf.setFontSize(13);
         pdf.text(cleanText(title), margin + 3, y);
-        y += 5;
+        y += 7;
         if (subtitle) {
           pdf.setTextColor(100, 116, 139);
           pdf.setFont('helvetica', 'normal');
-          pdf.setFontSize(7.5);
-          writeLines(subtitle, margin + 3, contentWidth - 3, 3.3);
+          pdf.setFontSize(9);
+          writeLines(subtitle, margin + 3, contentWidth - 3, 4.3);
         }
-        y += 2;
+        y += 3;
       };
       const drawMetricCards = (cards, height = 27) => {
         ensureSpace(height + 3);
@@ -6135,20 +6175,20 @@ class ValidaFlowApp {
           pdf.roundedRect(x, y, cardWidth, height, 2, 2, 'FD');
           pdf.setTextColor(...color);
           pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(height > 24 ? 13 : 11);
-          pdf.text(cleanText(value), x + cardWidth / 2, y + 10, { align: 'center' });
+          pdf.setFontSize(19);
+          pdf.text(cleanText(value), x + cardWidth / 2, y + 11, { align: 'center' });
           pdf.setFont('helvetica', 'bold');
-          pdf.setFontSize(6.3);
+          pdf.setFontSize(9.5);
           pdf.setTextColor(37, 55, 99);
-          pdf.text(pdf.splitTextToSize(cleanText(label), cardWidth - 5), x + cardWidth / 2, y + 16, { align: 'center' });
+          pdf.text(pdf.splitTextToSize(cleanText(label), cardWidth - 5), x + cardWidth / 2, y + 19, { align: 'center' });
           if (description) {
             pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(5.8);
+            pdf.setFontSize(9);
             pdf.setTextColor(100, 116, 139);
-            pdf.text(pdf.splitTextToSize(cleanText(description), cardWidth - 5), x + cardWidth / 2, y + 21, { align: 'center' });
+            pdf.text(pdf.splitTextToSize(cleanText(description), cardWidth - 5), x + cardWidth / 2, y + 29, { align: 'center' });
           }
         });
-        y += height + 4;
+        y += height + 6;
       };
       const drawTable = (headers, rows, widths, options = {}) => {
         // Usar todo el ancho disponible y medir antes de decidir el salto.
@@ -6157,15 +6197,15 @@ class ValidaFlowApp {
         const rowData = rows.length ? rows : [headers.map((_, index) => index === 0 ? 'Sin registros para el filtro seleccionado.' : '')];
         const measureRow = (cells, header = false) => {
           pdf.setFont('helvetica', header ? 'bold' : 'normal');
-          pdf.setFontSize(header ? 6.8 : 6.5);
+          pdf.setFontSize(header ? 9.5 : 9);
           const lineSets = cells.map((cell, index) => pdf.splitTextToSize(cleanText(cell), widths[index] - 3));
-          const height = Math.max(7, ...lineSets.map(lines => lines.length * 3.1 + 3));
+          const height = Math.max(9, ...lineSets.map(lines => lines.length * 4.2 + 4));
           return { lineSets, height };
         };
         const normalizedRows = rowData.map(row => headers.map((_, index) => row[index] || ''));
         const headerHeight = measureRow(headers, true).height;
         const rowHeights = normalizedRows.map(row => measureRow(row).height);
-        const titleHeight = options.title ? 7 : 0;
+        const titleHeight = options.title ? 10 : 0;
         const tableHeight = titleHeight + headerHeight + rowHeights.reduce((sum, height) => sum + height, 0) + 4;
         // Las tablas cortas viajan completas con su título; las largas repiten cabecera.
         ensureSpace(tableHeight <= pageHeight - 30 ? tableHeight : titleHeight + headerHeight + rowHeights[0] + 1);
@@ -6176,7 +6216,7 @@ class ValidaFlowApp {
             ensureSpace(headerHeight + height + 1);
             drawRow(headers, true);
             pdf.setFont('helvetica', 'normal');
-            pdf.setFontSize(6.5);
+            pdf.setFontSize(9);
           }
           let x = margin;
           lineSets.forEach((lines, index) => {
@@ -6188,7 +6228,7 @@ class ValidaFlowApp {
             pdf.rect(x, y, widths[index], height, 'FD');
             pdf.setTextColor(...color);
             if (!header && cellStyle?.bold) pdf.setFont('helvetica', 'bold');
-            pdf.text(lines, x + 1.5, y + 3.5);
+            pdf.text(lines, x + 1.5, y + 4.7);
             if (!header && cellStyle?.bold) pdf.setFont('helvetica', 'normal');
             x += widths[index];
           });
@@ -6210,7 +6250,7 @@ class ValidaFlowApp {
       pdf.setTextColor(0, 195, 137);
       pdf.setFontSize(7);
       pdf.text('INTELLIGENCE & QUALITY CONTROL', margin, y + 3.6);
-      pdf.setFontSize(7.5);
+      pdf.setFontSize(9);
       pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(100, 116, 139);
       pdf.text(`Informe ejecutivo confidencial - ${reportDate}`, margin, y + 8);
@@ -6225,7 +6265,7 @@ class ValidaFlowApp {
       pdf.setFontSize(13);
       pdf.text('INFORME GERENCIAL DE CALIDAD, ALERTAS Y AUDITORÍA EN PDV', margin + 4, y + 7);
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(7.5);
+      pdf.setFontSize(9);
       pdf.setTextColor(71, 85, 105);
       pdf.text(`Alcance: ${scope}`, margin + 4, y + 12);
       y += 24;
@@ -6235,10 +6275,10 @@ class ValidaFlowApp {
       pdf.roundedRect(margin, y, contentWidth, 13, 2, 2, 'FD');
       pdf.setTextColor(0, 43, 73);
       pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(8.2);
+      pdf.setFontSize(10);
       pdf.text('Garantía de Calidad y Verificación de Auditorías', margin + 4, y + 5);
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(6.5);
+      pdf.setFontSize(9);
       pdf.setTextColor(71, 85, 105);
       pdf.text('El 100% de las auditorías y alertas cuenta con revisión humana y trazabilidad de ValidaFlow.', margin + 4, y + 9);
       y += 18;
@@ -6248,10 +6288,10 @@ class ValidaFlowApp {
         { label: 'Auditorías evaluadas', value: textOf('print-kpi-audits'), color: [0, 43, 73], fill: [248, 250, 252], border: [203, 213, 225] },
         { label: 'Falsos positivos filtrados', value: textOf('print-kpi-false-positives'), color: [255, 63, 125], fill: [255, 240, 246], border: [255, 154, 196] },
         { label: 'Precisión de alertas', value: textOf('print-kpi-precision'), color: [0, 86, 145], fill: [241, 248, 255], border: [184, 220, 248] },
-        { label: 'SLA promedio', value: textOf('print-kpi-sla'), color: [0, 43, 73], fill: [248, 250, 252], border: [203, 213, 225] },
+        { label: 'Tiempo promedio por auditoría', value: textOf('print-kpi-sla'), color: [0, 43, 73], fill: [248, 250, 252], border: [203, 213, 225] },
         { label: 'Universo evaluado', value: textOf('print-kpi-universe-total'), color: [0, 195, 137], fill: [240, 253, 244], border: [167, 243, 208] }
       ];
-      drawMetricCards(kpis, 22);
+      drawMetricCards(kpis, 30);
 
       sectionTitle('2. Universo de medición y resultado de las alertas', `Universo: ${textOf('print-kpi-universe-total')} KPIs. Sin alerta + Aplica + No aplica + Pendientes. No aplica no requiere edición.`);
       const progressValues = [
@@ -6277,7 +6317,7 @@ class ValidaFlowApp {
         { label: 'Alertas Válidas', value: textOf('print-tbl-aplica-count'), description: `${textOf('print-tbl-aplica-pct')} del universo`, color: [0, 86, 145], fill: [241, 248, 255], border: [184, 220, 248] },
         { label: 'Alertas Descartadas (No aplica)', value: textOf('print-tbl-editadas-count'), description: textOf('print-tbl-editadas-pct'), color: [255, 63, 125], fill: [255, 240, 246], border: [255, 154, 196] },
         { label: 'Pendientes de decisión', value: textOf('print-tbl-pending-count'), description: `${textOf('print-tbl-pending-pct')} del universo`, color: [150, 90, 10], fill: [255, 250, 235], border: [245, 166, 35] }
-      ], 28);
+      ], 38);
 
       drawTable(
         ['Estudio', 'Aud.', 'Alertas', 'Aplica', 'No aplica', 'Precisión', 'Efectividad'],
@@ -6297,15 +6337,17 @@ class ValidaFlowApp {
       drawTable(['#', 'Variable / KPI', 'Alertas', '% confirmación'], tableRows('print-top-kpis-tbody'), [12, 92, 32, 50], { title: '4. Variables y causas principales' });
       drawTable(['Motivo de descarte', 'Casos', '% descarte'], tableRows('print-reasons-tbody'), [112, 32, 42]);
 
+      ensureSpace(80);
       sectionTitle('5. Conclusiones y plan de acción');
       const recommendations = [...source.querySelectorAll('#print-recommendations-content .print-rec-item')];
       pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8.5);
+      pdf.setFontSize(9);
       pdf.setTextColor(30, 41, 59);
       recommendations.forEach((recommendation, index) => {
         const text = cleanText(recommendation.textContent).replace(/^\d+\.\s*/, '');
-        const lines = pdf.splitTextToSize(text, contentWidth - 11);
-        const cardHeight = Math.max(15, lines.length * 4.1 + 8);
+        pdf.setFontSize(10);
+        const lines = pdf.splitTextToSize(text, contentWidth - 15);
+        const cardHeight = Math.max(18, lines.length * 4.5 + 9);
         ensureSpace(cardHeight + 3);
         pdf.setFillColor(248, 250, 252);
         pdf.setDrawColor(203, 213, 225);
@@ -6314,10 +6356,10 @@ class ValidaFlowApp {
         pdf.rect(margin, y, 2, cardHeight, 'F');
         pdf.setTextColor(0, 43, 73);
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(7.4);
+        pdf.setFontSize(10);
         pdf.text(`${index + 1}.`, margin + 5, y + 5);
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(7.3);
+        pdf.setFontSize(10);
         pdf.text(lines, margin + 9, y + 5);
         y += cardHeight + 3;
       });
@@ -6328,7 +6370,7 @@ class ValidaFlowApp {
         pdf.setDrawColor(203, 213, 225);
         pdf.line(margin, pageHeight - 10, pageWidth - margin, pageHeight - 10);
         pdf.setFont('helvetica', 'normal');
-        pdf.setFontSize(6.5);
+        pdf.setFontSize(9);
         pdf.setTextColor(100, 116, 139);
         pdf.text('ValidaFlow - Intelligence & Quality Control', margin, pageHeight - 6);
         pdf.text(`Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
@@ -7659,6 +7701,7 @@ window.executeDistribution = (m) => (window.app || initValidaFlowApp()).executeD
 window.openDailyDetailModal = (d, s) => (window.app || initValidaFlowApp()).openDailyDetailModal(d, s);
 window.openCommercialReportPreview = () => (window.app || initValidaFlowApp()).openCommercialReportPreview();
 window.exportCommercialPDF = () => (window.app || initValidaFlowApp()).exportCommercialPDF();
+window.exportCommercialPPT = () => (window.app || initValidaFlowApp()).exportCommercialPPT();
 window.openResolveQueryModal = (a, k) => (window.app || initValidaFlowApp()).openResolveQueryModal(a, k);
 window.setQueryFilter = (f) => (window.app || initValidaFlowApp()).setQueryFilter(f);
 window.setQueryStudyFilter = (s) => (window.app || initValidaFlowApp()).setQueryStudyFilter(s);
