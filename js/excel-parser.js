@@ -780,6 +780,7 @@ export class ExcelParser {
       { 'Indicador Ejecutivo': 'Total Alertas Generadas', 'Valor': totalAlerts },
       { 'Indicador Ejecutivo': 'Alertas Validadas "Aplica" (Confirmadas)', 'Valor': totalAplica },
       { 'Indicador Ejecutivo': 'Alertas Validadas "No Aplica" (Descartadas)', 'Valor': totalNoAplica },
+      { 'Indicador Ejecutivo': 'Alertas Pendientes de Decisión', 'Valor': Math.max(0, totalAlerts - totalAplica - totalNoAplica) },
       { 'Indicador Ejecutivo': 'Tasa de Confirmación (% Efectividad Alertas)', 'Valor': confirmRate },
       { 'Indicador Ejecutivo': 'Tasa de Descarte (% Falsos Positivos / Justificados)', 'Valor': discardRate }
     ];

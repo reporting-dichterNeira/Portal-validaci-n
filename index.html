@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=53.0" />
+  <link rel="stylesheet" href="css/styles.css?v=54.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -1700,15 +1700,15 @@
             </div>
           </div>
 
-          <!-- Panel: Universo Total de Medición & Tasa de Edición de Alertas -->
+          <!-- Panel: Universo Total de Medición y Resultado de las Alertas -->
           <div class="glass-panel universe-kpi-panel" style="margin-bottom:1.5rem;">
             <div class="panel-header">
               <div>
                 <div style="display:flex; align-items:center; gap:0.5rem;">
                   <span class="header-icon">🔬</span>
-                  <h3>Universo Total de Medición & Tasa de Edición de Alertas</h3>
+                  <h3>Universo Total de Medición y Resultado de las Alertas</h3>
                 </div>
-                <p class="panel-desc">Monitoreo de todos los KPIs medibles en el estudio y desglose de casos conformes, alertas válidas y alertas editadas/corregidas por el validador.</p>
+                <p class="panel-desc">Sin alerta + confirmadas (Aplica) + descartadas (No aplica) + pendientes de decisión = universo medible. Las alertas que no aplican no requieren edición; las ediciones reales se consultan en la pestaña Ediciones.</p>
               </div>
               <div class="universe-badge-wrap">
                 <span class="badge badge-purple" id="exec-stat-kpis-per-audit-badge">KPIs × Auditoría</span>
@@ -1720,17 +1720,19 @@
               <div class="universe-stacked-bar">
                 <div class="universe-bar-seg seg-sin-alerta" id="exec-bar-sin-alerta" style="width: 50%" title="Sin Alerta / Conforme en Origen"></div>
                 <div class="universe-bar-seg seg-aplica" id="exec-bar-aplica" style="width: 25%" title="Alerta Confirmada (Aplica)"></div>
-                <div class="universe-bar-seg seg-editada" id="exec-bar-editada" style="width: 25%" title="Alerta Editada / Descartada por Validador (No Aplica)"></div>
+                <div class="universe-bar-seg seg-editada" id="exec-bar-editada" style="width: 25%" title="Alerta descartada por el validador (No aplica); no requiere edición"></div>
+                <div class="universe-bar-seg seg-pending" id="exec-bar-pending" style="width: 0%" title="Alerta pendiente de decisión: aún no tiene Aplica ni No aplica"></div>
               </div>
               <div class="universe-bar-legend">
                 <span class="leg-item"><span class="leg-dot dot-sin-alerta"></span> Conforme Sin Alerta: <strong id="exec-legend-sin-alerta">0 (0%)</strong></span>
                 <span class="leg-item"><span class="leg-dot dot-aplica"></span> Alerta Confirmada (Aplica): <strong id="exec-legend-aplica">0 (0%)</strong></span>
-                <span class="leg-item"><span class="leg-dot dot-editada"></span> Alerta Editada (No Aplica): <strong id="exec-legend-editada">0 (0%)</strong></span>
+                <span class="leg-item"><span class="leg-dot dot-editada"></span> Alerta Descartada (No aplica): <strong id="exec-legend-editada">0 (0%)</strong></span>
+                <span class="leg-item"><span class="leg-dot dot-pending"></span> Pendientes de decisión: <strong id="exec-legend-pending">0 (0%)</strong></span>
               </div>
             </div>
 
-            <!-- 4 Grid KPI Cards -->
-            <div class="stats-grid stats-grid-4" style="margin-top:1.25rem;">
+            <!-- Universe total followed by its four mutually exclusive categories. -->
+            <div class="universe-summary-grid" style="margin-top:1.25rem;">
               <div class="stat-card">
                 <div class="stat-icon-wrapper icon-blue">📐</div>
                 <div class="stat-details">
@@ -1759,13 +1761,23 @@
               </div>
 
               <div class="stat-card" style="border-left: 4px solid var(--dn-magenta);">
-                <div class="stat-icon-wrapper icon-magenta">✏️</div>
+                <div class="stat-icon-wrapper icon-magenta">✕</div>
                 <div class="stat-details">
-                  <span class="stat-label">Alertas Editadas (Marcaba y No Aplica)</span>
+                  <span class="stat-label">Alertas Descartadas (No aplica)</span>
                   <span class="stat-value text-magenta" id="exec-stat-universe-editadas">0</span>
-                  <span class="stat-sublabel text-magenta" id="exec-stat-universe-editadas-pct">0% del universo (Tasa de Edición)</span>
+                  <span class="stat-sublabel text-magenta" id="exec-stat-universe-editadas-pct">0% del universo · 0% del total de alertas</span>
                 </div>
               </div>
+              <div class="stat-card">
+                <div class="stat-icon-wrapper icon-orange">⏳</div>
+                <div class="stat-details">
+                  <span class="stat-label">Pendientes de decisión</span>
+                  <span class="stat-value text-warning" id="exec-stat-universe-pending">0</span>
+                  <span class="stat-sublabel" id="exec-stat-universe-pending-pct">0% del universo</span>
+                  <small class="text-muted">Sin decisión final Aplica / No aplica</small>
+                </div>
+              </div>
+              <p class="universe-balance-note" id="exec-universe-balance">Sin alerta + Aplica + No aplica + Pendientes = Universo medible.</p>
             </div>
           </div>
 
@@ -2425,11 +2437,11 @@
           </div>
         </div>
 
-        <!-- 3. Universo Total de Medición y Tasa de Edición -->
+        <!-- 3. Universo Total de Medición y Resultado de las Alertas -->
         <div class="dossier-block">
           <div class="dossier-block-header">
-            <h4>🔬 Desglose del Universo Total de Medición & Tasa de Edición Humana</h4>
-            <span class="text-muted" style="font-size:0.8rem;">Evaluación de todos los KPIs medibles: Conformes sin alerta, Alertas válidas confirmadas y Alertas editadas por el validador.</span>
+            <h4>🔬 Desglose del Universo Total de Medición y Resultado de las Alertas</h4>
+            <span class="text-muted" style="font-size:0.8rem;">Sin alerta + Aplica + No aplica + pendientes de decisión = universo medible. Las alertas que no aplican no requieren edición.</span>
           </div>
 
           <div class="universe-stacked-bar-wrap" style="margin-bottom:1rem;">
@@ -2437,15 +2449,17 @@
               <div class="universe-bar-seg seg-sin-alerta" id="dossier-bar-sin-alerta" style="width: 50%"></div>
               <div class="universe-bar-seg seg-aplica" id="dossier-bar-aplica" style="width: 25%"></div>
               <div class="universe-bar-seg seg-editada" id="dossier-bar-editada" style="width: 25%"></div>
+              <div class="universe-bar-seg seg-pending" id="dossier-bar-pending" style="width: 0%"></div>
             </div>
             <div class="universe-bar-legend">
               <span class="leg-item"><span class="leg-dot dot-sin-alerta"></span> Conforme Sin Alerta: <strong id="dossier-legend-sin-alerta">0 (0%)</strong></span>
               <span class="leg-item"><span class="leg-dot dot-aplica"></span> Alerta Confirmada (Aplica): <strong id="dossier-legend-aplica">0 (0%)</strong></span>
-              <span class="leg-item"><span class="leg-dot dot-editada"></span> Alerta Editada (No Aplica): <strong id="dossier-legend-editada">0 (0%)</strong></span>
+              <span class="leg-item"><span class="leg-dot dot-editada"></span> Alerta Descartada (No aplica): <strong id="dossier-legend-editada">0 (0%)</strong></span>
+              <span class="leg-item"><span class="leg-dot dot-pending"></span> Pendientes de decisión: <strong id="dossier-legend-pending">0 (0%)</strong></span>
             </div>
           </div>
 
-          <div class="dossier-kpi-grid">
+          <div class="universe-summary-grid">
             <div class="dossier-kpi-tile">
               <span class="dossier-kpi-val text-primary" id="dossier-stat-universe-total">0</span>
               <span class="dossier-kpi-title">Universo Medible</span>
@@ -2463,9 +2477,15 @@
             </div>
             <div class="dossier-kpi-tile" style="border: 1px solid rgba(230, 0, 126, 0.3); background: rgba(230, 0, 126, 0.04);">
               <span class="dossier-kpi-val text-magenta" id="dossier-stat-universe-editadas">0</span>
-              <span class="dossier-kpi-title">Alertas Editadas (No Aplica)</span>
-              <span class="dossier-kpi-desc text-magenta" id="dossier-stat-universe-editadas-pct">0% Tasa de Edición</span>
+              <span class="dossier-kpi-title">Alertas Descartadas (No aplica)</span>
+              <span class="dossier-kpi-desc text-magenta" id="dossier-stat-universe-editadas-pct">0% del universo · 0% del total de alertas</span>
             </div>
+            <div class="dossier-kpi-tile">
+              <span class="dossier-kpi-val text-warning" id="dossier-stat-universe-pending">0</span>
+              <span class="dossier-kpi-title">Pendientes de decisión</span>
+              <span class="dossier-kpi-desc" id="dossier-stat-universe-pending-pct">0% del universo</span>
+            </div>
+            <p class="universe-balance-note" id="dossier-universe-balance">Sin alerta + Aplica + No aplica + Pendientes = Universo medible.</p>
           </div>
         </div>
 
@@ -2678,11 +2698,11 @@
       </div>
     </section>
 
-    <!-- 2. Desglose del Universo Total de Medición & Tasa de Edición -->
+    <!-- 2. Desglose del Universo Total de Medición y Resultado de las Alertas -->
     <section class="print-section">
       <div class="print-section-header">
-        <h2>2. Desglose del Universo Total de Medición & Tasa de Edición Humana</h2>
-        <span class="print-section-desc">Cuantificación de todos los KPIs medibles: Conformes directos, Alertas válidas y Alertas editadas/descartadas.</span>
+        <h2>2. Desglose del Universo Total de Medición y Resultado de las Alertas</h2>
+        <span class="print-section-desc">Sin alerta + Aplica + No aplica + pendientes de decisión = universo medible. Las alertas No aplica no requieren edición.</span>
       </div>
 
       <div class="print-universe-box">
@@ -2690,11 +2710,13 @@
           <div class="print-bar-sin-alerta" id="print-bar-sin-alerta" style="width:50%;"></div>
           <div class="print-bar-aplica" id="print-bar-aplica" style="width:25%;"></div>
           <div class="print-bar-editada" id="print-bar-editada" style="width:25%;"></div>
+          <div class="print-bar-pending seg-pending" id="print-bar-pending" style="width:0%;"></div>
         </div>
         <div class="print-bar-legend">
           <span><strong class="print-dot dot-sin-alerta"></strong> Conforme Sin Alerta: <strong id="print-legend-sin-alerta">0 (0%)</strong></span>
           <span><strong class="print-dot dot-aplica"></strong> Alerta Confirmada (Aplica): <strong id="print-legend-aplica">0 (0%)</strong></span>
-          <span><strong class="print-dot dot-editada"></strong> Alerta Editada (No Aplica): <strong id="print-legend-editada">0 (0%)</strong></span>
+          <span><strong class="print-dot dot-editada"></strong> Alerta Descartada (No aplica): <strong id="print-legend-editada">0 (0%)</strong></span>
+          <span><strong class="print-dot dot-pending"></strong> Pendientes de decisión: <strong id="print-legend-pending">0 (0%)</strong></span>
         </div>
       </div>
 
@@ -2722,10 +2744,16 @@
               <td>Desviaciones reales detectadas en PDV que requieren planes de acción de trade marketing.</td>
             </tr>
             <tr style="background:#FFF0F6;">
-              <td><strong class="print-text-magenta">✏️ Alertas Editadas (Marcaba y No Aplica)</strong></td>
+              <td><strong class="print-text-magenta">✕ Alertas Descartadas (No aplica)</strong></td>
               <td id="print-tbl-editadas-count" class="print-text-magenta" style="font-weight:bold;">0</td>
               <td id="print-tbl-editadas-pct" class="print-text-magenta" style="font-weight:bold;">0%</td>
-              <td><strong>Tasa de Edición Humana:</strong> Falsos positivos rectificados por validadores antes de la entrega al cliente.</td>
+              <td><strong>Descarte de alertas:</strong> El validador determinó que el error no aplicaba. No requiere edición.</td>
+            </tr>
+            <tr>
+              <td><strong>Pendientes de decisión</strong></td>
+              <td id="print-tbl-pending-count">0</td>
+              <td id="print-tbl-pending-pct">0%</td>
+              <td>Alertas que aún no tienen decisión final Aplica o No aplica, incluidas las consultas sin resolver.</td>
             </tr>
           </tbody>
         </table>
@@ -2746,7 +2774,7 @@
               <th>Auditorías</th>
               <th>Total Alertas</th>
               <th>Confirmadas (Aplica)</th>
-              <th>Falsos Positivos Editados</th>
+              <th>Alertas Descartadas (No aplica)</th>
               <th>% Precisión Alerta</th>
               <th>Efectividad de Ejecución en PDV</th>
             </tr>
@@ -2785,7 +2813,7 @@
       <div class="print-col">
         <div class="print-section-header">
           <h2>4.2 Diagnóstico de Falsos Positivos</h2>
-          <span class="print-section-desc">Motivos principales por los cuales se editaron/descartaron alertas.</span>
+          <span class="print-section-desc">Motivos principales por los cuales se descartaron alertas que no aplicaban.</span>
         </div>
         <div class="print-table-wrap">
           <table class="print-data-table">
@@ -2831,6 +2859,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=100.0"></script>
+  <script type="module" src="js/app.js?v=101.0"></script>
 </body>
 </html>

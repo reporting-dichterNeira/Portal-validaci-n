@@ -4,7 +4,7 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=24.0';
+import { ExcelParser } from './excel-parser.js?v=25.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=34.0';
@@ -5381,6 +5381,29 @@ class ValidaFlowApp {
     this.renderDailyReportsView();
   }
 
+  renderUniverseDecisionBreakdown(prefix, { universe, withoutAlerts, applies, discarded, totalAlerts }) {
+    // An alert is pending until it has a final Aplica or No aplica decision.
+    // A discard is never evidence that the underlying audit was edited.
+    const pending = Math.max(0, totalAlerts - applies - discarded);
+    const percentage = universe > 0 ? ((pending / universe) * 100).toFixed(1) : '0.0';
+    const setText = (id, value) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value;
+    };
+    setText(`${prefix}-legend-pending`, `${pending} (${percentage}%)`);
+    setText(`${prefix}-stat-universe-pending`, pending);
+    setText(`${prefix}-stat-universe-pending-pct`, `${percentage}% del universo`);
+    setText(`${prefix}-tbl-pending-count`, pending);
+    setText(`${prefix}-tbl-pending-pct`, `${percentage}%`);
+    const format = value => value.toLocaleString('es-CO');
+    setText(`${prefix}-universe-balance`, `${format(withoutAlerts)} sin alerta + ${format(applies)} Aplica + ${format(discarded)} No aplica + ${format(pending)} pendientes = ${format(universe)} KPIs medibles. Los porcentajes se redondean.`);
+    // Use exact counts for bar widths; round only the displayed percentages.
+    Object.entries({ 'sin-alerta': withoutAlerts, aplica: applies, editada: discarded, pending }).forEach(([category, count]) => {
+      const bar = document.getElementById(`${prefix}-bar-${category}`);
+      if (bar) bar.style.width = `${universe > 0 ? count / universe * 100 : 0}%`;
+    });
+  }
+
   renderExecutiveMetrics(audits) {
     let totalAlerts = 0;
     let totalAplica = 0;
@@ -5460,7 +5483,7 @@ class ValidaFlowApp {
     const pctSinAlerta = totalMeasurableUniverse > 0 ? ((totalSinAlerta / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
     const pctAplicaUniverse = totalMeasurableUniverse > 0 ? ((totalAplica / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
     const pctNoAplicaUniverse = totalMeasurableUniverse > 0 ? ((totalNoAplica / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
-    const pctAlertasEditadas = totalAlerts > 0 ? Math.round((totalNoAplica / totalAlerts) * 100) : 0;
+    const pctAlertasDescartadas = totalAlerts > 0 ? Math.round((totalNoAplica / totalAlerts) * 100) : 0;
 
     // Ordenar ranking de KPIs por volumen total de alertas
     const kpiRanking = Object.values(kpiStats).sort((a, b) => b.total - a.total);
@@ -5489,7 +5512,7 @@ class ValidaFlowApp {
     if (statSlaTime) statSlaTime.textContent = `${avgDuration}s`;
     if (statQaStatus) statQaStatus.textContent = `${audits.length} Auditorías Verificadas`;
 
-    // 2. Actualizar Panel de Universo de Medición & Tasa de Edición
+    // 2. Actualizar Panel de Universo de Medición y Resultado de las Alertas
     const kpisBadge = document.getElementById('exec-stat-kpis-per-audit-badge');
     if (kpisBadge) kpisBadge.textContent = `${kpisPerAudit} KPIs × Auditoría`;
 
@@ -5523,7 +5546,8 @@ class ValidaFlowApp {
     if (statUniAplica) statUniAplica.textContent = totalAplica;
     if (statUniAplicaPct) statUniAplicaPct.textContent = `${pctAplicaUniverse}% del universo`;
     if (statUniEditadas) statUniEditadas.textContent = totalNoAplica;
-    if (statUniEditadasPct) statUniEditadasPct.textContent = `${pctNoAplicaUniverse}% del universo (${pctAlertasEditadas}% de alertas editadas)`;
+    if (statUniEditadasPct) statUniEditadasPct.textContent = `${pctNoAplicaUniverse}% del universo · ${pctAlertasDescartadas}% del total de alertas`;
+    this.renderUniverseDecisionBreakdown('exec', { universe: totalMeasurableUniverse, withoutAlerts: totalSinAlerta, applies: totalAplica, discarded: totalNoAplica, totalAlerts });
 
     // 3. Renderizar Tabla Benchmark Comercial entre Estudios
     const benchmarkTbody = document.getElementById('exec-benchmark-tbody');
@@ -5733,7 +5757,7 @@ class ValidaFlowApp {
     const pctSinAlerta = totalMeasurableUniverse > 0 ? ((totalSinAlerta / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
     const pctAplicaUniverse = totalMeasurableUniverse > 0 ? ((totalAplica / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
     const pctNoAplicaUniverse = totalMeasurableUniverse > 0 ? ((totalNoAplica / totalMeasurableUniverse) * 100).toFixed(1) : '0.0';
-    const pctAlertasEditadas = totalAlerts > 0 ? Math.round((totalNoAplica / totalAlerts) * 100) : 0;
+    const pctAlertasDescartadas = totalAlerts > 0 ? Math.round((totalNoAplica / totalAlerts) * 100) : 0;
 
     const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     setEl('dossier-kpi-audits', audits.length);
@@ -5761,7 +5785,7 @@ class ValidaFlowApp {
     setEl('dossier-stat-universe-aplica', totalAplica);
     setEl('dossier-stat-universe-aplica-pct', `${pctAplicaUniverse}% del universo`);
     setEl('dossier-stat-universe-editadas', totalNoAplica);
-    setEl('dossier-stat-universe-editadas-pct', `${pctNoAplicaUniverse}% del universo (${pctAlertasEditadas}% de alertas)`);
+    setEl('dossier-stat-universe-editadas-pct', `${pctNoAplicaUniverse}% del universo · ${pctAlertasDescartadas}% del total de alertas`);
 
     // POPULAR DOCUMENTO GERENCIAL EXCLUSIVO PARA IMPRESIÓN/PDF
     const todayStr = formatNicaraguaDate(new Date());
@@ -5791,7 +5815,10 @@ class ValidaFlowApp {
     setEl('print-tbl-aplica-count', totalAplica);
     setEl('print-tbl-aplica-pct', `${pctAplicaUniverse}%`);
     setEl('print-tbl-editadas-count', totalNoAplica);
-    setEl('print-tbl-editadas-pct', `${pctNoAplicaUniverse}% (${pctAlertasEditadas}% de alertas)`);
+    setEl('print-tbl-editadas-pct', `${pctNoAplicaUniverse}% del universo · ${pctAlertasDescartadas}% del total de alertas`);
+    ['dossier', 'print'].forEach(prefix => this.renderUniverseDecisionBreakdown(prefix, {
+      universe: totalMeasurableUniverse, withoutAlerts: totalSinAlerta, applies: totalAplica, discarded: totalNoAplica, totalAlerts
+    }));
 
     // 3. Benchmark Table (Modal + Print)
     const benchTbody = document.getElementById('dossier-benchmark-tbody');
@@ -6125,14 +6152,15 @@ class ValidaFlowApp {
       ];
       drawMetricCards(kpis, 22);
 
-      sectionTitle('2. Universo de medición y edición humana');
+      sectionTitle('2. Universo de medición y resultado de las alertas', `Universo: ${textOf('print-kpi-universe-total')} KPIs. Sin alerta + Aplica + No aplica + Pendientes. No aplica no requiere edición.`);
       const progressValues = [
-        parseFloat(textOf('print-tbl-sin-alerta-pct')) || 0,
-        parseFloat(textOf('print-tbl-aplica-pct')) || 0,
-        parseFloat(textOf('print-tbl-editadas-pct')) || 0
+        Number(textOf('print-tbl-sin-alerta-count')) || 0,
+        Number(textOf('print-tbl-aplica-count')) || 0,
+        Number(textOf('print-tbl-editadas-count')) || 0,
+        Number(textOf('print-tbl-pending-count')) || 0
       ];
       const totalProgress = Math.max(1, progressValues.reduce((total, value) => total + value, 0));
-      const progressColors = [[0, 195, 137], [0, 86, 145], [255, 63, 125]];
+      const progressColors = [[0, 195, 137], [0, 86, 145], [255, 63, 125], [245, 166, 35]];
       let progressX = margin;
       progressValues.forEach((value, index) => {
         const width = contentWidth * (value / totalProgress);
@@ -6144,11 +6172,11 @@ class ValidaFlowApp {
       });
       y += 6;
       drawMetricCards([
-        { label: 'Universo Medible', value: textOf('print-kpi-universe-total'), description: textOf('print-kpi-universe-desc'), color: [37, 55, 99], fill: [248, 250, 252], border: [203, 213, 225] },
         { label: 'Sin Alerta (Conformes)', value: textOf('print-tbl-sin-alerta-count'), description: `${textOf('print-tbl-sin-alerta-pct')} del universo`, color: [0, 165, 78], fill: [240, 253, 244], border: [167, 243, 208] },
         { label: 'Alertas Válidas', value: textOf('print-tbl-aplica-count'), description: `${textOf('print-tbl-aplica-pct')} del universo`, color: [0, 86, 145], fill: [241, 248, 255], border: [184, 220, 248] },
-        { label: 'Alertas Editadas (No Aplica)', value: textOf('print-tbl-editadas-count'), description: `${textOf('print-tbl-editadas-pct')} del universo`, color: [255, 63, 125], fill: [255, 240, 246], border: [255, 154, 196] }
-      ], 25);
+        { label: 'Alertas Descartadas (No aplica)', value: textOf('print-tbl-editadas-count'), description: textOf('print-tbl-editadas-pct'), color: [255, 63, 125], fill: [255, 240, 246], border: [255, 154, 196] },
+        { label: 'Pendientes de decisión', value: textOf('print-tbl-pending-count'), description: `${textOf('print-tbl-pending-pct')} del universo`, color: [150, 90, 10], fill: [255, 250, 235], border: [245, 166, 35] }
+      ], 28);
 
       sectionTitle('3. Benchmark por estudio y canal');
       drawTable(

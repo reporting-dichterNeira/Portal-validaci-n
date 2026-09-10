@@ -5061,6 +5061,32 @@ button.supervisor-module-option:hover {
   background: var(--dn-magenta);
 }
 
+.seg-pending, .dot-pending { background: #f5a623; }
+.print-bar-pending { height: 100%; }
+.universe-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+.universe-summary-grid > :first-child { grid-column: 1 / -1; }
+.universe-summary-grid .stat-details { display: flex; flex-direction: column; gap: 6px; }
+.universe-summary-grid .stat-card { min-width: 0; }
+.universe-balance-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 12px 16px;
+  background: rgba(90, 130, 175, 0.07);
+  border-radius: 8px;
+  line-height: 1.6;
+  font-size: 0.85rem;
+}
+@media (max-width: 1100px) {
+  .universe-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .universe-summary-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* Benchmark Table */
 .benchmark-scroll {
   max-width: 100%;
