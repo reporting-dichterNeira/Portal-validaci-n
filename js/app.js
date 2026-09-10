@@ -8,7 +8,7 @@ import { ExcelParser } from './excel-parser.js?v=25.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=34.0';
-import { SupabaseBackend } from './supabase-backend.js?v=52.0';
+import { SupabaseBackend } from './supabase-backend.js?v=53.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -4969,7 +4969,14 @@ class ValidaFlowApp {
 
     closeBtn?.addEventListener('click', () => modal?.classList.add('hidden'));
 
-    saveBtn?.addEventListener('click', () => {
+    document.getElementById('modal-val-mode')?.addEventListener('change', () => this.updateAddValidatorMode());
+
+    saveBtn?.addEventListener('click', async () => {
+      if (saveBtn.disabled) return;
+      if (document.getElementById('modal-val-mode')?.value === 'existing') {
+        await this.addExistingValidatorToStudy();
+        return;
+      }
       const name = nameInput?.value.trim();
       const email = emailInput?.value.trim();
       const code = codeInput?.value.trim().toUpperCase() || Distributor.generateValidatorCode(this.validators.map(v => v.code));
@@ -4996,9 +5003,21 @@ class ValidaFlowApp {
         isActive: true
       };
 
+      saveBtn.disabled = true;
+      const mode = document.getElementById('modal-val-mode');
+      mode.disabled = true;
+      try {
+        if (this.backend.configured) await this.backend.upsertValidators([newValidator]);
+      } catch (error) {
+        this.showToast(error.message || 'No fue posible guardar el validador.', 'error');
+        return;
+      } finally {
+        saveBtn.disabled = false;
+        mode.disabled = false;
+      }
       this.validators.push(newValidator);
       this.saveState();
-      this.syncStateAcrossTabs();
+      this.channel?.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
       this.renderAdminView();
       this.renderAlertsView();
       this.validatorUI?.populateQuickSelect(this.validators);
@@ -5016,6 +5035,9 @@ class ValidaFlowApp {
     const modal = document.getElementById('modal-add-validator');
     const codeInput = document.getElementById('modal-val-code');
     const studySelect = document.getElementById('modal-val-study');
+    document.getElementById('modal-val-mode').value = 'new';
+    this.updateAddValidatorMode();
+    document.getElementById('modal-val-destination').textContent = `Se añadirá a: ${getStudyDisplayName(this.currentProject || 'Chile')}.`;
 
     if (codeInput) {
       codeInput.value = Distributor.generateValidatorCode(this.validators.map(v => v.code));
@@ -5027,6 +5049,65 @@ class ValidaFlowApp {
 
     modal?.classList.remove('hidden');
     document.getElementById('modal-val-name')?.focus();
+  }
+
+  async updateAddValidatorMode() {
+    const existing = document.getElementById('modal-val-mode')?.value === 'existing';
+    document.getElementById('modal-new-validator-fields')?.classList.toggle('hidden', existing);
+    document.getElementById('modal-existing-validator-fields')?.classList.toggle('hidden', !existing);
+    const save = document.getElementById('btn-save-val-modal');
+    save.textContent = existing ? 'Añadir al estudio' : 'Guardar Validador';
+    save.disabled = existing;
+    const request = this.validatorDirectoryRequest = (this.validatorDirectoryRequest || 0) + 1;
+    if (!existing) return;
+    const select = document.getElementById('modal-existing-validator');
+    const status = document.getElementById('modal-existing-validator-status');
+    select.replaceChildren(new Option('Cargando validadores...', ''));
+    select.disabled = true;
+    status.textContent = 'Buscando validadores activos de otros estudios...';
+    try {
+      if (!this.backend.configured || !this.currentScope) throw new Error('Inicia sesión como supervisor y selecciona un estudio para consultar los validadores.');
+      const validators = await this.backend.getAvailableStudyValidators();
+      if (request !== this.validatorDirectoryRequest) return;
+      select.replaceChildren(new Option('Selecciona un validador', ''));
+      validators.forEach(validator => select.add(new Option(`${validator.name} — ${getStudyDisplayName(validator.study)}`, validator.id)));
+      select.disabled = !validators.length;
+      save.disabled = !validators.length;
+      status.textContent = validators.length
+        ? `${validators.length} disponibles. Los que ya pertenecen a este estudio no se repiten.`
+        : 'No hay otros validadores activos disponibles. Los de este estudio ya aparecen en el listado principal.';
+    } catch (error) {
+      if (request !== this.validatorDirectoryRequest) return;
+      select.replaceChildren(new Option('No se pudo cargar la lista', ''));
+      status.textContent = error.message || 'No fue posible consultar los validadores. Vuelve a seleccionar esta opción para reintentar.';
+    }
+  }
+
+  async addExistingValidatorToStudy() {
+    const id = document.getElementById('modal-existing-validator')?.value;
+    if (!id) { this.showToast('Selecciona el validador que deseas añadir.', 'warning'); return; }
+    const save = document.getElementById('btn-save-val-modal');
+    const mode = document.getElementById('modal-val-mode');
+    save.disabled = true;
+    mode.disabled = true;
+    save.textContent = 'Añadiendo...';
+    try {
+      const validator = await this.backend.addExistingStudyValidator(id);
+      if (!validator) throw new Error('No se pudo confirmar la asignación. Actualiza el listado antes de reintentar.');
+      this.validators = [...this.validators.filter(item => item.id !== id), validator];
+      this.saveState();
+      this.channel?.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
+      this.renderAdminView();
+      this.validatorUI?.populateQuickSelect(this.validators);
+      document.getElementById('modal-add-validator')?.classList.add('hidden');
+      this.showToast(`${validator.name} añadido a ${getStudyDisplayName(this.currentProject)}. Conserva su código y los demás estudios.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible añadir el validador.', 'error');
+    } finally {
+      save.disabled = false;
+      mode.disabled = false;
+      save.textContent = 'Añadir al estudio';
+    }
   }
 
   async deleteValidator(id) {

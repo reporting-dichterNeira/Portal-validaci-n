@@ -33,6 +33,7 @@ function mapValidator(row) {
     estudio: row.study,
     studyId: row.study_id || null,
     countryId: row.country_id || null,
+    _persisted: true,
     isActive: row.is_active !== false
   };
 }
@@ -270,9 +271,7 @@ export class SupabaseBackend {
     let batchesRequest = this.client.from('upload_batches').select('id').eq('status', 'active');
 
     if (this.currentScope?.study?.id) {
-      validatorsRequest = validatorsRequest
-        .eq('study_id', this.currentScope.study.id)
-        .eq('country_id', this.currentScope.country.id);
+      validatorsRequest = this.loadScopeValidators().then(data => ({ data, error: null }));
       batchesRequest = batchesRequest
         .eq('study_id', this.currentScope.study.id)
         .eq('country_id', this.currentScope.country.id)
@@ -304,7 +303,7 @@ export class SupabaseBackend {
     }
 
     return {
-      validators: (validatorsResult.data || []).map(mapValidator),
+      validators: this.currentScope?.study?.id ? validatorsResult.data : (validatorsResult.data || []).map(mapValidator),
       smartAudits,
       blockingAudits
     };
@@ -312,8 +311,11 @@ export class SupabaseBackend {
 
   async upsertValidators(validators) {
     this.ensureConfigured();
-    if (!validators?.length) return;
-    const rows = validators.map(v => ({
+    // Existing identities are shared: never overwrite their original study,
+    // code or global activation state when another study saves its assignments.
+    const newValidators = (validators || []).filter(v => !v._persisted);
+    if (!newValidators.length) return;
+    const rows = newValidators.map(v => ({
       id: v.id,
       code: String(v.code).trim().toUpperCase(),
       name: v.name,
@@ -325,6 +327,40 @@ export class SupabaseBackend {
     }));
     const { error } = await this.client.from('validators').upsert(rows, { onConflict: 'id' });
     if (error) throw error;
+    newValidators.forEach(v => { v._persisted = true; });
+  }
+
+  async loadScopeValidators() {
+    this.ensureConfigured();
+    const scope = this.currentScope;
+    if (!scope?.study?.id || !scope?.country?.id) throw new Error('Selecciona primero un estudio.');
+    const { data, error } = await this.client.from('validator_study_memberships')
+      .select('is_active, validators(id, code, name, email, study, study_id, country_id, is_active)')
+      .eq('study_id', scope.study.id).eq('country_id', scope.country.id);
+    if (error) throw error;
+    return (data || []).flatMap(membership => {
+      const row = Array.isArray(membership.validators) ? membership.validators[0] : membership.validators;
+      return row ? [{ ...mapValidator(row), estudio: scope.study.name, studyId: scope.study.id,
+        countryId: scope.country.id, isActive: membership.is_active !== false }] : [];
+    }).sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name, 'es'));
+  }
+
+  async getAvailableStudyValidators() {
+    this.ensureConfigured();
+    const { data, error } = await this.client.rpc('available_study_validators', {
+      p_study_id: this.currentScope?.study?.id, p_country_id: this.currentScope?.country?.id
+    });
+    if (error) throw error;
+    return data || [];
+  }
+
+  async addExistingStudyValidator(id) {
+    this.ensureConfigured();
+    const { error } = await this.client.rpc('add_existing_study_validator', {
+      p_validator_id: id, p_study_id: this.currentScope?.study?.id, p_country_id: this.currentScope?.country?.id
+    });
+    if (error) throw error;
+    return (await this.loadScopeValidators()).find(validator => validator.id === id);
   }
 
   async upsertAudits(audits, module, batchId = null) {
@@ -511,21 +547,17 @@ export class SupabaseBackend {
   }
 
   async deleteValidator(id) {
-    this.ensureConfigured();
-    const { error } = await this.client.from('validators').update({ is_active: false }).eq('id', id);
-    if (error) throw error;
+    await this.setValidatorActive(id, false);
   }
 
   async setValidatorActive(id, isActive) {
     this.ensureConfigured();
-    const { data, error } = await this.client
-      .from('validators')
-      .update({ is_active: Boolean(isActive) })
-      .eq('id', id)
-      .select('id, code, name, email, study, study_id, country_id, is_active')
-      .single();
+    const { error } = await this.client.rpc('set_study_validator_active', {
+      p_validator_id: id, p_study_id: this.currentScope?.study?.id,
+      p_country_id: this.currentScope?.country?.id, p_active: Boolean(isActive)
+    });
     if (error) throw error;
-    return mapValidator(data);
+    return (await this.loadScopeValidators()).find(validator => validator.id === id);
   }
 
   async reassignPendingAudits({ sourceValidatorId, targetValidatorIds, module }) {

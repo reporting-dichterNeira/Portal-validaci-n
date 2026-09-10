@@ -2030,12 +2030,28 @@
       <div class="modal-header">
         <div>
           <span class="corporate-badge-sm">dichter & neira</span>
-          <h3>Agregar Nuevo Validador</h3>
+          <h3>Agregar Validador</h3>
         </div>
         <button class="btn-close-modal" id="btn-close-val-modal">✕</button>
       </div>
 
       <div class="modal-body">
+        <div class="form-group">
+          <label for="modal-val-mode">¿Qué deseas hacer?</label>
+          <select id="modal-val-mode" class="form-select">
+            <option value="new">Crear un nuevo validador</option>
+            <option value="existing">Añadir un validador existente de otro estudio</option>
+          </select>
+        </div>
+        <div id="modal-existing-validator-fields" class="hidden">
+          <div class="form-group">
+            <label for="modal-existing-validator">Validador existente</label>
+            <select id="modal-existing-validator" class="form-select" disabled></select>
+            <p id="modal-existing-validator-status" class="form-hint" role="status"></p>
+          </div>
+          <p class="form-hint">Conservará su mismo código, sus estudios actuales y su historial. Añadirlo no redistribuye auditorías automáticamente.</p>
+        </div>
+        <div id="modal-new-validator-fields">
         <div class="form-group">
           <label for="modal-val-name">Nombre Completo *</label>
           <input type="text" id="modal-val-name" class="form-control" placeholder="Ej. Juan Pérez" />
@@ -2061,6 +2077,8 @@
           <input type="text" id="modal-val-code" class="form-control code-preview-input" placeholder="VAL-XXXX" />
           <small class="form-hint">Se autogenera al crear el validador y permanecerá fijo para todas sus jornadas.</small>
         </div>
+        </div>
+        <p class="form-hint" id="modal-val-destination"></p>
       </div>
 
       <div class="modal-footer">
@@ -2859,6 +2877,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=102.0"></script>
+  <script type="module" src="js/app.js?v=103.0"></script>
 </body>
 </html>
