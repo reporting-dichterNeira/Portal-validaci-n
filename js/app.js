@@ -4,7 +4,8 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=23.0';
+import { ExcelParser } from './excel-parser.js?v=24.0';
+import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=34.0';
 import { SupabaseBackend } from './supabase-backend.js?v=52.0';
@@ -4653,8 +4654,8 @@ class ValidaFlowApp {
 
     const flagMap = {
       'Chile': '🇨🇱 Chile',
-      'Tradicional': '🏪 Tradicional',
-      'Moderno': '🏬 Moderno',
+      'Tradicional': `🏪 ${getStudyDisplayName('Tradicional')}`,
+      'Moderno': `🏬 ${getStudyDisplayName('Moderno')}`,
       'Lindley': '🥤 Lindley'
     };
 
@@ -5197,8 +5198,8 @@ class ValidaFlowApp {
     // Los 4 Estudios Oficiales
     const officialStudies = [
       { key: 'Chile', label: '🇨🇱 Chile' },
-      { key: 'Tradicional', label: '🏪 Tradicional' },
-      { key: 'Moderno', label: '🏬 Moderno' },
+      { key: 'Tradicional', label: `🏪 ${getStudyDisplayName('Tradicional')}` },
+      { key: 'Moderno', label: `🏬 ${getStudyDisplayName('Moderno')}` },
       { key: 'Lindley', label: '🥤 Lindley' }
     ];
 
@@ -5291,7 +5292,7 @@ class ValidaFlowApp {
     const filteredAudits = this.getFilteredAuditsForReports();
     const studyLabel = this.selectedStudies.includes('ALL') 
       ? 'Todos los Estudios (Consolidado)' 
-      : this.selectedStudies.join(', ');
+      : this.selectedStudies.map(getStudyDisplayName).join(', ');
 
     // 1. Actualizar etiquetas de contexto de filtro
     const opCountLabel = document.getElementById('op-filtered-count-label');
@@ -5394,8 +5395,8 @@ class ValidaFlowApp {
 
     const officialStudies = [
       { key: 'Chile', label: '🇨🇱 Chile' },
-      { key: 'Tradicional', label: '🏪 Tradicional' },
-      { key: 'Moderno', label: '🏬 Moderno' },
+      { key: 'Tradicional', label: `🏪 ${getStudyDisplayName('Tradicional')}` },
+      { key: 'Moderno', label: `🏬 ${getStudyDisplayName('Moderno')}` },
       { key: 'Lindley', label: '🥤 Lindley' }
     ];
 
@@ -5406,7 +5407,7 @@ class ValidaFlowApp {
     audits.forEach(audit => {
       const studyKey = this.getStudyForAudit(audit);
       if (!channelStats[studyKey]) {
-        channelStats[studyKey] = { key: studyKey, name: studyKey, audits: 0, alerts: 0, aplica: 0, noAplica: 0 };
+        channelStats[studyKey] = { key: studyKey, name: getStudyDisplayName(studyKey), audits: 0, alerts: 0, aplica: 0, noAplica: 0 };
       }
       channelStats[studyKey].audits++;
 
@@ -5659,8 +5660,8 @@ class ValidaFlowApp {
 
     const audits = this.getFilteredAuditsForReports();
     const studyLabel = this.selectedStudies.includes('ALL') 
-      ? 'Chile, Tradicional, Moderno, Lindley' 
-      : this.selectedStudies.join(', ');
+      ? ['Chile', 'Tradicional', 'Moderno', 'Lindley'].map(getStudyDisplayName).join(', ')
+      : this.selectedStudies.map(getStudyDisplayName).join(', ');
 
     // 1. Header & Badge
     const scopeBadge = document.getElementById('dossier-study-scope-badge');
@@ -5682,14 +5683,14 @@ class ValidaFlowApp {
     const allUniqueKpis = new Set();
     const studyMap = {
       'Chile': { name: '🇨🇱 Chile', audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
-      'Tradicional': { name: '🏪 Tradicional', audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
-      'Moderno': { name: '🏬 Moderno', audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
+      'Tradicional': { name: `🏪 ${getStudyDisplayName('Tradicional')}`, audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
+      'Moderno': { name: `🏬 ${getStudyDisplayName('Moderno')}`, audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
       'Lindley': { name: '🥤 Lindley', audits: 0, alerts: 0, aplica: 0, noAplica: 0 }
     };
 
     audits.forEach(a => {
       const st = this.getStudyForAudit(a);
-      if (!studyMap[st]) studyMap[st] = { name: st, audits: 0, alerts: 0, aplica: 0, noAplica: 0 };
+      if (!studyMap[st]) studyMap[st] = { name: getStudyDisplayName(st), audits: 0, alerts: 0, aplica: 0, noAplica: 0 };
       studyMap[st].audits++;
 
       if (a.validationStatus === 'completada') {
@@ -6898,7 +6899,7 @@ class ValidaFlowApp {
       }
       const studyLabel = this.selectedStudies.includes('ALL') 
         ? 'Todos los Estudios' 
-        : this.selectedStudies.join(', ');
+        : this.selectedStudies.map(getStudyDisplayName).join(', ');
       ExcelParser.exportExecutiveExcel(filtered, studyLabel);
       this.showToast('Generando informe ejecutivo de comité en Excel (.xlsx)...', 'success');
     });
@@ -6977,7 +6978,7 @@ class ValidaFlowApp {
     dailyList.forEach(d => {
       if (d.completed > maxCompleted && d.completed > 0) {
         maxCompleted = d.completed;
-        bestDay = `${d.dateKey} (${d.studyKey} - ${d.completed} aud.)`;
+        bestDay = `${d.dateKey} (${getStudyDisplayName(d.studyKey)} - ${d.completed} aud.)`;
       }
     });
 
@@ -7008,8 +7009,8 @@ class ValidaFlowApp {
 
     const flagMap = {
       'Chile': '🇨🇱 Chile',
-      'Tradicional': '🏪 Tradicional',
-      'Moderno': '🏬 Moderno',
+      'Tradicional': `🏪 ${getStudyDisplayName('Tradicional')}`,
+      'Moderno': `🏬 ${getStudyDisplayName('Moderno')}`,
       'Lindley': '🥤 Lindley'
     };
 
@@ -7144,8 +7145,8 @@ class ValidaFlowApp {
 
     const flagMap = {
       'Chile': '🇨🇱 Chile',
-      'Tradicional': '🏪 Tradicional',
-      'Moderno': '🏬 Moderno',
+      'Tradicional': `🏪 ${getStudyDisplayName('Tradicional')}`,
+      'Moderno': `🏬 ${getStudyDisplayName('Moderno')}`,
       'Lindley': '🥤 Lindley'
     };
 
@@ -7429,7 +7430,7 @@ class ValidaFlowApp {
     const auditsToExport = this.getFilteredAuditsForReports();
     const studyLabel = this.selectedStudies.includes('ALL')
       ? 'Todos los Estudios'
-      : this.selectedStudies.join(', ');
+      : this.selectedStudies.map(getStudyDisplayName).join(', ');
     ExcelParser.exportExecutiveExcel(auditsToExport, studyLabel);
     this.showToast('Descargando Informe Ejecutivo de Comité...', 'success');
   }

@@ -1,3 +1,5 @@
+import { getStudyDisplayName } from './study-labels.js?v=1.0';
+
 /**
  * Módulo de procesamiento y exportación de archivos Excel / CSV
  */
@@ -772,7 +774,7 @@ export class ExcelParser {
     const execSummaryRows = [
       { 'Indicador Ejecutivo': 'Empresa', 'Valor': 'dichter & neira' },
       { 'Indicador Ejecutivo': 'Fecha de Generación (Hora Nicaragua)', 'Valor': formatNicaraguaDateTime(new Date()) },
-      { 'Indicador Ejecutivo': 'Segmentación / Estudios', 'Valor': studyLabel },
+      { 'Indicador Ejecutivo': 'Segmentación / Estudios', 'Valor': studyLabel.split(',').map(value => getStudyDisplayName(value.trim())).join(', ') },
       { 'Indicador Ejecutivo': 'Total Auditorías Auditadas', 'Valor': totalAudits },
       { 'Indicador Ejecutivo': 'Auditorías Completadas', 'Valor': completedAudits },
       { 'Indicador Ejecutivo': 'Total Alertas Generadas', 'Valor': totalAlerts },
@@ -807,7 +809,7 @@ export class ExcelParser {
     const channelRows = Object.values(channelStats).map(c => {
       const evalC = c.aplica + c.noAplica;
       return {
-        'Estudio / Canal / Modelo': c.study,
+        'Estudio / Canal / Modelo': getStudyDisplayName(c.study),
         'Total Auditorías': c.audits,
         'Total Alertas': c.alerts,
         'Aplica': c.aplica,
