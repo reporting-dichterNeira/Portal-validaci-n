@@ -5557,7 +5557,7 @@ button.supervisor-module-option:hover {
   }
 
   @page {
-    size: A4 portrait;
+    size: letter landscape;
     margin: 10mm 12mm 10mm 12mm;
   }
 

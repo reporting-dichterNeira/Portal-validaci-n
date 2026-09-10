@@ -6009,9 +6009,9 @@ class ValidaFlowApp {
 
       // El dossier es un tablero ancho. El formato horizontal conserva la
       // composición de la vista previa y evita que las tablas se amontonen.
-      const pdf = new JsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
-      const pageWidth = 297;
-      const pageHeight = 210;
+      const pdf = new JsPDF({ unit: 'mm', format: 'letter', orientation: 'landscape' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
       const margin = 10;
       const contentWidth = pageWidth - (margin * 2);
       let y = 15;
@@ -6070,13 +6070,33 @@ class ValidaFlowApp {
         y += height + 4;
       };
       const drawTable = (headers, rows, widths, options = {}) => {
+        // Usar todo el ancho disponible y medir antes de decidir el salto.
+        const totalWidth = widths.reduce((sum, width) => sum + width, 0);
+        widths = widths.map(width => width / totalWidth * contentWidth);
         const rowData = rows.length ? rows : [headers.map((_, index) => index === 0 ? 'Sin registros para el filtro seleccionado.' : '')];
-        const drawRow = (cells, header = false, rowIndex = 0) => {
+        const measureRow = (cells, header = false) => {
           pdf.setFont('helvetica', header ? 'bold' : 'normal');
           pdf.setFontSize(header ? 6.8 : 6.5);
           const lineSets = cells.map((cell, index) => pdf.splitTextToSize(cleanText(cell), widths[index] - 3));
           const height = Math.max(7, ...lineSets.map(lines => lines.length * 3.1 + 3));
-          ensureSpace(height + 1);
+          return { lineSets, height };
+        };
+        const normalizedRows = rowData.map(row => headers.map((_, index) => row[index] || ''));
+        const headerHeight = measureRow(headers, true).height;
+        const rowHeights = normalizedRows.map(row => measureRow(row).height);
+        const titleHeight = options.title ? 7 : 0;
+        const tableHeight = titleHeight + headerHeight + rowHeights.reduce((sum, height) => sum + height, 0) + 4;
+        // Las tablas cortas viajan completas con su título; las largas repiten cabecera.
+        ensureSpace(tableHeight <= pageHeight - 30 ? tableHeight : titleHeight + headerHeight + rowHeights[0] + 1);
+        if (options.title) sectionTitle(options.title);
+        const drawRow = (cells, header = false, rowIndex = 0) => {
+          const { lineSets, height } = measureRow(cells, header);
+          if (!header && y + height + 1 > pageHeight - 15) {
+            ensureSpace(headerHeight + height + 1);
+            drawRow(headers, true);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(6.5);
+          }
           let x = margin;
           lineSets.forEach((lines, index) => {
             const cellStyle = header ? null : options.cellStyle?.(cells, index, rowIndex);
@@ -6094,7 +6114,7 @@ class ValidaFlowApp {
           y += height;
         };
         drawRow(headers, true);
-        rowData.forEach((row, index) => drawRow(headers.map((_, cellIndex) => row[cellIndex] || ''), false, index));
+        normalizedRows.forEach((row, index) => drawRow(row, false, index));
         y += 4;
       };
 
@@ -6178,12 +6198,12 @@ class ValidaFlowApp {
         { label: 'Pendientes de decisión', value: textOf('print-tbl-pending-count'), description: `${textOf('print-tbl-pending-pct')} del universo`, color: [150, 90, 10], fill: [255, 250, 235], border: [245, 166, 35] }
       ], 28);
 
-      sectionTitle('3. Benchmark por estudio y canal');
       drawTable(
         ['Estudio', 'Aud.', 'Alertas', 'Aplica', 'No aplica', 'Precisión', 'Efectividad'],
         tableRows('print-benchmark-tbody'),
         [32, 16, 20, 18, 22, 24, 54],
         {
+          title: '3. Benchmark por estudio y canal',
           cellStyle: (_, column) => {
             if (column === 3) return { color: [0, 165, 78], bold: true };
             if (column === 4) return { color: [255, 63, 125], bold: true };
@@ -6193,8 +6213,7 @@ class ValidaFlowApp {
         }
       );
 
-      sectionTitle('4. Variables y causas principales');
-      drawTable(['#', 'Variable / KPI', 'Alertas', '% confirmación'], tableRows('print-top-kpis-tbody'), [12, 92, 32, 50]);
+      drawTable(['#', 'Variable / KPI', 'Alertas', '% confirmación'], tableRows('print-top-kpis-tbody'), [12, 92, 32, 50], { title: '4. Variables y causas principales' });
       drawTable(['Motivo de descarte', 'Casos', '% descarte'], tableRows('print-reasons-tbody'), [112, 32, 42]);
 
       sectionTitle('5. Conclusiones y plan de acción');
