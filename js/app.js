@@ -64,6 +64,9 @@ class ValidaFlowApp {
     this.adminAnalysisSheet = 'core';
     this.visualizationTab = 'overview';
     this.visualizationModuleFilter = 'all';
+    this.visualizationDateFrom = '';
+    this.visualizationDateTo = '';
+    this.activeReportDownloads = new Set();
     this.visualizationsMounted = false;
     this.historicalBatches = [];
     this.validatorHistoryRows = [];
@@ -144,6 +147,7 @@ class ValidaFlowApp {
     this.initAlertsModule();
     this.initReportsSubtabs();
     this.initStudyFilter();
+    this.initVisualizationDateFilter();
     this.initDailyReportsModule();
     this.initValidatorHistoryModule();
     this.initReassignPendingAuditsModal();
@@ -238,6 +242,85 @@ class ValidaFlowApp {
       : `Mostrando solo ${this.getVisualizationModuleLabel(activeModule)}`;
   }
 
+  normalizeVisualizationDate(value) {
+    if (!value) return '';
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return getNicaraguaDateKey(value);
+    const clean = ExcelParser.cleanDateOnly(value);
+    const iso = String(clean || '').match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (iso) return `${iso[1]}-${String(iso[2]).padStart(2, '0')}-${String(iso[3]).padStart(2, '0')}`;
+    const latin = String(clean || '').match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (latin) return `${latin[3]}-${String(latin[2]).padStart(2, '0')}-${String(latin[1]).padStart(2, '0')}`;
+    return '';
+  }
+
+  isWithinVisualizationDateRange(value) {
+    if (this.currentView !== 'visualizations' || (!this.visualizationDateFrom && !this.visualizationDateTo)) return true;
+    const date = this.normalizeVisualizationDate(value);
+    if (!date) return false;
+    return (!this.visualizationDateFrom || date >= this.visualizationDateFrom)
+      && (!this.visualizationDateTo || date <= this.visualizationDateTo);
+  }
+
+  isVisualizationMonthInRange(value) {
+    if (this.currentView !== 'visualizations' || (!this.visualizationDateFrom && !this.visualizationDateTo)) return true;
+    const monthStart = this.normalizeVisualizationDate(value);
+    if (!monthStart) return false;
+    const [year, month] = monthStart.split('-').map(Number);
+    const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`;
+    return (!this.visualizationDateTo || monthStart <= this.visualizationDateTo)
+      && (!this.visualizationDateFrom || monthEnd >= this.visualizationDateFrom);
+  }
+
+  updateVisualizationDateControls() {
+    const from = document.getElementById('visualization-date-from');
+    const to = document.getElementById('visualization-date-to');
+    const context = document.getElementById('visualization-date-context');
+    if (from) from.value = this.visualizationDateFrom;
+    if (to) to.value = this.visualizationDateTo;
+    if (context) {
+      context.textContent = this.visualizationDateFrom && this.visualizationDateTo
+        ? `${this.visualizationDateFrom} a ${this.visualizationDateTo}`
+        : this.visualizationDateFrom
+          ? `Desde ${this.visualizationDateFrom}`
+          : this.visualizationDateTo
+            ? `Hasta ${this.visualizationDateTo}`
+            : 'Todo el histórico';
+    }
+  }
+
+  initVisualizationDateFilter() {
+    const from = document.getElementById('visualization-date-from');
+    const to = document.getElementById('visualization-date-to');
+    const update = () => this.setVisualizationDateFilter(from?.value, to?.value);
+    from?.addEventListener('change', update);
+    to?.addEventListener('change', update);
+    document.getElementById('btn-clear-visualization-date')?.addEventListener('click', () => this.setVisualizationDateFilter('', ''));
+    this.updateVisualizationDateControls();
+  }
+
+  async setVisualizationDateFilter(from, to) {
+    let start = this.normalizeVisualizationDate(from);
+    let end = this.normalizeVisualizationDate(to);
+    if (start && end && start > end) {
+      [start, end] = [end, start];
+      this.showToast('Ajustamos el rango para que la fecha inicial sea anterior a la final.', 'info');
+    }
+    this.visualizationDateFrom = start;
+    this.visualizationDateTo = end;
+    this.updateVisualizationDateControls();
+    this.renderReportsView();
+    this.renderDailyReportsView();
+    this.renderAdminExternalAnalysis();
+
+    // El seguimiento diario se consulta por jornada; cuando se elige un solo
+    // día lo actualizamos también contra Supabase.
+    if (this.currentView === 'visualizations' && start && start === end) {
+      const dateInput = document.getElementById('admin-productivity-date');
+      if (dateInput) dateInput.value = start;
+      await this.loadAdministratorPanel({ visualOnly: true });
+    }
+  }
+
   async setVisualizationModuleFilter(module) {
     const nextModule = ['all', 'smart', 'blocking'].includes(module) ? module : 'all';
     this.visualizationModuleFilter = nextModule;
@@ -317,6 +400,7 @@ class ValidaFlowApp {
     document.getElementById('btn-subtab-executive')?.classList.remove('hidden');
     document.getElementById('visualization-module-switcher')?.classList.remove('hidden');
     this.updateVisualizationModuleControls();
+    this.updateVisualizationDateControls();
     this.switchReportsSubtab(isCommercial ? 'executive' : 'operational');
     this.switchVisualizationTab(isCommercial ? 'committee' : this.visualizationTab || 'overview');
     // Primero se muestra la última lectura completa guardada en este navegador.
@@ -1577,12 +1661,16 @@ class ValidaFlowApp {
     const editionImports = sortImportsByMonth(analysis.imports.filter(item => item.dataset_type === 'editions'));
     const alertImport = alertImports[0];
     const editionImport = editionImports[0];
-    const allPlatformAlertAudits = analysis.platformAlertAudits || [];
+    const allPlatformAlertAudits = (analysis.platformAlertAudits || []).filter(item => (
+      this.isWithinVisualizationDateRange(this.getAuditOperationDate(item.audit))
+    ));
     const visualizationModule = this.getVisualizationModuleFilter();
     const platformAlertAudits = visualizationModule === 'all'
       ? allPlatformAlertAudits
       : allPlatformAlertAudits.filter(item => item.audit?._module === visualizationModule || item.audit?.module === visualizationModule);
-    const allPlatformAudits = analysis.platformAudits || [];
+    const allPlatformAudits = (analysis.platformAudits || []).filter(audit => (
+      this.isWithinVisualizationDateRange(this.getAuditOperationDate(audit))
+    ));
     const platformAudits = visualizationModule === 'all'
       ? allPlatformAudits
       : allPlatformAudits.filter(audit => audit?._module === visualizationModule || audit?.module === visualizationModule);
@@ -1590,7 +1678,12 @@ class ValidaFlowApp {
     // of its rows visible, including imports created before the rule changed.
     // Oculta también los registros de contexto que pudieron haberse guardado
     // antes de aplicar la validación estricta del ID de auditoría.
-    const allAlertRows = (analysis.alertRecords || []).filter(record => /^\d+$/.test(String(record?.audit_external_id || '').trim()));
+    const allAlertRows = (analysis.alertRecords || []).filter(record => (
+      /^\d+$/.test(String(record?.audit_external_id || '').trim())
+      && (record.audit_date
+        ? this.isWithinVisualizationDateRange(record.audit_date)
+        : this.isVisualizationMonthInRange(record.period_month))
+    ));
     const platformIds = visualizationModule === 'all'
       ? (analysis.platformAuditIds || new Set())
       : new Set(platformAlertAudits.map(item => String(item.audit?.id || '').trim()).filter(Boolean));
@@ -1741,7 +1834,7 @@ class ValidaFlowApp {
       }).join('') : '<tr><td colspan="12" class="text-center text-muted">No hay auditorías que cumplan con los filtros seleccionados.</td></tr>';
     }
 
-    const contextByAuditId = new Map((analysis.alertRecords || []).map(record => [String(record.audit_external_id || '').trim(), record]));
+    const contextByAuditId = new Map(alertRows.map(record => [String(record.audit_external_id || '').trim(), record]));
     const editsById = new Map((analysis.editRecords || []).map(record => [String(record.audit_external_id || '').trim(), record]));
     const alertEditionRows = platformAlertAudits.map(platformAlert => {
       const auditId = String(platformAlert.audit?.id || '').trim();
@@ -3297,10 +3390,6 @@ class ValidaFlowApp {
 
     document.getElementById('btn-add-validator')?.addEventListener('click', () => {
       this.openAddValidatorModal();
-    });
-
-    document.getElementById('btn-export-excel')?.addEventListener('click', () => {
-      ExcelParser.exportResultsToExcel(this.audits, this.validators);
     });
 
     document.getElementById('btn-refresh-alerts')?.addEventListener('click', () => {
@@ -5354,14 +5443,13 @@ class ValidaFlowApp {
 
   getFilteredAuditsForReports() {
     const reportAudits = this.getReportAuditSource();
-    if (this.selectedStudies.includes('ALL') || this.selectedStudies.length === 0) {
-      return reportAudits;
-    }
-
-    return reportAudits.filter(a => {
+    const studyFiltered = this.selectedStudies.includes('ALL') || this.selectedStudies.length === 0
+      ? reportAudits
+      : reportAudits.filter(a => {
       const studyOfAudit = this.getStudyForAudit(a);
       return this.selectedStudies.some(s => s.toUpperCase() === studyOfAudit.toUpperCase());
     });
+    return studyFiltered.filter(audit => this.isWithinVisualizationDateRange(this.getAuditOperationDate(audit)));
   }
 
   // ==========================================
@@ -5379,7 +5467,10 @@ class ValidaFlowApp {
     // 1. Actualizar etiquetas de contexto de filtro
     const opCountLabel = document.getElementById('op-filtered-count-label');
     if (opCountLabel) {
-      opCountLabel.textContent = `Histórico completo: ${filteredAudits.length} de ${reportAudits.length} auditorías [${studyLabel}]`;
+      const dateLabel = this.visualizationDateFrom || this.visualizationDateTo
+        ? ` · Fecha: ${this.visualizationDateFrom || 'inicio'} a ${this.visualizationDateTo || 'hoy'}`
+        : '';
+      opCountLabel.textContent = `Histórico completo: ${filteredAudits.length} de ${reportAudits.length} auditorías [${studyLabel}]${dateLabel}`;
     }
 
     const execStudyLabel = document.getElementById('exec-study-selected-label');
@@ -7040,38 +7131,17 @@ class ValidaFlowApp {
   initDailyReportsModule() {
     // 1. Descargar Consolidado General
     document.getElementById('btn-export-excel')?.addEventListener('click', () => {
-      const filtered = this.getFilteredAuditsForReports();
-      if (filtered.length === 0) {
-        this.showToast('No hay auditorías en la selección actual para exportar.', 'warning');
-        return;
-      }
-      ExcelParser.exportResultsToExcel(filtered, this.validators);
-      this.showToast('Descargando archivo Excel consolidado...', 'success');
+      this.exportConsolidatedExcel();
     });
 
     // 2. Descargar Libro Multi-Hoja Día por Día
     document.getElementById('btn-export-multi-sheet')?.addEventListener('click', () => {
-      const filtered = this.getFilteredAuditsForReports();
-      if (filtered.length === 0) {
-        this.showToast('No hay auditorías en la selección actual para exportar.', 'warning');
-        return;
-      }
-      ExcelParser.exportDailyAndConsolidatedExcel(filtered, this.validators);
-      this.showToast('Descargando libro Excel completo (Consolidado + Hojas por Día)...', 'success');
+      this.exportMultiSheetExcel();
     });
 
     // 3. Descargar Informe Ejecutivo para Comité
     document.getElementById('btn-export-executive-xlsx')?.addEventListener('click', () => {
-      const filtered = this.getFilteredAuditsForReports();
-      if (filtered.length === 0) {
-        this.showToast('No hay auditorías en la selección actual para generar informe.', 'warning');
-        return;
-      }
-      const studyLabel = this.selectedStudies.includes('ALL') 
-        ? 'Todos los Estudios' 
-        : this.selectedStudies.map(getStudyDisplayName).join(', ');
-      ExcelParser.exportExecutiveExcel(filtered, studyLabel);
-      this.showToast('Generando informe ejecutivo de comité en Excel (.xlsx)...', 'success');
+      this.exportExecutiveExcel();
     });
   }
 
@@ -7586,23 +7656,66 @@ class ValidaFlowApp {
 
   exportConsolidatedExcel() {
     const auditsToExport = this.getFilteredAuditsForReports();
-    ExcelParser.exportResultsToExcel(auditsToExport, this.validators);
-    this.showToast('Descargando archivo Excel consolidado...', 'success');
+    if (!auditsToExport.length) {
+      this.showToast('No hay auditorías en la selección actual para exportar.', 'warning');
+      return;
+    }
+    this.runReportDownload('consolidated', 'btn-export-excel', () => {
+      const largeExportThreshold = 5000;
+      const result = auditsToExport.length > largeExportThreshold
+        ? ExcelParser.exportResultsToCsv(auditsToExport, this.validators)
+        : ExcelParser.exportResultsToExcel(auditsToExport, this.validators);
+      const format = result?.format === 'csv' ? 'CSV' : 'Excel';
+      this.showToast(`Descargando un único consolidado ${format} con ${Number(result?.rows || auditsToExport.length).toLocaleString('es-CO')} auditorías.`, 'success');
+    });
   }
 
   exportMultiSheetExcel() {
     const auditsToExport = this.getFilteredAuditsForReports();
-    ExcelParser.exportDailyAndConsolidatedExcel(auditsToExport, this.validators);
-    this.showToast('Descargando libro Excel con hojas día a día...', 'success');
+    if (!auditsToExport.length) {
+      this.showToast('No hay auditorías en la selección actual para exportar.', 'warning');
+      return;
+    }
+    this.runReportDownload('daily-book', 'btn-export-multi-sheet', () => {
+      ExcelParser.exportDailyAndConsolidatedExcel(auditsToExport, this.validators);
+      this.showToast('Descargando un único libro Excel con hojas día a día...', 'success');
+    });
   }
 
   exportExecutiveExcel() {
     const auditsToExport = this.getFilteredAuditsForReports();
+    if (!auditsToExport.length) {
+      this.showToast('No hay auditorías en la selección actual para generar informe.', 'warning');
+      return;
+    }
     const studyLabel = this.selectedStudies.includes('ALL')
       ? 'Todos los Estudios'
       : this.selectedStudies.map(getStudyDisplayName).join(', ');
-    ExcelParser.exportExecutiveExcel(auditsToExport, studyLabel);
-    this.showToast('Descargando Informe Ejecutivo de Comité...', 'success');
+    this.runReportDownload('executive', 'btn-export-executive-xlsx', () => {
+      ExcelParser.exportExecutiveExcel(auditsToExport, studyLabel);
+      this.showToast('Descargando Informe Ejecutivo de Comité...', 'success');
+    });
+  }
+
+  runReportDownload(key, buttonId, createDownload) {
+    if (this.activeReportDownloads.has(key)) {
+      this.showToast('La descarga ya está en curso. Espera un momento antes de intentarlo otra vez.', 'info');
+      return;
+    }
+    const button = document.getElementById(buttonId);
+    this.activeReportDownloads.add(key);
+    if (button) button.disabled = true;
+    try {
+      createDownload();
+    } catch (error) {
+      console.error('No fue posible generar la descarga:', error);
+      this.showToast(error.message || 'No fue posible generar el archivo.', 'error');
+    } finally {
+      window.setTimeout(() => {
+        this.activeReportDownloads.delete(key);
+        if (button?.isConnected) button.disabled = false;
+      }, 900);
+    }
   }
 
   applyAlertThresholds() {

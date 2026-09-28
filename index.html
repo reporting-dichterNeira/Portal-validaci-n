@@ -971,6 +971,13 @@
           </div>
           <span class="visualization-module-context" id="visualization-module-context">Mostrando ambos módulos</span>
         </div>
+        <div class="visualization-date-filter" id="visualization-date-filter" aria-label="Filtrar visualizaciones por fecha">
+          <div class="visualization-date-filter-heading"><strong>📅 Filtrar por fecha de auditoría</strong><small>Aplica a seguimiento, cruces, métricas y descargas. Cambio de nota conserva su filtro mensual.</small></div>
+          <label>Desde <input class="form-control" type="date" id="visualization-date-from" /></label>
+          <label>Hasta <input class="form-control" type="date" id="visualization-date-to" /></label>
+          <button class="btn btn-outline btn-sm" type="button" id="btn-clear-visualization-date">Ver todo el histórico</button>
+          <span class="visualization-date-context" id="visualization-date-context">Todo el histórico</span>
+        </div>
         <div class="visualization-pane active" id="visualization-pane-overview"></div>
         <div class="visualization-pane" id="visualization-pane-alerts"></div>
         <div class="visualization-pane" id="visualization-pane-editions"></div>
@@ -1451,10 +1458,10 @@
               <span class="text-muted" style="font-size:0.85rem;" id="op-filtered-count-label">Mostrando todas las auditorías</span>
             </div>
             <div class="op-buttons-group">
-              <button class="btn btn-outline btn-sm" id="btn-export-excel" onclick="window.exportConsolidatedExcel()">
-                <span class="btn-icon">📊</span> Descargar Consolidado (.xlsx)
+              <button class="btn btn-outline btn-sm" id="btn-export-excel">
+                <span class="btn-icon">📊</span> Descargar Consolidado
               </button>
-              <button class="btn btn-primary btn-glow btn-sm" id="btn-export-multi-sheet" onclick="window.exportMultiSheetExcel()">
+              <button class="btn btn-primary btn-glow btn-sm" id="btn-export-multi-sheet">
                 <span class="btn-icon">📦</span> Descargar Día por Día (Multi-Hoja .xlsx)
               </button>
             </div>
@@ -1658,7 +1665,7 @@
                 <span class="btn-icon">👁️</span> Vista Previa Dossier Comercial
               </button>
               <button class="btn btn-primary btn-sm" data-export-commercial-ppt onclick="window.exportCommercialPPT()">📊 Descargar PowerPoint (.pptx)</button>
-              <button class="btn btn-success btn-sm" id="btn-export-executive-xlsx" onclick="window.exportExecutiveExcel()">
+              <button class="btn btn-success btn-sm" id="btn-export-executive-xlsx">
                 <span class="btn-icon">📊</span> Descargar Excel (.xlsx)
               </button>
             </div>
@@ -2884,6 +2891,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=104.0"></script>
+  <script type="module" src="js/app.js?v=105.0"></script>
 </body>
 </html>

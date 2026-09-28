@@ -15,6 +15,38 @@ export class ExcelParser {
     };
   }
 
+  static buildConsolidatedExportRows(audits, validators) {
+    const uniqueAudits = this.deduplicateById(audits);
+    const valMap = new Map((validators || []).map(v => [v.id, v]));
+
+    return uniqueAudits.map(audit => {
+      const validador = valMap.get(audit.assignedValidatorId);
+      const kpisParaRevisar = (audit.kpis || []).filter(k => k.needsReview);
+      const row = {
+        'ID Auditoría': audit.id,
+        'ID PDV': audit.idPDV,
+        'País': audit.pais,
+        'Ciudad': audit.ciudad,
+        'Canal': audit.canal,
+        'Fecha Auditoría': audit.fecha,
+        'Auditor': audit.usuario,
+        'Validador Asignado': validador ? validador.name : 'Sin asignar',
+        'Código Validador': validador ? validador.code : '',
+        'Estado Validación': (audit.validationStatus || 'pendiente').toUpperCase(),
+        ...this.getTimingExportFields(audit),
+        'KPIs a Revisar (Total)': kpisParaRevisar.length
+      };
+
+      kpisParaRevisar.forEach(kpi => {
+        const result = audit.validationResults?.[kpi.name] || {};
+        row[`[${kpi.name}] Resultado`] = result.status === 'aplica' ? 'APLICA' : result.status === 'no_aplica' ? 'NO APLICA' : 'PENDIENTE';
+        row[`[${kpi.name}] Tipificación No Aplica`] = result.tipificacion || '';
+        row[`[${kpi.name}] Observaciones`] = result.observaciones || '';
+      });
+      return row;
+    });
+  }
+
   /**
    * Parsea un texto CSV considerando delimitadores comunes (;, ,, \t)
    * y maneja correctamente comillas y saltos de línea.
@@ -448,40 +480,7 @@ export class ExcelParser {
       return;
     }
 
-    const uniqueAudits = this.deduplicateById(audits);
-    const valMap = new Map((validators || []).map(v => [v.id, v]));
-
-    // Hoja 1: Detalle Completo de Auditorías
-    const rows = uniqueAudits.map(audit => {
-      const validador = valMap.get(audit.assignedValidatorId);
-      const kpisParaRevisar = (audit.kpis || []).filter(k => k.needsReview);
-
-      const baseRow = {
-        'ID Auditoría': audit.id,
-        'ID PDV': audit.idPDV,
-        'País': audit.pais,
-        'Ciudad': audit.ciudad,
-        'Canal': audit.canal,
-        'Fecha Auditoría': audit.fecha,
-        'Auditor': audit.usuario,
-        'Validador Asignado': validador ? validador.name : 'Sin asignar',
-        'Código Validador': validador ? validador.code : '',
-        'Estado Validación': (audit.validationStatus || 'pendiente').toUpperCase(),
-        ...this.getTimingExportFields(audit),
-        'KPIs a Revisar (Total)': kpisParaRevisar.length
-      };
-
-      // Agregar columnas de resultados por cada KPI revisable
-      kpisParaRevisar.forEach(kpi => {
-        const result = audit.validationResults[kpi.name] || {};
-        const statusText = result.status === 'aplica' ? 'APLICA' : result.status === 'no_aplica' ? 'NO APLICA' : 'PENDIENTE';
-        baseRow[`[${kpi.name}] Resultado`] = statusText;
-        baseRow[`[${kpi.name}] Tipificación No Aplica`] = result.tipificacion || '';
-        baseRow[`[${kpi.name}] Observaciones`] = result.observaciones || '';
-      });
-
-      return baseRow;
-    });
+    const rows = this.buildConsolidatedExportRows(audits, validators);
 
     // Hoja 2: Resumen por Validador
     const validatorSummary = (validators || []).map(val => {
@@ -525,6 +524,29 @@ export class ExcelParser {
     XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumen_Validadores');
 
     XLSX.writeFile(wb, filename);
+    return { format: 'xlsx', rows: rows.length };
+  }
+
+  /**
+   * Para consolidados grandes, CSV evita la generación de un libro pesado y
+   * mantiene una única descarga con el mismo detalle de auditorías.
+   */
+  static exportResultsToCsv(audits, validators, filename = 'Auditorias_Validadas_Consolidado.csv') {
+    const rows = this.buildConsolidatedExportRows(audits, validators);
+    const headers = [...new Set(rows.flatMap(row => Object.keys(row)))];
+    const escapeCsv = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const content = [headers.map(escapeCsv).join(';'), ...rows.map(row => headers.map(header => escapeCsv(row[header])).join(';'))].join('\r\n');
+    const blob = new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    return { format: 'csv', rows: rows.length };
   }
 
   /**

@@ -7683,6 +7683,13 @@ body.dark-theme {
 .visualization-module-button.is-blocking.active { background: var(--dn-magenta); }
 .visualization-module-button.is-smart.active { background: var(--dn-blue); }
 .visualization-module-context { color: var(--text-muted); font-size: 0.75rem; font-weight: 700; margin-left: auto; }
+.visualization-date-filter { align-items: end; background: var(--surface-card); border: 1px solid var(--border-color); border-left: 4px solid var(--dn-cyan); border-radius: 14px; box-shadow: var(--shadow-sm); display: flex; flex-wrap: wrap; gap: 0.7rem 1rem; margin: -0.55rem 0 1.35rem; padding: 0.8rem 0.9rem; }
+.visualization-date-filter-heading { display: grid; gap: 0.15rem; margin-right: 0.25rem; }
+.visualization-date-filter-heading strong { color: var(--dn-navy); font-size: 0.82rem; }
+.visualization-date-filter-heading small, .visualization-date-context { color: var(--text-muted); font-size: 0.72rem; font-weight: 650; }
+.visualization-date-filter label { color: var(--dn-navy); display: grid; font-size: 0.74rem; font-weight: 800; gap: 0.28rem; }
+.visualization-date-filter .form-control { min-height: 38px; min-width: 152px; }
+.visualization-date-context { margin-left: auto; padding-bottom: 0.45rem; }
 .visualization-pane { display: none; }
 .visualization-pane.active { display: block; }
 .visualization-pane > .admin-productivity-panel, .visualization-pane > .admin-analysis-sheet { margin-bottom: 0; }
@@ -7697,6 +7704,9 @@ body.dark-theme {
   .visualization-module-actions { width: 100%; }
   .visualization-module-button { flex: 1; }
   .visualization-module-context { margin-left: 0; }
+  .visualization-date-filter { align-items: stretch; flex-direction: column; }
+  .visualization-date-filter .form-control { width: 100%; }
+  .visualization-date-context { margin-left: 0; padding-bottom: 0; }
 }
 
 
