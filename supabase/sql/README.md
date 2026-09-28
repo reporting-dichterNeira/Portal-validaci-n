@@ -13,8 +13,14 @@ después de revisar la consulta previa y disponer de una copia de seguridad.
 La verificación final del propio script debe devolver cero pendientes vencidos.
 
 El portal oculta de inmediato los pendientes vencidos en visualizaciones,
-descargas y listas de validador; la eliminación física en Supabase requiere
-aplicar el script con una sesión que tenga acceso al proyecto de reporting.
+descargas y listas de validador. La eliminación física se realiza con el
+script, ejecutado desde una sesión con acceso al proyecto de reporting.
+
+Aplicado en producción (`portal-validacion`, proyecto `jujndhavotibflcredrx`)
+el 28/09/2026: se retiraron 1.004 auditorías no completadas de jornadas
+anteriores. La comprobación posterior devolvió 0 pendientes vencidos,
+1.252 auditorías completadas de Tradicional conservadas, 0 bases con
+`row_count` desfasado y el trigger instalado.
 
 `validator-study-memberships.sql` incorpora un registro de pertenencia por
 validador, estudio y país. Se aplica antes de publicar `app.js?v=103.0` y
