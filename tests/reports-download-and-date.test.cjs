@@ -49,7 +49,9 @@ function loadAppClass(document = { getElementById: () => null }) {
     getStudyDisplayName: value => value, loadPowerPointEngine: () => {}, buildExecutivePowerPoint: () => {},
     Distributor: class {}, ValidatorUI: class {}, SupabaseBackend: class {},
     formatNicaraguaDate: value => value, formatNicaraguaDateTime: value => value,
-    getNicaraguaDateKey: value => String(value || '').slice(0, 10)
+    getNicaraguaDateKey: value => typeof value === 'string'
+      ? value.slice(0, 10)
+      : new Date(value).toISOString().slice(0, 10)
   });
   vm.runInContext(`${source}\nthis.ValidaFlowApp = ValidaFlowApp;`, context);
   return context.ValidaFlowApp;
@@ -115,6 +117,51 @@ test('el filtro de país incluye auditorías históricas y se aplica también al
   assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['1', '3']);
   app.selectedReportCountry = '__missing__';
   assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['5']);
+});
+
+test('los pendientes de jornadas anteriores no cuentan en el histórico ni en las asignaciones', () => {
+  const ValidaFlowApp = loadAppClass();
+  const app = Object.create(ValidaFlowApp.prototype);
+  const oldPending = { id: 'old-pending', estudio: 'Moderno', fecha: '2026-09-19', validationStatus: 'pendiente', assignedValidatorId: 'v1' };
+  const oldInProgress = { id: 'old-progress', estudio: 'Moderno', fecha: '2026-09-19', validationStatus: 'en_progreso', assignedValidatorId: 'v1' };
+  const oldCompleted = { id: 'old-completed', estudio: 'Moderno', fecha: '2026-09-19', validationStatus: 'completada', assignedValidatorId: 'v1' };
+  const currentPending = { id: 'today-pending', estudio: 'Moderno', fecha: '2026-09-20', validationStatus: 'pendiente', assignedValidatorId: 'v1' };
+  Object.assign(app, {
+    currentView: 'visualizations', currentModule: 'blocking', currentProject: 'Moderno',
+    visualizationModuleFilter: 'blocking', auditHistoryByModule: { smart: [], blocking: [oldPending, oldInProgress, oldCompleted, currentPending] },
+    blockingAudits: [oldPending, oldInProgress, oldCompleted, currentPending],
+    audits: [oldPending, oldInProgress, oldCompleted, currentPending]
+  });
+  assert.equal(app.isExpiredPendingAudit(oldPending, '2026-09-20'), true);
+  assert.equal(app.isExpiredPendingAudit(oldInProgress, '2026-09-20'), true);
+  assert.equal(app.isExpiredPendingAudit(oldCompleted, '2026-09-20'), false);
+  assert.equal(app.isExpiredPendingAudit(currentPending, '2026-09-20'), false);
+  app.isExpiredPendingAudit = audit => ValidaFlowApp.prototype.isExpiredPendingAudit.call(app, audit, '2026-09-20');
+  assert.deepEqual(app.getReportAuditSource().map(audit => audit.id), ['old-completed', 'today-pending']);
+  assert.deepEqual(app.getAuditsForCurrentProject().map(audit => audit.id), ['old-completed', 'today-pending']);
+
+  const validatorSource = fs.readFileSync(path.join(root, 'js/validator-ui.js'), 'utf8')
+    .replace(/^import .*;\r?\n/gm, '')
+    .replace('export class ValidatorUI', 'class ValidatorUI');
+  const context = vm.createContext({ formatNicaraguaDateTime: value => value, getNicaraguaDateKey: value => value });
+  vm.runInContext(`${validatorSource}\nthis.ValidatorUI = ValidatorUI;`, context);
+  const validatorUI = Object.create(context.ValidatorUI.prototype);
+  Object.assign(validatorUI, { app, currentValidator: { id: 'v1' }, currentModule: 'blocking' });
+  assert.deepEqual(validatorUI.getMyAudits().map(audit => audit.id), ['old-completed', 'today-pending']);
+});
+
+test('la nueva jornada no vuelve a arrastrar pendientes y el SQL protege las completadas', () => {
+  const appSource = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
+  const backendSource = fs.readFileSync(path.join(root, 'js/supabase-backend.js'), 'utf8');
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const cleanupSql = fs.readFileSync(path.join(root, 'supabase/sql/prune-expired-pending-audits.sql'), 'utf8');
+  assert.match(appSource, /const carryoverAction = 'discard'/);
+  assert.match(backendSource, /carryoverAction = 'discard'/);
+  assert.doesNotMatch(html, /name="carryover-decision" value="carry"/);
+  assert.match(cleanupSql, /operation_date < operation_day/);
+  assert.match(cleanupSql, /a\.status <> 'completada'::public\.audit_status/);
+  assert.match(cleanupSql, /row_count = \(select count\(\*\)::integer from public\.audits/);
+  assert.match(cleanupSql, /if new\.carried_over_count > 0 then/);
 });
 
 test('el benchmark KO despliega países con métricas que suman el total del estudio', () => {

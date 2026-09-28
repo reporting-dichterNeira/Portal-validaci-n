@@ -8,8 +8,8 @@ import { ExcelParser } from './excel-parser.js?v=26.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=21.0';
-import { ValidatorUI } from './validator-ui.js?v=34.0';
-import { SupabaseBackend } from './supabase-backend.js?v=53.0';
+import { ValidatorUI } from './validator-ui.js?v=35.0';
+import { SupabaseBackend } from './supabase-backend.js?v=54.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -884,6 +884,12 @@ class ValidaFlowApp {
       }
     }
     return getNicaraguaDateKey(new Date());
+  }
+
+  isExpiredPendingAudit(audit, today = getNicaraguaDateKey(new Date())) {
+    if (!audit || audit.validationStatus === 'completada') return false;
+    const operationDate = this.getAuditOperationDate(audit);
+    return /^\d{4}-\d{2}-\d{2}$/.test(operationDate) && operationDate < today;
   }
 
   loadState() {
@@ -2984,6 +2990,9 @@ class ValidaFlowApp {
       ? (source || []).find(a => String(a.id) === String(validatorUI.currentAuditId))
       : null);
     if (!audit) return null;
+    if (this.isExpiredPendingAudit(audit)) {
+      throw new Error('Esta auditoría pendiente pertenece a una jornada anterior y ya no se puede validar. Actualiza la página.');
+    }
     const savedAudit = await this.backend.saveAuditProgress(audit, module);
     if (!savedAudit) return null;
 
@@ -3025,7 +3034,11 @@ class ValidaFlowApp {
       if (this.validatorUI.currentAuditId) {
         const source = this.validatorUI.currentModule === 'blocking' ? this.blockingAudits : this.smartAudits;
         const current = source.find(a => String(a.id) === String(this.validatorUI.currentAuditId));
-        if (current) this.validatorUI.renderAuditDetail(current);
+        if (current && !this.isExpiredPendingAudit(current)) this.validatorUI.renderAuditDetail(current);
+        else {
+          this.validatorUI.currentAuditId = null;
+          this.validatorUI.renderAuditDetail(null);
+        }
       }
     }
   }
@@ -3197,21 +3210,23 @@ class ValidaFlowApp {
   }
 
   getReportAuditSource(module = this.currentModule) {
+    const today = getNicaraguaDateKey(new Date());
+    const withoutExpiredPending = audits => (audits || []).filter(audit => !this.isExpiredPendingAudit(audit, today));
     const visualizationModule = this.getVisualizationModuleFilter();
     if (visualizationModule === 'all' && this.currentView === 'visualizations') {
-      return ['smart', 'blocking'].flatMap(item => {
+      return withoutExpiredPending(['smart', 'blocking'].flatMap(item => {
         const cached = this.auditHistoryByModule[item];
         return Array.isArray(cached)
           ? cached
           : (item === 'blocking' ? (this.blockingAudits || []) : (this.smartAudits || []));
-      });
+      }));
     }
     if (this.currentView === 'visualizations' && ['smart', 'blocking'].includes(visualizationModule)) {
       module = visualizationModule;
     }
     const cached = this.auditHistoryByModule[module];
-    if (Array.isArray(cached)) return cached;
-    return module === 'blocking' ? (this.blockingAudits || []) : (this.smartAudits || []);
+    if (Array.isArray(cached)) return withoutExpiredPending(cached);
+    return withoutExpiredPending(module === 'blocking' ? this.blockingAudits : this.smartAudits);
   }
 
   setHistoricalReportsLoading(isLoading, loadedCount = 0) {
@@ -4190,7 +4205,7 @@ class ValidaFlowApp {
       })[char]);
       this.pendingCarryoverPreview = pending;
       if (description) {
-        description.textContent = `Quedaron ${pending.pendingCount} auditoría${pending.pendingCount === 1 ? '' : 's'} pendiente${pending.pendingCount === 1 ? '' : 's'} de la jornada ${pending.previousOperationDate}. Elige qué hacer antes de cargar esta base.`;
+        description.textContent = `Quedaron ${pending.pendingCount} auditoría${pending.pendingCount === 1 ? '' : 's'} pendiente${pending.pendingCount === 1 ? '' : 's'} de la jornada ${pending.previousOperationDate}. No se trasladarán a la nueva jornada.`;
       }
       if (list) {
         list.innerHTML = pending.pendingSummary.map(item => `
@@ -4222,7 +4237,7 @@ class ValidaFlowApp {
       return;
     }
 
-    let carryoverAction = 'carry';
+    const carryoverAction = 'discard';
     let pendingCarryover = null;
     if (this.backend.configured && this.isSupervisor) {
       try {
@@ -4240,14 +4255,6 @@ class ValidaFlowApp {
         // The new carry-over migration is intentionally additive.  Until it
         // has been applied, preserve the existing, working upload process.
         console.warn('La función de pendientes todavía no está disponible; se usará la carga estándar.');
-      }
-
-      if (pendingCarryover) {
-        carryoverAction = document.querySelector('input[name="carryover-decision"]:checked')?.value || '';
-        if (!['carry', 'discard'].includes(carryoverAction)) {
-          this.showToast('Elige si deseas sumar o cerrar los pendientes de la jornada anterior antes de cargar la nueva base.', 'warning');
-          return;
-        }
       }
     }
 
@@ -4304,14 +4311,9 @@ class ValidaFlowApp {
         this.validatorHistoryLoaded = false;
         this.pendingUpload = null;
         await this.refreshFromBackend();
-        const carriedCount = Number(activatedBatch?.carried_over_count || 0);
         const finalCount = Number(activatedBatch?.row_count || result.audits.length);
         this.showToast(`¡Nueva jornada guardada con ${finalCount} auditorías para ${studyName} (${opDate})!`, 'success');
-        if (carryoverAction === 'discard' && pendingCarryover) {
-          this.showToast(`Se cerraron ${pendingCarryover.pendingCount} pendientes de la jornada ${pendingCarryover.previousOperationDate} sin asignarlos a esta nueva base.`, 'info');
-        } else {
-          this.showCarryoverSummary(activatedBatch);
-        }
+        if (pendingCarryover) this.showToast(`${pendingCarryover.pendingCount} pendientes anteriores no se trasladaron a la nueva jornada.`, 'info');
         this.pendingCarryoverPreview = null;
       } catch (error) {
         console.error('Error importando la jornada en Supabase:', error);
@@ -4321,6 +4323,7 @@ class ValidaFlowApp {
     }
 
     // Acumular automáticamente día por día al historial existente (con deduplicación por ID)
+    this.audits = (this.audits || []).filter(audit => !this.isExpiredPendingAudit(audit, opDate));
     const existingMap = new Map();
     this.audits.forEach((a, i) => {
       existingMap.set(String(a.id), i);
@@ -4630,11 +4633,13 @@ class ValidaFlowApp {
   }
 
   getAuditsForCurrentProject() {
+    const today = getNicaraguaDateKey(new Date());
+    const visibleAudits = (this.audits || []).filter(audit => !this.isExpiredPendingAudit(audit, today));
     if (!this.currentProject || this.currentProject === 'ALL') {
-      return this.audits;
+      return visibleAudits;
     }
     const cur = this.currentProject.toUpperCase();
-    return this.audits.filter(a => {
+    return visibleAudits.filter(a => {
       const studyOfAudit = this.getStudyForAudit(a);
       return studyOfAudit.toUpperCase() === cur;
     });

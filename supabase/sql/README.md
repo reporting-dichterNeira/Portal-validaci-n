@@ -1,5 +1,21 @@
 # Validadores compartidos entre estudios
 
+## Pendientes de jornadas anteriores
+
+`preview-expired-pending-audits.sql` muestra, sin modificar datos, cuántas
+auditorías no completadas se retirarían de cada base anterior al día operativo
+actual (zona horaria de Nicaragua). `prune-expired-pending-audits.sql` instala
+una limpieza automática al activar una nueva base y retira los pendientes
+anteriores ya existentes. Conserva todas las auditorías completadas y actualiza
+`upload_batches.row_count` para que el número asignado de cada jornada coincida
+con sus filas reales. Debe ejecutarse únicamente en el proyecto de reporting,
+después de revisar la consulta previa y disponer de una copia de seguridad.
+La verificación final del propio script debe devolver cero pendientes vencidos.
+
+El portal oculta de inmediato los pendientes vencidos en visualizaciones,
+descargas y listas de validador; la eliminación física en Supabase requiere
+aplicar el script con una sesión que tenga acceso al proyecto de reporting.
+
 `validator-study-memberships.sql` incorpora un registro de pertenencia por
 validador, estudio y país. Se aplica antes de publicar `app.js?v=103.0` y
 `supabase-backend.js?v=53.0`. Es transaccional y repetible; no elimina usuarios ni

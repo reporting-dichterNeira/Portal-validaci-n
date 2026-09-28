@@ -169,7 +169,8 @@ export class ValidatorUI {
   getMyAudits(moduleKey = this.currentModule) {
     if (!this.currentValidator) return [];
     const sourceAudits = moduleKey === 'blocking' ? (this.app.blockingAudits || []) : (this.app.smartAudits || []);
-    return sourceAudits.filter(a => a.assignedValidatorId === this.currentValidator.id);
+    const today = getNicaraguaDateKey(new Date());
+    return sourceAudits.filter(a => a.assignedValidatorId === this.currentValidator.id && !this.app.isExpiredPendingAudit(a, today));
   }
 
   switchModule(moduleKey) {
@@ -491,6 +492,13 @@ export class ValidatorUI {
       ? (this.app.blockingAudits || [])
       : (this.app.smartAudits || []);
     const audit = source.find(a => String(a.id) === String(id));
+
+    if (audit && this.app.isExpiredPendingAudit(audit)) {
+      this.currentAuditId = null;
+      this.renderAuditDetail(null);
+      this.app.showToast('La auditoría pendiente de una jornada anterior ya no está disponible.', 'info');
+      return false;
+    }
 
     if (audit && !audit.startedAt && audit.validationStatus !== 'completada') {
       audit.startedAt = new Date().toISOString();
