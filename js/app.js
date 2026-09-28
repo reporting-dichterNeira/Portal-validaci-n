@@ -80,6 +80,7 @@ class ValidaFlowApp {
     // Filtro multi-estudio activo en Métricas (ej: ['ALL'] o ['Tradicional', 'Stills'])
     this.selectedStudies = ['ALL'];
     this.selectedReportCountry = 'all';
+    this.expandedBenchmarkStudies = new Set();
 
     // Filtro activo en el feed de anomalías
     this.alertsFilter = 'all';
@@ -5371,6 +5372,20 @@ class ValidaFlowApp {
       this.renderDailyReportsView();
       this.showToast(`Filtrando métricas por: ${this.currentProject}`, 'info');
     });
+
+    document.getElementById('exec-benchmark-tbody')?.addEventListener('click', event => {
+      const button = event.target.closest('.benchmark-expand-toggle');
+      if (!button) return;
+      const study = button.dataset.study;
+      const expanded = button.getAttribute('aria-expanded') !== 'true';
+      button.setAttribute('aria-expanded', String(expanded));
+      button.setAttribute('aria-label', `${expanded ? 'Ocultar' : 'Mostrar'} detalle por país de ${button.querySelector('.benchmark-badge-flag')?.textContent || study}`);
+      if (expanded) this.expandedBenchmarkStudies.add(study);
+      else this.expandedBenchmarkStudies.delete(study);
+      document.getElementById('exec-benchmark-tbody')?.querySelectorAll('.benchmark-country-row').forEach(row => {
+        if (row.dataset.benchmarkParent === study) row.hidden = !expanded;
+      });
+    });
   }
 
   initReportCountryFilter() {
@@ -5675,15 +5690,25 @@ class ValidaFlowApp {
     ];
 
     officialStudies.forEach(s => {
-      channelStats[s.key] = { key: s.key, name: s.label, audits: 0, alerts: 0, aplica: 0, noAplica: 0 };
+      channelStats[s.key] = { key: s.key, name: s.label, audits: 0, alerts: 0, aplica: 0, noAplica: 0, countries: new Map() };
     });
 
     audits.forEach(audit => {
       const studyKey = this.getStudyForAudit(audit);
       if (!channelStats[studyKey]) {
-        channelStats[studyKey] = { key: studyKey, name: getStudyDisplayName(studyKey), audits: 0, alerts: 0, aplica: 0, noAplica: 0 };
+        channelStats[studyKey] = { key: studyKey, name: getStudyDisplayName(studyKey), audits: 0, alerts: 0, aplica: 0, noAplica: 0, countries: new Map() };
       }
       channelStats[studyKey].audits++;
+      let countryStats = null;
+      if (studyKey === 'Tradicional' || studyKey === 'Moderno') {
+        const country = this.getReportCountry(audit) || 'Sin país';
+        const countries = channelStats[studyKey].countries;
+        if (!countries.has(country)) {
+          countries.set(country, { name: country, audits: 0, alerts: 0, aplica: 0, noAplica: 0 });
+        }
+        countryStats = countries.get(country);
+        countryStats.audits++;
+      }
 
       if (audit.validationStatus === 'completada') {
         completedAuditsCount++;
@@ -5695,6 +5720,7 @@ class ValidaFlowApp {
         if (k.needsReview) {
           totalAlerts++;
           channelStats[studyKey].alerts++;
+          if (countryStats) countryStats.alerts++;
 
           const kName = k.kpiName || k.name;
           if (!kpiStats[kName]) {
@@ -5707,10 +5733,12 @@ class ValidaFlowApp {
             totalAplica++;
             kpiStats[kName].aplica++;
             channelStats[studyKey].aplica++;
+            if (countryStats) countryStats.aplica++;
           } else if (res && res.status === 'no_aplica') {
             totalNoAplica++;
             kpiStats[kName].noAplica++;
             channelStats[studyKey].noAplica++;
+            if (countryStats) countryStats.noAplica++;
             if (res.tipificacion) {
               reasonsMap[res.tipificacion] = (reasonsMap[res.tipificacion] || 0) + 1;
             }
@@ -5804,37 +5832,57 @@ class ValidaFlowApp {
     const benchmarkTbody = document.getElementById('exec-benchmark-tbody');
     if (benchmarkTbody) {
       const channelList = Object.values(channelStats);
+      const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+      const renderMetricCells = stats => {
+        const evaluated = stats.aplica + stats.noAplica;
+        const confirmation = evaluated > 0 ? Math.round((stats.aplica / evaluated) * 100) : 0;
+        const execution = stats.audits > 0
+          ? Math.max(10, Math.min(100, Math.round(100 - (stats.aplica / (stats.audits * 3 || 1)) * 50)))
+          : 100;
+        return `
+          <td><strong>${stats.audits}</strong></td>
+          <td><span class="badge badge-purple">${stats.alerts} alertas</span></td>
+          <td><strong class="text-success">${stats.aplica}</strong></td>
+          <td><strong class="text-magenta">${stats.noAplica}</strong></td>
+          <td>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <div class="progress-bar-bg" style="width:60px; height:6px;">
+                <div class="progress-bar-fill progress-emerald" style="width:${confirmation}%"></div>
+              </div>
+              <strong>${confirmation}%</strong>
+            </div>
+          </td>
+          <td><span class="badge ${execution >= 80 ? 'badge-success' : 'badge-warning'}">${execution}% en PDV</span></td>
+        `;
+      };
       if (channelList.length === 0) {
         benchmarkTbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Sin datos de estudios.</td></tr>';
       } else {
         benchmarkTbody.innerHTML = channelList.map(ch => {
-          const evalCh = ch.aplica + ch.noAplica;
-          const pctConfirm = evalCh > 0 ? Math.round((ch.aplica / evalCh) * 100) : 0;
-          const efectividadExecution = ch.audits > 0 
-            ? Math.max(10, Math.min(100, Math.round(100 - (ch.aplica / (ch.audits * 3 || 1)) * 50)))
-            : 100;
-
+          const isKo = ch.key === 'Tradicional' || ch.key === 'Moderno';
+          const countries = isKo
+            ? [...ch.countries.values()].sort((a, b) => a.name === 'Sin país' ? 1 : b.name === 'Sin país' ? -1 : a.name.localeCompare(b.name, 'es'))
+            : [];
+          const expanded = this.expandedBenchmarkStudies?.has(ch.key) || false;
+          const countryRows = countries.length
+            ? countries.map((country, index) => `
+                <tr id="exec-benchmark-country-${ch.key}-${index}" class="benchmark-country-row" data-benchmark-parent="${ch.key}" data-benchmark-country="${escapeHtml(country.name)}" ${expanded ? '' : 'hidden'}>
+                  <td><span class="benchmark-country-label">↳ ${escapeHtml(country.name)}</span></td>
+                  ${renderMetricCells(country)}
+                </tr>
+              `).join('')
+            : `<tr id="exec-benchmark-country-${ch.key}-empty" class="benchmark-country-row" data-benchmark-parent="${ch.key}" ${expanded ? '' : 'hidden'}><td colspan="7" class="text-muted">No hay auditorías de ${escapeHtml(ch.name)} para los filtros seleccionados.</td></tr>`;
+          const controlledRows = countries.length
+            ? countries.map((_, index) => `exec-benchmark-country-${ch.key}-${index}`).join(' ')
+            : `exec-benchmark-country-${ch.key}-empty`;
           return `
-            <tr>
-              <td><span class="benchmark-badge-flag">${ch.name}</span></td>
-              <td><strong>${ch.audits}</strong></td>
-              <td><span class="badge badge-purple">${ch.alerts} alertas</span></td>
-              <td><strong class="text-success">${ch.aplica}</strong></td>
-              <td><strong class="text-magenta">${ch.noAplica}</strong></td>
-              <td>
-                <div style="display:flex; align-items:center; gap:0.5rem;">
-                  <div class="progress-bar-bg" style="width:60px; height:6px;">
-                    <div class="progress-bar-fill progress-emerald" style="width: ${pctConfirm}%"></div>
-                  </div>
-                  <strong>${pctConfirm}%</strong>
-                </div>
-              </td>
-              <td>
-                <span class="badge ${efectividadExecution >= 80 ? 'badge-success' : 'badge-warning'}">
-                  ${efectividadExecution}% en PDV
-                </span>
-              </td>
+            <tr class="${isKo ? 'benchmark-study-parent' : ''}">
+              <td>${isKo
+                ? `<button type="button" class="benchmark-expand-toggle" data-study="${ch.key}" aria-expanded="${expanded}" aria-controls="${controlledRows}" aria-label="${expanded ? 'Ocultar' : 'Mostrar'} detalle por país de ${escapeHtml(ch.name)}"><span class="benchmark-expand-chevron" aria-hidden="true">▶</span><span class="benchmark-badge-flag">${escapeHtml(ch.name)}</span><small>${countries.length} ${countries.length === 1 ? 'país' : 'países'}</small></button>`
+                : `<span class="benchmark-badge-flag">${escapeHtml(ch.name)}</span>`}</td>
+              ${renderMetricCells(ch)}
             </tr>
+            ${isKo ? countryRows : ''}
           `;
         }).join('');
       }

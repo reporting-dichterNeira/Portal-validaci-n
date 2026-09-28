@@ -26,12 +26,11 @@ function loadExcelParser() {
   return { ExcelParser: context.ExcelParser, downloads, blobs };
 }
 
-function loadAppClass() {
+function loadAppClass(document = { getElementById: () => null }) {
   const rawSource = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
   const source = rawSource
     .slice(0, rawSource.indexOf('// Inicializar la aplicación inmediatamente'))
     .replace(/^import .*;\r?\n/gm, '');
-  const document = { getElementById: () => null };
   const context = vm.createContext({
     window: { setTimeout }, document, console, setTimeout, clearTimeout,
     localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
@@ -116,6 +115,64 @@ test('el filtro de país incluye auditorías históricas y se aplica también al
   assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['1', '3']);
   app.selectedReportCountry = '__missing__';
   assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['5']);
+});
+
+test('el benchmark KO despliega países con métricas que suman el total del estudio', () => {
+  const tbody = { innerHTML: '', addEventListener(name, listener) { this.onClick = listener; }, querySelectorAll: () => [] };
+  const document = { getElementById: id => id === 'exec-benchmark-tbody' ? tbody : null };
+  const ValidaFlowApp = loadAppClass(document);
+  const app = Object.create(ValidaFlowApp.prototype);
+  app.expandedBenchmarkStudies = new Set();
+  app.renderUniverseDecisionBreakdown = () => {};
+  const alert = name => ({ name, kpiName: name, needsReview: true });
+  const audits = [
+    { estudio: 'Tradicional', pais: 'Perú', kpis: [alert('A')], validationResults: { A: { status: 'aplica' } } },
+    { estudio: 'Tradicional', pais: 'Colombia', kpis: [alert('B')], validationResults: { B: { status: 'no_aplica' } } },
+    { estudio: 'Tradicional', pais: 'Perú', kpis: [], validationResults: {} },
+    { estudio: 'Tradicional', kpis: [], validationResults: {} },
+    { estudio: 'Moderno', pais: 'Perú', kpis: [alert('C')], validationResults: { C: { status: 'aplica' } } }
+  ];
+  app.renderExecutiveMetrics(audits);
+  assert.equal((tbody.innerHTML.match(/class="benchmark-expand-toggle"/g) || []).length, 2);
+  const parentRows = tbody.innerHTML.match(/<tr class="benchmark-study-parent">[\s\S]*?<\/tr>/g) || [];
+  assert.match(parentRows[0], /data-study="Tradicional"[\s\S]*?<strong>4<\/strong>[\s\S]*?2 alertas[\s\S]*?text-success">1[\s\S]*?text-magenta">1/);
+  assert.match(parentRows[1], /data-study="Moderno"[\s\S]*?<strong>1<\/strong>[\s\S]*?1 alertas/);
+  const row = (study, country) => tbody.innerHTML.match(new RegExp(`<tr[^>]+data-benchmark-parent="${study}"[^>]+data-benchmark-country="${country}"[^>]*>([\\s\\S]*?)<\\/tr>`))?.[1] || '';
+  assert.match(row('Tradicional', 'Perú'), /↳ Perú[\s\S]*?<strong>2<\/strong>[\s\S]*?1 alertas[\s\S]*?text-success">1/);
+  assert.match(row('Tradicional', 'Colombia'), /↳ Colombia[\s\S]*?<strong>1<\/strong>[\s\S]*?1 alertas[\s\S]*?text-magenta">1/);
+  assert.match(row('Tradicional', 'Sin país'), /↳ Sin país[\s\S]*?<strong>1<\/strong>[\s\S]*?0 alertas/);
+  assert.match(row('Moderno', 'Perú'), /↳ Perú[\s\S]*?<strong>1<\/strong>[\s\S]*?1 alertas/);
+  assert.match(tbody.innerHTML, /data-study="Tradicional" aria-expanded="false"/);
+  assert.match(tbody.innerHTML, /data-benchmark-parent="Tradicional"[^>]*hidden/);
+});
+
+test('el control del benchmark abre y cierra únicamente las filas del estudio elegido', () => {
+  const rows = [
+    { dataset: { benchmarkParent: 'Tradicional' }, hidden: true },
+    { dataset: { benchmarkParent: 'Tradicional' }, hidden: true },
+    { dataset: { benchmarkParent: 'Moderno' }, hidden: true }
+  ];
+  const tbody = { addEventListener(name, listener) { this.onClick = listener; }, querySelectorAll: () => rows };
+  const document = { getElementById: id => id === 'exec-benchmark-tbody' ? tbody : null };
+  const ValidaFlowApp = loadAppClass(document);
+  const app = Object.create(ValidaFlowApp.prototype);
+  app.expandedBenchmarkStudies = new Set();
+  app.initStudyFilter();
+  const attributes = { 'aria-expanded': 'false' };
+  const button = {
+    dataset: { study: 'Tradicional' },
+    getAttribute: name => attributes[name],
+    setAttribute: (name, value) => { attributes[name] = value; },
+    querySelector: () => ({ textContent: 'KO Tradicional CAM' })
+  };
+  const event = { target: { closest: () => button } };
+  tbody.onClick(event);
+  assert.deepEqual(rows.map(row => row.hidden), [false, false, true]);
+  assert.equal(attributes['aria-expanded'], 'true');
+  assert.ok(app.expandedBenchmarkStudies.has('Tradicional'));
+  tbody.onClick(event);
+  assert.deepEqual(rows.map(row => row.hidden), [true, true, true]);
+  assert.equal(attributes['aria-expanded'], 'false');
 });
 
 test('cada botón de informes tiene un único listener y ya no se invoca desde HTML', () => {

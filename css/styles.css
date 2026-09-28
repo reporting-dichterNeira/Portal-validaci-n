@@ -5180,6 +5180,31 @@ button.supervisor-module-option:hover {
   gap: 0.4rem;
 }
 
+.benchmark-expand-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.benchmark-expand-toggle:hover .benchmark-badge-flag { text-decoration: underline; }
+.benchmark-expand-toggle:focus-visible { outline: 2px solid var(--dn-blue); outline-offset: 4px; border-radius: 3px; }
+.benchmark-expand-toggle small { color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+.benchmark-expand-chevron { color: var(--dn-blue); font-size: 0.7rem; transition: transform 0.2s ease; }
+.benchmark-expand-toggle[aria-expanded="true"] .benchmark-expand-chevron { transform: rotate(90deg); }
+.benchmark-table tbody tr.benchmark-country-row { background: var(--bg-surface-elevated); }
+.benchmark-table tbody tr.benchmark-country-row[hidden] { display: none; }
+.benchmark-country-row td:first-child { padding-left: 2.7rem; }
+.benchmark-country-label { color: var(--dn-blue); font-weight: 600; }
+
 /* ======================================================== */
 /* 15. COMMERCIAL DOSSIER MODAL & PDF PREVIEW               */
 /* ======================================================== */
