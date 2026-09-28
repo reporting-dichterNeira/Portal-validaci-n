@@ -40,6 +40,7 @@ function loadAppClass(document = { getElementById: () => null }) {
     TIPIFICACIONES_POR_DECISION: {}, seedSampleValidations: () => {},
     ExcelParser: {
       cleanDateOnly: value => String(value || '').slice(0, 10),
+      normalizeHeader: value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
       normalizeCountry: value => {
         const raw = String(value || '').trim();
         if (!raw || /^\d+$/.test(raw)) return '';
@@ -84,6 +85,17 @@ test('las cargas KO toman el nombre de país y nunca el ID_PAIS numérico', () =
   assert.equal(transformed.audits[0].pais, 'Perú');
   assert.equal(ExcelParser.normalizeCountry('GLB'), '');
   assert.equal(ExcelParser.normalizeCountry('604'), '');
+  assert.equal(ExcelParser.normalizeCountry('604.0'), '');
+  const blockingWithoutCountryHeader = ExcelParser.transformRowsToObjects([
+    ['OlaID', 'FECHA_AUDITO', 'ID_PAIS', '', 'ID_PDV', 'ID_AUDITO', 'ESTUDIO', 'ID_SUBKPI'],
+    ['2014', '2026-10-01', '1097', 'Costa Rica', '90001', '7002', 'FEMSA', 'NOTA PDV']
+  ]);
+  assert.equal(blockingWithoutCountryHeader.audits[0].pais, 'Costa Rica');
+  const smartWithoutCountryHeader = ExcelParser.transformRowsToObjects([
+    ['ID_de_audito', 'ID_de_PDV', 'Estado', 'Fecha_del_audito', 'canal', '', 'nombre_usuario', 'Alerta precio'],
+    ['7003', '90002', 'Alerta', '2026-10-01', 'MODERNO', 'El Salvador', 'auditor', 'Revisar']
+  ]);
+  assert.equal(smartWithoutCountryHeader.audits[0].pais, 'El Salvador');
 });
 
 test('el rango de fecha filtra el histórico operativo y conserva los meses que se cruzan con el rango', () => {
@@ -100,23 +112,70 @@ test('el rango de fecha filtra el histórico operativo y conserva los meses que 
   assert.equal(app.isVisualizationMonthInRange('2026-08-01'), false);
 });
 
-test('el filtro de país incluye auditorías históricas y se aplica también al consolidado', () => {
+test('el filtro de país solo incluye jornadas desde octubre y se aplica al consolidado', () => {
   const ValidaFlowApp = loadAppClass();
   const app = Object.create(ValidaFlowApp.prototype);
   Object.assign(app, {
     currentView: 'visualizations', visualizationDateFrom: '', visualizationDateTo: '',
     selectedStudies: ['Tradicional'], selectedReportCountry: 'Perú',
     getReportAuditSource: () => [
-      { id: '1', estudio: 'Tradicional', pais: 'PERU', fecha: '2026-08-01' },
-      { id: '2', estudio: 'Tradicional', pais: 'Colombia', fecha: '2026-08-01' },
-      { id: '3', estudio: 'Tradicional', pais: '604', country: 'Perú', fecha: '2026-07-01' },
-      { id: '4', estudio: 'Moderno', pais: 'Perú', fecha: '2026-08-01' },
-      { id: '5', estudio: 'Tradicional', fecha: '2026-08-01' }
+      { id: '1', estudio: 'Tradicional', pais: 'PERU', fecha: '2026-10-01' },
+      { id: '2', estudio: 'Tradicional', pais: 'Colombia', fecha: '2026-10-01' },
+      { id: '3', estudio: 'Tradicional', pais: '604', country: 'Perú', fecha: '2026-09-30' },
+      { id: '4', estudio: 'Moderno', pais: 'Perú', fecha: '2026-10-01' },
+      { id: '5', estudio: 'Tradicional', fecha: '2026-10-01' },
+      { id: '6', estudio: 'Tradicional', pais: 'Perú', fecha: '2026-09-30', _batchOperationDate: '2026-10-02' }
     ], getAuditOperationDate: audit => audit.fecha
   });
-  assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['1', '3']);
+  assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['1', '6']);
   app.selectedReportCountry = '__missing__';
   assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['5']);
+  assert.equal(app.getReportCountry({ pais: 'Perú', fecha: '2026-09-30' }), '');
+  assert.equal(app.getReportCountry({ pais: 'Perú', fecha: '2026-09-30', _batchOperationDate: '2026-10-01' }), 'Perú');
+});
+
+test('la carga KO de octubre exige y guarda el país del archivo sin sustituirlo por el alcance', async () => {
+  const modal = { hiddenByApp: false, classList: { add() { modal.hiddenByApp = true; } } };
+  const document = { getElementById: id => ({
+    'study-operation-date': { value: '2026-10-01' },
+    'modal-select-study': modal,
+    'context-project-name': { textContent: '' }
+  })[id] || null };
+  const ValidaFlowApp = loadAppClass(document);
+  const app = Object.create(ValidaFlowApp.prototype);
+  let persisted;
+  const messages = [];
+  Object.assign(app, {
+    currentScope: { study: { id: 'study-1', name: 'Tradicional' }, country: { id: 'scope-1', code: 'GLB', name: 'Alcance interno' } },
+    currentProject: 'Tradicional', currentModule: 'blocking', isSupervisor: true,
+    backend: {
+      configured: true,
+      getPendingCarryoverSummary: async () => null,
+      importDailyBatch: async args => { persisted = args; return { row_count: args.audits.length }; }
+    },
+    pendingUpload: { fileName: 'bloqueantes.xlsx', result: { audits: [{ id: '1', pais: '', kpis: [] }], headers: [], kpiColumns: [] } },
+    getValidatorsForCurrentProject: () => [], validators: [], auditHistoryByModule: { smart: [], blocking: [] },
+    refreshFromBackend: async () => {}, showToast: (message, type) => messages.push({ message, type })
+  });
+  await app.confirmStudyUpload();
+  assert.equal(persisted, undefined);
+  assert.equal(modal.hiddenByApp, false);
+  assert.match(messages[0].message, /no traen un país válido/);
+
+  app.pendingUpload.result.audits[0].pais = 'Costa Rica';
+  await app.confirmStudyUpload();
+  assert.equal(persisted.audits[0].pais, 'Costa Rica');
+  assert.equal(persisted.audits[0].fecha, '2026-10-01');
+  assert.equal(modal.hiddenByApp, true);
+
+  persisted = undefined;
+  modal.hiddenByApp = false;
+  app.currentScope.country = { id: 'scope-2', code: 'PE', name: 'Perú' };
+  app.pendingUpload = { fileName: 'bloqueantes.xlsx', result: { audits: [{ id: '2', pais: 'Costa Rica', kpis: [] }], headers: [], kpiColumns: [] } };
+  await app.confirmStudyUpload();
+  assert.equal(persisted, undefined);
+  assert.equal(modal.hiddenByApp, false);
+  assert.match(messages.at(-1).message, /país distinto del alcance Perú/);
 });
 
 test('los pendientes de jornadas anteriores no cuentan en el histórico ni en las asignaciones', () => {
@@ -173,24 +232,59 @@ test('el benchmark KO despliega países con métricas que suman el total del est
   app.renderUniverseDecisionBreakdown = () => {};
   const alert = name => ({ name, kpiName: name, needsReview: true });
   const audits = [
-    { estudio: 'Tradicional', pais: 'Perú', kpis: [alert('A')], validationResults: { A: { status: 'aplica' } } },
-    { estudio: 'Tradicional', pais: 'Colombia', kpis: [alert('B')], validationResults: { B: { status: 'no_aplica' } } },
-    { estudio: 'Tradicional', pais: 'Perú', kpis: [], validationResults: {} },
-    { estudio: 'Tradicional', kpis: [], validationResults: {} },
-    { estudio: 'Moderno', pais: 'Perú', kpis: [alert('C')], validationResults: { C: { status: 'aplica' } } }
+    { estudio: 'Tradicional', pais: 'Perú', fecha: '2026-10-01', kpis: [alert('A')], validationResults: { A: { status: 'aplica' } } },
+    { estudio: 'Tradicional', pais: 'Colombia', fecha: '2026-10-01', kpis: [alert('B')], validationResults: { B: { status: 'no_aplica' } } },
+    { estudio: 'Tradicional', pais: 'Perú', fecha: '2026-10-01', kpis: [], validationResults: {} },
+    { estudio: 'Tradicional', fecha: '2026-10-01', kpis: [], validationResults: {} },
+    { estudio: 'Moderno', pais: 'Perú', fecha: '2026-10-01', kpis: [alert('C')], validationResults: { C: { status: 'aplica' } } },
+    { estudio: 'Tradicional', pais: 'Costa Rica', fecha: '2026-09-30', kpis: [], validationResults: {} }
   ];
   app.renderExecutiveMetrics(audits);
   assert.equal((tbody.innerHTML.match(/class="benchmark-expand-toggle"/g) || []).length, 2);
   const parentRows = tbody.innerHTML.match(/<tr class="benchmark-study-parent">[\s\S]*?<\/tr>/g) || [];
-  assert.match(parentRows[0], /data-study="Tradicional"[\s\S]*?<strong>4<\/strong>[\s\S]*?2 alertas[\s\S]*?text-success">1[\s\S]*?text-magenta">1/);
+  assert.match(tbody.innerHTML, /Chile[\s\S]*?Sin datos/);
+  assert.match(parentRows[0], /data-study="Tradicional"[\s\S]*?<strong>5<\/strong>[\s\S]*?2 alertas[\s\S]*?text-success">1[\s\S]*?text-magenta">1/);
+  assert.match(parentRows[0], /desde oct\. 2026/);
   assert.match(parentRows[1], /data-study="Moderno"[\s\S]*?<strong>1<\/strong>[\s\S]*?1 alertas/);
   const row = (study, country) => tbody.innerHTML.match(new RegExp(`<tr[^>]+data-benchmark-parent="${study}"[^>]+data-benchmark-country="${country}"[^>]*>([\\s\\S]*?)<\\/tr>`))?.[1] || '';
   assert.match(row('Tradicional', 'Perú'), /↳ Perú[\s\S]*?<strong>2<\/strong>[\s\S]*?1 alertas[\s\S]*?text-success">1/);
   assert.match(row('Tradicional', 'Colombia'), /↳ Colombia[\s\S]*?<strong>1<\/strong>[\s\S]*?1 alertas[\s\S]*?text-magenta">1/);
   assert.match(row('Tradicional', 'Sin país'), /↳ Sin país[\s\S]*?<strong>1<\/strong>[\s\S]*?0 alertas/);
   assert.match(row('Moderno', 'Perú'), /↳ Perú[\s\S]*?<strong>1<\/strong>[\s\S]*?1 alertas/);
+  assert.doesNotMatch(tbody.innerHTML, /↳ Costa Rica/);
   assert.match(tbody.innerHTML, /data-study="Tradicional" aria-expanded="false"/);
   assert.match(tbody.innerHTML, /data-benchmark-parent="Tradicional"[^>]*hidden/);
+});
+
+test('un benchmark solo histórico no muestra el desglose por país', () => {
+  const tbody = { innerHTML: '' };
+  const ValidaFlowApp = loadAppClass({ getElementById: id => id === 'exec-benchmark-tbody' ? tbody : null });
+  const app = Object.create(ValidaFlowApp.prototype);
+  app.renderUniverseDecisionBreakdown = () => {};
+  app.renderExecutiveMetrics([{ estudio: 'Tradicional', pais: 'Costa Rica', fecha: '2026-09-30', kpis: [] }]);
+  assert.match(tbody.innerHTML, /KO Tradicional CAM|Tradicional/);
+  assert.doesNotMatch(tbody.innerHTML, /benchmark-expand-toggle|benchmark-country-row|Costa Rica/);
+});
+
+test('el filtro de país se oculta para septiembre y aparece al incluir octubre', () => {
+  const row = { hidden: false };
+  const select = { replaceChildren(...options) { this.options = options; }, value: 'all' };
+  const context = { textContent: '' };
+  const document = {
+    getElementById: id => ({ 'report-country-filter-row': row, 'report-country-filter': select, 'report-country-context': context })[id] || null,
+    createElement: () => ({ value: '', textContent: '' })
+  };
+  const ValidaFlowApp = loadAppClass(document);
+  const app = Object.create(ValidaFlowApp.prototype);
+  app.selectedReportCountry = 'all';
+  app.getStudyAndDateFilteredAuditsForReports = () => [{ pais: 'Costa Rica', fecha: '2026-09-30' }];
+  app.populateReportCountryFilter();
+  assert.equal(row.hidden, true);
+  assert.equal(select.options.length, 1);
+  app.getStudyAndDateFilteredAuditsForReports = () => [{ pais: 'Costa Rica', fecha: '2026-10-01' }];
+  app.populateReportCountryFilter();
+  assert.equal(row.hidden, false);
+  assert.equal(select.options[1].value, 'Costa Rica');
 });
 
 test('el control del benchmark abre y cierra únicamente las filas del estudio elegido', () => {

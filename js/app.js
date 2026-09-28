@@ -4,7 +4,7 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=26.0';
+import { ExcelParser } from './excel-parser.js?v=27.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=21.0';
@@ -4044,7 +4044,7 @@ class ValidaFlowApp {
               <div class="summary-fields">
                 <div class="field-item">
                   <span class="field-label">País / Región</span>
-                  <span class="field-value">${audit.pais || 'N/A'}</span>
+                  <span class="field-value">${this.getReportCountry(audit) || 'No disponible para esta jornada'}</span>
                 </div>
                 <div class="field-item">
                   <span class="field-label">Ciudad</span>
@@ -4060,7 +4060,7 @@ class ValidaFlowApp {
                 </div>
                 <div class="field-item">
                   <span class="field-label">Auditor de Campo</span>
-                  <span class="field-value">${audit.usuario || 'N/A'}</span>
+                  <span class="field-value">${!this.isCountryReportPeriod(audit) && /^Auditor \([^)]*\)$/.test(audit.usuario || '') ? 'Auditor sin identificar' : (audit.usuario || 'N/A')}</span>
                 </div>
                 <div class="field-item">
                   <span class="field-label">Estado Inicial</span>
@@ -4223,7 +4223,7 @@ class ValidaFlowApp {
 
   async confirmStudyUpload() {
     const studyName = this.currentScope?.study?.name || this.currentProject || 'Chile';
-    const opDate = document.getElementById('study-operation-date')?.value || new Date().toISOString().split('T')[0];
+    const opDate = document.getElementById('study-operation-date')?.value || getNicaraguaDateKey(new Date());
     const modal = document.getElementById('modal-select-study');
 
     if (!this.pendingUpload || !this.pendingUpload.result) {
@@ -4258,18 +4258,29 @@ class ValidaFlowApp {
       }
     }
 
-    modal?.classList.add('hidden');
-
     const { result } = this.pendingUpload;
 
     const isKoCamStudy = ['Tradicional', 'Moderno'].includes(studyName);
-    const missingCountryRows = isKoCamStudy
+    const countryRequired = isKoCamStudy && opDate >= '2026-10-01';
+    const missingCountryRows = countryRequired
       ? result.audits.filter(audit => !ExcelParser.normalizeCountry(audit.pais || audit.country || audit.meta?.PAIS || audit.meta?.pais))
       : [];
     if (missingCountryRows.length) {
-      this.showToast(`No se guardó la base: ${missingCountryRows.length} auditorías de ${getStudyDisplayName(studyName)} no traen un país válido. Incluye la columna PAIS o COUNTRY con el nombre del país.`, 'error');
+      this.showToast(`No se guardó la base: ${missingCountryRows.length} auditorías de ${getStudyDisplayName(studyName)} no traen un país válido. Revisa PAIS en D (Bloqueantes) o pais en F (Smart); ID_PAIS no sirve.`, 'error');
       return;
     }
+    const scopeCountry = this.currentScope?.country?.code !== 'GLB'
+      ? ExcelParser.normalizeCountry(this.currentScope?.country?.name)
+      : '';
+    const mismatchedCountryRows = countryRequired && scopeCountry
+      ? result.audits.filter(audit => ExcelParser.normalizeHeader(ExcelParser.normalizeCountry(audit.pais || audit.country || audit.meta?.PAIS || audit.meta?.pais)) !== ExcelParser.normalizeHeader(scopeCountry))
+      : [];
+    if (mismatchedCountryRows.length) {
+      this.showToast(`No se guardó la base: ${mismatchedCountryRows.length} auditorías tienen un país distinto del alcance ${scopeCountry}. Selecciona el alcance correcto o corrige el archivo.`, 'error');
+      return;
+    }
+
+    modal?.classList.add('hidden');
 
     // Etiquetar todas las auditorías del archivo con el estudio seleccionado y la fecha de jornada
     result.audits.forEach(audit => {
@@ -4279,7 +4290,10 @@ class ValidaFlowApp {
       audit._countryId = this.currentScope?.country?.id || audit._countryId || null;
       if (!audit.modelo || audit.modelo === 'Tradicional' || audit.modelo === 'TRADICIONAL') audit.modelo = studyName;
       if (!audit.canal) audit.canal = studyName;
-      if (this.currentScope?.country?.code !== 'GLB' && this.currentScope?.country?.name) {
+      if (isKoCamStudy) {
+        // En KO el nombre real viene del export (D en Bloqueantes, F en Smart).
+        audit.pais = ExcelParser.normalizeCountry(audit.pais || audit.country || audit.meta?.PAIS || audit.meta?.pais);
+      } else if (this.currentScope?.country?.code !== 'GLB' && this.currentScope?.country?.name) {
         audit.pais = this.currentScope.country.name;
       }
       else if (studyName === 'Chile') audit.pais = 'Chile';
@@ -5049,7 +5063,7 @@ class ValidaFlowApp {
           <td>${i + 1}</td>
           <td><strong>#${a.id}</strong></td>
           <td>${a.idPDV || '-'}</td>
-          <td>${a.pais || '-'}</td>
+          <td>${this.getReportCountry(a) || '—'}</td>
           <td>${a.ciudad || '-'}</td>
           <td>${a.modelo ? `${a.canal || ''} (${a.modelo})` : a.canal || '-'}</td>
           <td><strong>${this.getAuditOperationDate(a)}</strong></td>
@@ -5402,6 +5416,9 @@ class ValidaFlowApp {
   }
 
   getReportCountry(audit) {
+    // Los países históricos anteriores a octubre no son comparables: conservar
+    // el dato original en Supabase, pero no mostrarlo ni filtrarlo en el panel.
+    if (!this.isCountryReportPeriod(audit)) return '';
     for (const value of [audit.pais, audit.country, audit.meta?.PAIS, audit.meta?.pais]) {
       const country = ExcelParser.normalizeCountry(value);
       if (country) return country;
@@ -5409,16 +5426,29 @@ class ValidaFlowApp {
     return '';
   }
 
+  isCountryReportPeriod(audit) {
+    const operationDate = audit?._batchOperationDate || audit?.fecha || '';
+    const dateKey = ExcelParser.cleanDateOnly(operationDate);
+    return /^\d{4}-\d{2}-\d{2}$/.test(dateKey) && dateKey >= '2026-10-01';
+  }
+
   populateReportCountryFilter() {
     const select = document.getElementById('report-country-filter');
     const context = document.getElementById('report-country-context');
+    const row = document.getElementById('report-country-filter-row');
     if (!select) return;
 
     const counts = new Map();
+    let historicalCount = 0;
     for (const audit of this.getStudyAndDateFilteredAuditsForReports()) {
+      if (!this.isCountryReportPeriod(audit)) {
+        historicalCount++;
+        continue;
+      }
       const country = this.getReportCountry(audit);
       counts.set(country, (counts.get(country) || 0) + 1);
     }
+    if (row) row.hidden = counts.size === 0;
     const selectedCountry = this.selectedReportCountry === '__missing__' ? '' : this.selectedReportCountry;
     if (this.selectedReportCountry !== 'all' && !counts.has(selectedCountry)) {
       this.selectedReportCountry = 'all';
@@ -5440,8 +5470,8 @@ class ValidaFlowApp {
     select.value = this.selectedReportCountry;
     if (context) {
       context.textContent = counts.has('')
-        ? `${counts.get('').toLocaleString('es-CO')} registros históricos sin país identificado.`
-        : 'Se usa el país guardado en cada auditoría histórica.';
+        ? `${counts.get('').toLocaleString('es-CO')} jornadas desde octubre sin país identificado.${historicalCount ? ` ${historicalCount.toLocaleString('es-CO')} registros previos a octubre no tienen desglose por país.` : ''}`
+        : `País de la base cargada desde octubre de 2026.${historicalCount ? ` ${historicalCount.toLocaleString('es-CO')} registros anteriores se incluyen solo en el total del estudio.` : ''}`;
     }
   }
 
@@ -5540,7 +5570,7 @@ class ValidaFlowApp {
     const audits = this.getStudyAndDateFilteredAuditsForReports();
     if (this.selectedReportCountry === 'all' || !this.selectedReportCountry) return audits;
     const selectedCountry = this.selectedReportCountry === '__missing__' ? '' : this.selectedReportCountry;
-    return audits.filter(audit => this.getReportCountry(audit) === selectedCountry);
+    return audits.filter(audit => this.isCountryReportPeriod(audit) && this.getReportCountry(audit) === selectedCountry);
   }
 
   // ==========================================
@@ -5705,7 +5735,7 @@ class ValidaFlowApp {
       }
       channelStats[studyKey].audits++;
       let countryStats = null;
-      if (studyKey === 'Tradicional' || studyKey === 'Moderno') {
+      if ((studyKey === 'Tradicional' || studyKey === 'Moderno') && this.isCountryReportPeriod(audit)) {
         const country = this.getReportCountry(audit) || 'Sin país';
         const countries = channelStats[studyKey].countries;
         if (!countries.has(country)) {
@@ -5843,7 +5873,7 @@ class ValidaFlowApp {
         const confirmation = evaluated > 0 ? Math.round((stats.aplica / evaluated) * 100) : 0;
         const execution = stats.audits > 0
           ? Math.max(10, Math.min(100, Math.round(100 - (stats.aplica / (stats.audits * 3 || 1)) * 50)))
-          : 100;
+          : null;
         return `
           <td><strong>${stats.audits}</strong></td>
           <td><span class="badge badge-purple">${stats.alerts} alertas</span></td>
@@ -5857,7 +5887,7 @@ class ValidaFlowApp {
               <strong>${confirmation}%</strong>
             </div>
           </td>
-          <td><span class="badge ${execution >= 80 ? 'badge-success' : 'badge-warning'}">${execution}% en PDV</span></td>
+          <td><span class="badge ${execution === null ? 'badge-warning' : execution >= 80 ? 'badge-success' : 'badge-warning'}">${execution === null ? 'Sin datos' : `${execution}% en PDV`}</span></td>
         `;
       };
       if (channelList.length === 0) {
@@ -5876,14 +5906,17 @@ class ValidaFlowApp {
                   ${renderMetricCells(country)}
                 </tr>
               `).join('')
-            : `<tr id="exec-benchmark-country-${ch.key}-empty" class="benchmark-country-row" data-benchmark-parent="${ch.key}" ${expanded ? '' : 'hidden'}><td colspan="7" class="text-muted">No hay auditorías de ${escapeHtml(ch.name)} para los filtros seleccionados.</td></tr>`;
+            : '';
           const controlledRows = countries.length
             ? countries.map((_, index) => `exec-benchmark-country-${ch.key}-${index}`).join(' ')
-            : `exec-benchmark-country-${ch.key}-empty`;
+            : '';
+          const canExpand = isKo && countries.length > 0;
+          const countryCoverage = countries.reduce((total, country) => total + country.audits, 0);
+          const historicalNote = countryCoverage < ch.audits ? ' · desde oct. 2026' : '';
           return `
-            <tr class="${isKo ? 'benchmark-study-parent' : ''}">
-              <td>${isKo
-                ? `<button type="button" class="benchmark-expand-toggle" data-study="${ch.key}" aria-expanded="${expanded}" aria-controls="${controlledRows}" aria-label="${expanded ? 'Ocultar' : 'Mostrar'} detalle por país de ${escapeHtml(ch.name)}"><span class="benchmark-expand-chevron" aria-hidden="true">▶</span><span class="benchmark-badge-flag">${escapeHtml(ch.name)}</span><small>${countries.length} ${countries.length === 1 ? 'país' : 'países'}</small></button>`
+            <tr class="${canExpand ? 'benchmark-study-parent' : ''}">
+              <td>${canExpand
+                ? `<button type="button" class="benchmark-expand-toggle" data-study="${ch.key}" aria-expanded="${expanded}" aria-controls="${controlledRows}" aria-label="${expanded ? 'Ocultar' : 'Mostrar'} detalle por país de ${escapeHtml(ch.name)}"><span class="benchmark-expand-chevron" aria-hidden="true">▶</span><span class="benchmark-badge-flag">${escapeHtml(ch.name)}</span><small>${countries.length} ${countries.length === 1 ? 'país' : 'países'}${historicalNote}</small></button>`
                 : `<span class="benchmark-badge-flag">${escapeHtml(ch.name)}</span>`}</td>
               ${renderMetricCells(ch)}
             </tr>
@@ -6137,7 +6170,7 @@ class ValidaFlowApp {
       const pConf = ev > 0 ? Math.round((st.aplica / ev) * 100) : 0;
       const execRate = st.audits > 0 
         ? Math.max(10, Math.min(100, Math.round(100 - (st.aplica / (st.audits * 3 || 1)) * 50)))
-        : 100;
+        : null;
       return `
         <tr>
           <td><strong>${st.name}</strong></td>
@@ -6146,7 +6179,7 @@ class ValidaFlowApp {
           <td><strong class="text-success">${st.aplica}</strong></td>
           <td><strong class="text-magenta">${st.noAplica}</strong></td>
           <td><strong>${pConf}%</strong></td>
-          <td><span class="badge ${execRate >= 80 ? 'badge-success' : 'badge-warning'}">${execRate}% en PDV</span></td>
+          <td><span class="badge ${execRate === null ? 'badge-warning' : execRate >= 80 ? 'badge-success' : 'badge-warning'}">${execRate === null ? 'Sin datos' : `${execRate}% en PDV`}</span></td>
         </tr>
       `;
     }).join('');
@@ -6717,7 +6750,7 @@ class ValidaFlowApp {
             auditId: audit.id,
             idPDV: audit.idPDV || audit.id,
             study: audit.estudio || audit.canal || 'Tradicional',
-            country: audit.pais || 'N/A',
+            country: this.getReportCountry(audit) || 'No disponible',
             city: audit.ciudad || 'N/A',
             channel: audit.canal || 'N/A',
             validatorName: val.name,
@@ -7733,7 +7766,7 @@ class ValidaFlowApp {
           <td><strong>#${a.id}</strong></td>
           <td>${a.idPDV || '-'}</td>
           <td><span class="badge badge-purple">${a.estudio || a.canal || '-'}</span></td>
-          <td>${a.ciudad || a.pais || '-'}</td>
+          <td>${a.ciudad || this.getReportCountry(a) || '-'}</td>
           <td>
             ${val ? `<span class="val-pill"><strong>${val.code}</strong> - ${val.name}</span>` : '<span class="text-muted">Sin asignar</span>'}
           </td>

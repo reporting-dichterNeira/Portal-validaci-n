@@ -20,7 +20,7 @@ export class ExcelParser {
   static normalizeCountry(value) {
     const raw = String(value ?? '').replace(/\s+/g, ' ').trim();
     const key = this.normalizeHeader(raw).replace(/_/g, '');
-    if (!raw || /^\d+$/.test(raw) || ['glb', 'global', 'alcanceinterno', 'sinpais', 'sindato', 'na', 'n_a'].includes(key)) return '';
+    if (!raw || /^\d+(?:[.,]0+)?$/.test(raw) || ['glb', 'global', 'alcanceinterno', 'sinpais', 'sindato', 'na', 'n_a'].includes(key)) return '';
     const aliases = {
       pe: 'Perú', peru: 'Perú',
       co: 'Colombia', colombia: 'Colombia',
@@ -224,6 +224,7 @@ export class ExcelParser {
     // ----------------------------------------------------
     const kpiColumns = [];
     const metaColumns = [];
+    const hasCountryHeader = headers.some(h => ['pais', 'country', 'country_name', 'nombre_pais', 'pais_nombre'].includes(this.normalizeHeader(h)));
 
     headers.forEach((header, index) => {
       if (!header) return;
@@ -322,6 +323,12 @@ export class ExcelParser {
           });
         }
       });
+
+      // El export Smart ubica el nombre del país en la sexta columna (F).
+      // Mantener esta alternativa para archivos cuyo encabezado venga vacío.
+      if (!hasCountryHeader) {
+        auditObj.pais = ExcelParser.normalizeCountry(row[5]);
+      }
 
       if (auditObj.kpis.length === 0) {
         headers.forEach((h, colIndex) => {
@@ -430,7 +437,8 @@ export class ExcelParser {
       const idPDV = idPDVIdx !== -1 ? (row[idPDVIdx] || '').toString().trim() : '';
       const rawFecha = fechaIdx !== -1 ? (row[fechaIdx] || '').toString().trim() : '';
       const fecha = ExcelParser.cleanDateOnly(rawFecha);
-      const pais = paisIdx !== -1 ? ExcelParser.normalizeCountry(row[paisIdx]) : '';
+      // En Bloqueantes el país textual va en D; C es ID_PAIS numérico.
+      const pais = ExcelParser.normalizeCountry(row[paisIdx !== -1 ? paisIdx : 3]);
       const canal = canalIdx !== -1 ? (row[canalIdx] || '').toString().trim() : 'GROCERY SHOPPING';
       const modelo = modeloIdx !== -1 ? (row[modeloIdx] || '').toString().trim() : 'TRADICIONAL';
       const kpiName = (kpiIdx !== -1 ? (row[kpiIdx] || '').toString().trim() : '') || (variableIdx !== -1 ? (row[variableIdx] || '').toString().trim() : 'Alerta Bloqueante');
@@ -451,7 +459,7 @@ export class ExcelParser {
           canal: canal,
           modelo: modelo,
           pais: pais,
-          usuario: `Auditor (${pais || 'Sin país'})`,
+          usuario: 'Auditor sin identificar',
           validadorPrevio: '',
           ciudad: canal,
           meta: {},

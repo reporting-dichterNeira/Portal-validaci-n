@@ -25,6 +25,12 @@ La coincidencia depende de que los IDs enviados desde Power BI y desde la operac
 
 La fila `audits.validation_results` almacena el resultado de cada alerta/KPI: decisión, tipología y demás datos de validación. El payload de auditoría conserva el contenido importado que se requiere para la experiencia operativa.
 
+### País en las bases KO
+
+En **Alertas Bloqueantes**, el nombre del país se toma de la columna **D (`PAIS`)**, nunca del código numérico `ID_PAIS` de la columna C. En **Validación Smart**, se toma de la columna **F (`pais`)**. El nombre se guarda en el payload de cada auditoría; `country_id` de Supabase identifica el alcance de acceso del supervisor y no sustituye ese nombre.
+
+El desglose y el filtro por país del dashboard se habilitan según la **fecha de carga/jornada** (`upload_batches.operation_date`): hasta el 30 de septiembre de 2026 las auditorías siguen contando en el total del estudio, pero no se muestra su país; desde el 1 de octubre de 2026 se muestra y las cargas KO exigen un nombre de país válido. La fecha original de la auditoría no determina este corte.
+
 ## 3. Tipologías de validación
 
 Cada alerta se valida como **Aplica** o **No aplica**. La interfaz exige una de estas tres tipologías para cada decisión:

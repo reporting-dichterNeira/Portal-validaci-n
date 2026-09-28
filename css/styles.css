@@ -4317,6 +4317,8 @@ button.supervisor-module-option:hover {
   font-size: 0.82rem;
 }
 
+.report-country-filter-row[hidden] { display: none; }
+
 .report-country-filter-row label { font-weight: 700; }
 .report-country-filter-row select {
   min-width: 12rem;

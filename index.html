@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=57.0" />
+  <link rel="stylesheet" href="css/styles.css?v=58.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -1446,12 +1446,12 @@
           <div class="study-pills-container" id="study-pills-container">
             <!-- Chips de filtro generados dinámicamente -->
           </div>
-          <div class="report-country-filter-row">
-            <label for="report-country-filter">País del histórico</label>
+          <div class="report-country-filter-row" id="report-country-filter-row" hidden>
+            <label for="report-country-filter">País (desde octubre de 2026)</label>
             <select id="report-country-filter" aria-label="Filtrar métricas y descargas por país">
               <option value="all">Todos los países</option>
             </select>
-            <span id="report-country-context" class="text-muted">Se usa el país guardado en cada auditoría histórica.</span>
+            <span id="report-country-context" class="text-muted">El desglose por país comienza con las jornadas de octubre de 2026.</span>
           </div>
         </div>
 
@@ -2886,6 +2886,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=109.0"></script>
+  <script type="module" src="js/app.js?v=110.0"></script>
 </body>
 </html>

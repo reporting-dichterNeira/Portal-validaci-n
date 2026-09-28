@@ -26,7 +26,10 @@ En Administración, la sección de bases cargadas muestra el responsable real de
 4. Ejecute la distribución. El algoritmo balancea tanto el número de auditorías como la cantidad de KPIs alertados.
 5. Active la jornada cuando la distribución sea correcta.
 
-Al cargar una jornada nueva, la anterior se archiva para conservar el historial. El sistema puede trasladar las auditorías pendientes según la decisión tomada en la operación.
+Al cargar una jornada nueva, la anterior se archiva para conservar el historial de auditorías completadas. Las pendientes de jornadas anteriores se eliminan; no se trasladan ni siguen contando como asignadas.
+
+Para jornadas KO Tradicional o KO Moderno desde octubre de 2026, el archivo debe traer un país textual válido en cada auditoría: columna D (`PAIS`) para Bloqueantes y columna F (`pais`) para Smart. El código `ID_PAIS` no sirve como nombre de país.
+Si el supervisor opera bajo un alcance de país específico, todos los países del archivo deben coincidir con ese alcance; el portal rechaza la carga si son diferentes, en vez de cambiar silenciosamente el país del Excel.
 
 ### Reasignar pendientes a varios validadores
 
@@ -84,6 +87,8 @@ No se requiere cargar un archivo del mes anterior: el formato vigente contiene l
 ### Métricas y exportaciones
 
 El usuario de Operaciones puede alternar entre métricas operativas y la vista de comité/comercial. Desde allí puede descargar el consolidado y el libro con hojas por día. El usuario Comercial mantiene exclusivamente su visual comercial.
+
+El filtro y el desglose por país solo aparecen para jornadas cargadas desde octubre de 2026. Los registros de septiembre de 2026 y anteriores permanecen en los totales por estudio, sin país visible. El corte usa la fecha de carga/jornada, no la fecha de la auditoría en campo.
 
 ## 5. Fuente de los exports
 
