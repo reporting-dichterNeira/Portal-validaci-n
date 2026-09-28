@@ -4,7 +4,7 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=25.0';
+import { ExcelParser } from './excel-parser.js?v=26.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=21.0';
@@ -4252,6 +4252,15 @@ class ValidaFlowApp {
 
     const { result } = this.pendingUpload;
 
+    const isKoCamStudy = ['Tradicional', 'Moderno'].includes(studyName);
+    const missingCountryRows = isKoCamStudy
+      ? result.audits.filter(audit => !ExcelParser.normalizeCountry(audit.pais || audit.country || audit.meta?.PAIS || audit.meta?.pais))
+      : [];
+    if (missingCountryRows.length) {
+      this.showToast(`No se guardó la base: ${missingCountryRows.length} auditorías de ${getStudyDisplayName(studyName)} no traen un país válido. Incluye la columna PAIS o COUNTRY con el nombre del país.`, 'error');
+      return;
+    }
+
     // Etiquetar todas las auditorías del archivo con el estudio seleccionado y la fecha de jornada
     result.audits.forEach(audit => {
       audit.estudio = studyName;
@@ -4264,6 +4273,7 @@ class ValidaFlowApp {
         audit.pais = this.currentScope.country.name;
       }
       else if (studyName === 'Chile') audit.pais = 'Chile';
+      else audit.pais = ExcelParser.normalizeCountry(audit.pais || audit.country || audit.meta?.PAIS || audit.meta?.pais);
     });
 
     this.currentProject = studyName;

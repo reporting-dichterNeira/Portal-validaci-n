@@ -7,6 +7,32 @@ import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 export class ExcelParser {
+  static normalizeHeader(value) {
+    return String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
+  static normalizeCountry(value) {
+    const raw = String(value ?? '').replace(/\s+/g, ' ').trim();
+    const key = this.normalizeHeader(raw).replace(/_/g, '');
+    if (!raw || /^\d+$/.test(raw) || ['glb', 'global', 'alcanceinterno', 'sinpais', 'sindato', 'na', 'n_a'].includes(key)) return '';
+    const aliases = {
+      pe: 'Perú', peru: 'Perú',
+      co: 'Colombia', colombia: 'Colombia',
+      cl: 'Chile', chile: 'Chile',
+      ec: 'Ecuador', ecuador: 'Ecuador',
+      mx: 'México', mexico: 'México',
+      gt: 'Guatemala', guatemala: 'Guatemala',
+      do: 'República Dominicana', republicadominicana: 'República Dominicana'
+    };
+    return aliases[key] || raw;
+  }
+
   static getTimingExportFields(audit) {
     return {
       'Inicio de validación (Hora Nicaragua)': formatNicaraguaDateTime(audit.startedAt, 'Pendiente'),
@@ -259,7 +285,7 @@ export class ExcelParser {
       // Mapear columnas dinámicamente según headers
       headers.forEach((h, colIndex) => {
         const val = (row[colIndex] || '').toString().trim();
-        const hLower = h.toLowerCase();
+        const hLower = ExcelParser.normalizeHeader(h);
 
         if (hLower === 'id_de_audito' || hLower === 'id_audito' || hLower === 'id' || colIndex === 0) {
           auditObj.id = val;
@@ -271,8 +297,8 @@ export class ExcelParser {
           auditObj.canal = val;
         } else if (hLower === 'modelo_name' || hLower === 'modelo') {
           auditObj.modelo = val;
-        } else if (hLower === 'pais' || hLower === 'país') {
-          auditObj.pais = val;
+        } else if (['pais', 'country', 'country_name', 'nombre_pais', 'pais_nombre'].includes(hLower)) {
+          auditObj.pais = ExcelParser.normalizeCountry(val);
         } else if (hLower === 'nombre_usuario' || hLower === 'usuario' || hLower === 'auditor') {
           auditObj.usuario = val;
         } else if (hLower === 'validador' || hLower === 'supervisor') {
@@ -365,7 +391,7 @@ export class ExcelParser {
    * Agrupa automáticamente múltiples filas con el mismo ID_AUDITO en una única auditoría
    */
   static transformRowBasedAlerts(rows, headers) {
-    const headersLower = headers.map(h => h.toLowerCase());
+    const headersLower = headers.map(h => ExcelParser.normalizeHeader(h));
 
     const findCol = (...candidates) => {
       for (const cand of candidates) {
@@ -378,7 +404,7 @@ export class ExcelParser {
     const idAuditoIdx = findCol('id_audito', 'id_de_audito', 'idaudito', 'id');
     const idPDVIdx = findCol('id_pdv', 'id_de_pdv', 'idpdv', 'pdv');
     const fechaIdx = findCol('fecha_audito', 'fecha_del_audito', 'fecha_ingreso', 'fecha');
-    const paisIdx = findCol('pais', 'país', 'id_pais');
+    const paisIdx = headersLower.findIndex(h => ['pais', 'country', 'country_name', 'nombre_pais', 'pais_nombre'].includes(h));
     const canalIdx = findCol('canal', 'id_canal');
     const modeloIdx = findCol('modelo_name', 'modelo', 'estudio');
     const kpiIdx = findCol('kpi_subkpi', 'subkpi', 'kpi', 'variable');
@@ -404,7 +430,7 @@ export class ExcelParser {
       const idPDV = idPDVIdx !== -1 ? (row[idPDVIdx] || '').toString().trim() : '';
       const rawFecha = fechaIdx !== -1 ? (row[fechaIdx] || '').toString().trim() : '';
       const fecha = ExcelParser.cleanDateOnly(rawFecha);
-      const pais = paisIdx !== -1 ? (row[paisIdx] || '').toString().trim() : 'Perú';
+      const pais = paisIdx !== -1 ? ExcelParser.normalizeCountry(row[paisIdx]) : '';
       const canal = canalIdx !== -1 ? (row[canalIdx] || '').toString().trim() : 'GROCERY SHOPPING';
       const modelo = modeloIdx !== -1 ? (row[modeloIdx] || '').toString().trim() : 'TRADICIONAL';
       const kpiName = (kpiIdx !== -1 ? (row[kpiIdx] || '').toString().trim() : '') || (variableIdx !== -1 ? (row[variableIdx] || '').toString().trim() : 'Alerta Bloqueante');
@@ -425,7 +451,7 @@ export class ExcelParser {
           canal: canal,
           modelo: modelo,
           pais: pais,
-          usuario: `Auditor (${pais})`,
+          usuario: `Auditor (${pais || 'Sin país'})`,
           validadorPrevio: '',
           ciudad: canal,
           meta: {},

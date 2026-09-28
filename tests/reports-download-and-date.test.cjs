@@ -65,6 +65,19 @@ test('el consolidado grande se genera como un único CSV con las columnas de aud
   assert.match(blobs[0].parts.join(''), /"Correcto; revisado"/);
 });
 
+test('las cargas KO toman el nombre de país y nunca el ID_PAIS numérico', () => {
+  const { ExcelParser } = loadExcelParser();
+  const headers = ['ID_AUDITO', 'ID_PDV', 'ID_PAIS', 'PAIS', 'MODELO_NAME', 'KPI_SUBKPI'];
+  const transformed = ExcelParser.transformRowBasedAlerts([
+    headers,
+    ['7001', '90001', '604', 'PERU', 'MODERNO', 'Disponibilidad']
+  ], headers);
+  assert.equal(transformed.audits.length, 1);
+  assert.equal(transformed.audits[0].pais, 'Perú');
+  assert.equal(ExcelParser.normalizeCountry('GLB'), '');
+  assert.equal(ExcelParser.normalizeCountry('604'), '');
+});
+
 test('el rango de fecha filtra el histórico operativo y conserva los meses que se cruzan con el rango', () => {
   const ValidaFlowApp = loadAppClass();
   const app = Object.create(ValidaFlowApp.prototype);
@@ -88,4 +101,10 @@ test('cada botón de informes tiene un único listener y ya no se invoca desde H
   assert.doesNotMatch(html, /id="btn-export-excel"[^>]*onclick=/);
   assert.doesNotMatch(html, /id="btn-export-multi-sheet"[^>]*onclick=/);
   assert.doesNotMatch(html, /id="btn-export-executive-xlsx"[^>]*onclick=/);
+});
+
+test('la interfaz comercial no ofrece descarga de PowerPoint', () => {
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  assert.doesNotMatch(html, /data-export-commercial-ppt/);
+  assert.doesNotMatch(html, /Descargar PowerPoint/);
 });
