@@ -39,7 +39,14 @@ function loadAppClass() {
     BroadcastChannel: class { postMessage() {} close() {} },
     SAMPLE_CSV_DATA: '', BLOCKING_ALERTS_SAMPLE_CSV: '', DEFAULT_VALIDATORS: [], DEFAULT_TIPIFICACIONES: [],
     TIPIFICACIONES_POR_DECISION: {}, seedSampleValidations: () => {},
-    ExcelParser: { cleanDateOnly: value => String(value || '').slice(0, 10) },
+    ExcelParser: {
+      cleanDateOnly: value => String(value || '').slice(0, 10),
+      normalizeCountry: value => {
+        const raw = String(value || '').trim();
+        if (!raw || /^\d+$/.test(raw)) return '';
+        return /^(peru|perú)$/i.test(raw) ? 'Perú' : raw;
+      }
+    },
     getStudyDisplayName: value => value, loadPowerPointEngine: () => {}, buildExecutivePowerPoint: () => {},
     Distributor: class {}, ValidatorUI: class {}, SupabaseBackend: class {},
     formatNicaraguaDate: value => value, formatNicaraguaDateTime: value => value,
@@ -90,6 +97,25 @@ test('el rango de fecha filtra el histórico operativo y conserva los meses que 
   assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['inside']);
   assert.equal(app.isVisualizationMonthInRange('2026-09-01'), true);
   assert.equal(app.isVisualizationMonthInRange('2026-08-01'), false);
+});
+
+test('el filtro de país incluye auditorías históricas y se aplica también al consolidado', () => {
+  const ValidaFlowApp = loadAppClass();
+  const app = Object.create(ValidaFlowApp.prototype);
+  Object.assign(app, {
+    currentView: 'visualizations', visualizationDateFrom: '', visualizationDateTo: '',
+    selectedStudies: ['Tradicional'], selectedReportCountry: 'Perú',
+    getReportAuditSource: () => [
+      { id: '1', estudio: 'Tradicional', pais: 'PERU', fecha: '2026-08-01' },
+      { id: '2', estudio: 'Tradicional', pais: 'Colombia', fecha: '2026-08-01' },
+      { id: '3', estudio: 'Tradicional', pais: '604', country: 'Perú', fecha: '2026-07-01' },
+      { id: '4', estudio: 'Moderno', pais: 'Perú', fecha: '2026-08-01' },
+      { id: '5', estudio: 'Tradicional', fecha: '2026-08-01' }
+    ], getAuditOperationDate: audit => audit.fecha
+  });
+  assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['1', '3']);
+  app.selectedReportCountry = '__missing__';
+  assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['5']);
 });
 
 test('cada botón de informes tiene un único listener y ya no se invoca desde HTML', () => {

@@ -4306,6 +4306,28 @@ button.supervisor-module-option:hover {
   align-items: center;
 }
 
+.report-country-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border-color);
+  font-size: 0.82rem;
+}
+
+.report-country-filter-row label { font-weight: 700; }
+.report-country-filter-row select {
+  min-width: 12rem;
+  max-width: 100%;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--dn-navy);
+  background: var(--bg-surface);
+}
+
 .study-filter-pill {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);

@@ -79,6 +79,7 @@ class ValidaFlowApp {
 
     // Filtro multi-estudio activo en Métricas (ej: ['ALL'] o ['Tradicional', 'Stills'])
     this.selectedStudies = ['ALL'];
+    this.selectedReportCountry = 'all';
 
     // Filtro activo en el feed de anomalías
     this.alertsFilter = 'all';
@@ -147,6 +148,7 @@ class ValidaFlowApp {
     this.initAlertsModule();
     this.initReportsSubtabs();
     this.initStudyFilter();
+    this.initReportCountryFilter();
     this.initVisualizationDateFilter();
     this.initDailyReportsModule();
     this.initValidatorHistoryModule();
@@ -5371,6 +5373,58 @@ class ValidaFlowApp {
     });
   }
 
+  initReportCountryFilter() {
+    document.getElementById('report-country-filter')?.addEventListener('change', event => {
+      this.selectedReportCountry = event.target.value;
+      this.renderReportsView();
+      this.renderDailyReportsView();
+    });
+  }
+
+  getReportCountry(audit) {
+    for (const value of [audit.pais, audit.country, audit.meta?.PAIS, audit.meta?.pais]) {
+      const country = ExcelParser.normalizeCountry(value);
+      if (country) return country;
+    }
+    return '';
+  }
+
+  populateReportCountryFilter() {
+    const select = document.getElementById('report-country-filter');
+    const context = document.getElementById('report-country-context');
+    if (!select) return;
+
+    const counts = new Map();
+    for (const audit of this.getStudyAndDateFilteredAuditsForReports()) {
+      const country = this.getReportCountry(audit);
+      counts.set(country, (counts.get(country) || 0) + 1);
+    }
+    const selectedCountry = this.selectedReportCountry === '__missing__' ? '' : this.selectedReportCountry;
+    if (this.selectedReportCountry !== 'all' && !counts.has(selectedCountry)) {
+      this.selectedReportCountry = 'all';
+    }
+
+    const options = [{ value: 'all', label: 'Todos los países' }];
+    for (const country of [...counts.keys()].filter(Boolean).sort((a, b) => a.localeCompare(b, 'es'))) {
+      options.push({ value: country, label: `${country} (${counts.get(country).toLocaleString('es-CO')})` });
+    }
+    if (counts.has('')) {
+      options.push({ value: '__missing__', label: `Sin país (${counts.get('').toLocaleString('es-CO')})` });
+    }
+    select.replaceChildren(...options.map(({ value, label }) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      return option;
+    }));
+    select.value = this.selectedReportCountry;
+    if (context) {
+      context.textContent = counts.has('')
+        ? `${counts.get('').toLocaleString('es-CO')} registros históricos sin país identificado.`
+        : 'Se usa el país guardado en cada auditoría histórica.';
+    }
+  }
+
   populateStudyPills() {
     const container = document.getElementById('study-pills-container');
     if (!container) return;
@@ -5451,7 +5505,7 @@ class ValidaFlowApp {
     return 'Tradicional';
   }
 
-  getFilteredAuditsForReports() {
+  getStudyAndDateFilteredAuditsForReports() {
     const reportAudits = this.getReportAuditSource();
     const studyFiltered = this.selectedStudies.includes('ALL') || this.selectedStudies.length === 0
       ? reportAudits
@@ -5462,11 +5516,19 @@ class ValidaFlowApp {
     return studyFiltered.filter(audit => this.isWithinVisualizationDateRange(this.getAuditOperationDate(audit)));
   }
 
+  getFilteredAuditsForReports() {
+    const audits = this.getStudyAndDateFilteredAuditsForReports();
+    if (this.selectedReportCountry === 'all' || !this.selectedReportCountry) return audits;
+    const selectedCountry = this.selectedReportCountry === '__missing__' ? '' : this.selectedReportCountry;
+    return audits.filter(audit => this.getReportCountry(audit) === selectedCountry);
+  }
+
   // ==========================================
   // VISTA DE REPORTES Y MÉTRICAS (OPERACIONALES + EJECUTIVAS)
   // ==========================================
   renderReportsView() {
     this.populateStudyPills();
+    this.populateReportCountryFilter();
 
     const reportAudits = this.getReportAuditSource();
     const filteredAudits = this.getFilteredAuditsForReports();
@@ -5480,12 +5542,18 @@ class ValidaFlowApp {
       const dateLabel = this.visualizationDateFrom || this.visualizationDateTo
         ? ` · Fecha: ${this.visualizationDateFrom || 'inicio'} a ${this.visualizationDateTo || 'hoy'}`
         : '';
-      opCountLabel.textContent = `Histórico completo: ${filteredAudits.length} de ${reportAudits.length} auditorías [${studyLabel}]${dateLabel}`;
+      const countryLabel = this.selectedReportCountry === 'all' || !this.selectedReportCountry
+        ? ''
+        : ` · País: ${this.selectedReportCountry === '__missing__' ? 'Sin país' : this.selectedReportCountry}`;
+      opCountLabel.textContent = `Histórico completo: ${filteredAudits.length} de ${reportAudits.length} auditorías [${studyLabel}]${dateLabel}${countryLabel}`;
     }
 
     const execStudyLabel = document.getElementById('exec-study-selected-label');
     if (execStudyLabel) {
-      execStudyLabel.textContent = `Estudios Analizados: ${studyLabel} (${filteredAudits.length} auditorías)`;
+      const countryLabel = this.selectedReportCountry === 'all' || !this.selectedReportCountry
+        ? ''
+        : ` · ${this.selectedReportCountry === '__missing__' ? 'Sin país' : this.selectedReportCountry}`;
+      execStudyLabel.textContent = `Estudios Analizados: ${studyLabel}${countryLabel} (${filteredAudits.length} auditorías)`;
     }
 
     // 2. Renderizar Sub-Vista Operacional
@@ -5873,7 +5941,12 @@ class ValidaFlowApp {
     // 1. Header & Badge
     const scopeBadge = document.getElementById('dossier-study-scope-badge');
     const dateLabel = document.getElementById('commercial-dossier-date-label');
-    if (scopeBadge) scopeBadge.textContent = `Estudios: ${studyLabel}`;
+    if (scopeBadge) {
+      const countryLabel = this.selectedReportCountry === 'all' || !this.selectedReportCountry
+        ? ''
+        : ` · País: ${this.selectedReportCountry === '__missing__' ? 'Sin país' : this.selectedReportCountry}`;
+      scopeBadge.textContent = `Estudios: ${studyLabel}${countryLabel}`;
+    }
     if (dateLabel) {
       const todayStr = formatNicaraguaDate(new Date());
       dateLabel.textContent = `Emisión: ${todayStr} • Protocolo de Calidad dichter & neira`;
@@ -7702,7 +7775,10 @@ class ValidaFlowApp {
       ? 'Todos los Estudios'
       : this.selectedStudies.map(getStudyDisplayName).join(', ');
     this.runReportDownload('executive', 'btn-export-executive-xlsx', () => {
-      ExcelParser.exportExecutiveExcel(auditsToExport, studyLabel);
+      const countryLabel = this.selectedReportCountry === 'all' || !this.selectedReportCountry
+        ? ''
+        : ` · ${this.selectedReportCountry === '__missing__' ? 'Sin país' : this.selectedReportCountry}`;
+      ExcelParser.exportExecutiveExcel(auditsToExport, `${studyLabel}${countryLabel}`);
       this.showToast('Descargando Informe Ejecutivo de Comité...', 'success');
     });
   }
