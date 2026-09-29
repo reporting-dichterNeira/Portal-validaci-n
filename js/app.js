@@ -443,6 +443,7 @@ class ValidaFlowApp {
         'score-changes': 'admin-score-changes-analysis-sheet'
       };
       document.getElementById(analysisSheetIds[target])?.classList.remove('hidden');
+      if (target === 'alerts') this.ensureAdminDatabricksMonthStatus();
       await this.refreshAdminExternalAnalysis();
     } else {
       this.moveReportsContent('visualization-pane-metrics');
@@ -1483,6 +1484,23 @@ class ValidaFlowApp {
     }
   }
 
+  ensureAdminDatabricksMonthStatus(preferredMonth = null) {
+    const input = document.getElementById('admin-alerts-export-period');
+    if (!input) return;
+    if (!input.value) {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Bogota', year: 'numeric', month: '2-digit'
+      }).formatToParts(new Date());
+      const year = parts.find(part => part.type === 'year')?.value;
+      const month = parts.find(part => part.type === 'month')?.value;
+      input.value = String(preferredMonth || `${year}-${month}`).slice(0, 7);
+    }
+    if (input.dataset.syncBound === 'true') return;
+    input.addEventListener('change', () => this.checkAdminDatabricksSyncStatus());
+    input.dataset.syncBound = 'true';
+    this.checkAdminDatabricksSyncStatus();
+  }
+
   async checkAdminDatabricksSyncStatus() {
     const periodMonth = document.getElementById('admin-alerts-export-period')?.value;
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(periodMonth || ''))) return;
@@ -1891,13 +1909,7 @@ class ValidaFlowApp {
         : `<span class="text-muted">${emptyMessage}</span>`;
     };
 
-    const databricksPeriodInput = document.getElementById('admin-alerts-export-period');
-    if (databricksPeriodInput && databricksPeriodInput.dataset.syncBound !== 'true') {
-      databricksPeriodInput.value = String(alertImport?.period_month || new Date().toISOString()).slice(0, 7);
-      databricksPeriodInput.addEventListener('change', () => this.checkAdminDatabricksSyncStatus());
-      databricksPeriodInput.dataset.syncBound = 'true';
-      this.checkAdminDatabricksSyncStatus();
-    }
+    this.ensureAdminDatabricksMonthStatus(alertImport?.period_month);
 
     const moduleStatus = visualizationModule === 'all' ? '' : ` · Vista: ${this.getVisualizationModuleLabel(visualizationModule)}.`;
     setText('admin-alerts-import-status', alertImport ? `Último export: ${alertImport.source_filename} · ${this.formatExternalImportMonth(alertImport.period_month)} · ${formatNumber(alertImport.row_count)} registros útiles.${moduleStatus}` : 'Aún no se ha cargado un export general.');

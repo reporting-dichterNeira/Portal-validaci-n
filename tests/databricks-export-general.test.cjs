@@ -41,7 +41,7 @@ test('the portal offers a distinct review and publish step', () => {
 test('the pending review renders its preview without executable HTML', () => {
   const app = read('js/app.js');
   const start = app.indexOf('  updateAdminDatabricksSyncStatus(job) {');
-  const end = app.indexOf('\n  async checkAdminDatabricksSyncStatus()', start);
+  const end = app.indexOf('\n  ensureAdminDatabricksMonthStatus(', start);
   assert.ok(start > 0 && end > start);
   const elements = new Map([
     'admin-alerts-databricks-status', 'admin-alerts-databricks-approve-button',
@@ -59,4 +59,22 @@ test('the pending review renders its preview without executable HTML', () => {
   assert.equal(elements.get('admin-alerts-databricks-preview').hidden, false);
   assert.match(elements.get('admin-alerts-databricks-preview-rows').innerHTML, /&lt;script&gt;/);
   assert.match(elements.get('admin-alerts-databricks-status').textContent, /listas para revisión/);
+});
+
+test('opening Export general checks the current month before large visual data loads', () => {
+  const app = read('js/app.js');
+  const start = app.indexOf('  ensureAdminDatabricksMonthStatus(preferredMonth = null) {');
+  const end = app.indexOf('\n  async checkAdminDatabricksSyncStatus()', start);
+  assert.ok(start > 0 && end > start);
+  const input = { value: '', dataset: {}, addEventListener() { this.listeners = (this.listeners || 0) + 1; } };
+  const ensure = vm.runInNewContext(`({${app.slice(start, end)}}).ensureAdminDatabricksMonthStatus`, {
+    document: { getElementById: () => input }, Intl, Date
+  });
+  let checks = 0;
+  const instance = { checkAdminDatabricksSyncStatus: () => { checks += 1; } };
+  ensure.call(instance);
+  ensure.call(instance, '2026-08-01');
+  assert.match(input.value, /^20\d{2}-(0[1-9]|1[0-2])$/);
+  assert.equal(input.listeners, 1);
+  assert.equal(checks, 1);
 });
