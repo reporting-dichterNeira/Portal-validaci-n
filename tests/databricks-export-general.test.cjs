@@ -37,6 +37,9 @@ test('current-month snapshots auto-publish, only the preceding month can close, 
   assert.match(publishing, /SYNC_NOT_PREVIOUS_MONTH/);
   assert.match(daily, /SYNC_ONLY_CURRENT_MONTH/);
   assert.match(daily, /sincronización diaria/);
+  const grants = read('supabase/migrations/20260929205712_grant_databricks_publisher_tables.sql');
+  assert.match(grants, /grant select, insert, update, delete/);
+  assert.match(grants, /on public\.admin_analysis_imports,[\s\S]*public\.admin_alert_export_records[\s\S]*to service_role/);
   assert.match(read('supabase/migrations/20260929172300_databricks_staged_review.sql'), /SYNC_NEWER_STAGE_EXISTS/);
 });
 

@@ -38,4 +38,7 @@ La implementación está en `databricks/validaflow_general_export.py`,
 `20260929143445_databricks_general_export_sync.sql` y
 `20260929172300_databricks_staged_review.sql` y
 `20260929201144_freeze_monthly_databricks_exports.sql` y
-`20260929203815_auto_publish_current_databricks_month.sql`.
+`20260929203815_auto_publish_current_databricks_month.sql` y
+`20260929205712_grant_databricks_publisher_tables.sql`. Esta última concede
+los permisos de escritura necesarios solo a `service_role` sobre las dos
+tablas del Export general; no expone los datos a visitantes anónimos.
