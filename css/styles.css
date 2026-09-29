@@ -3814,6 +3814,26 @@ button.supervisor-module-option:hover {
   min-width: 0;
 }
 
+.admin-analysis-manual-import {
+  margin: 0.45rem 0 0.9rem;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
+.admin-analysis-manual-import summary {
+  cursor: pointer;
+  width: fit-content;
+  color: var(--dn-blue);
+  font-weight: 700;
+}
+
+.admin-analysis-manual-import .admin-analysis-upload {
+  margin-top: 0.55rem;
+  background: transparent;
+}
+
+.admin-analysis-manual-import input[type="file"] { flex: 1; }
+
 .admin-analysis-filter-bar {
   display: flex;
   flex-wrap: wrap;

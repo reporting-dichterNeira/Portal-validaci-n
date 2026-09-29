@@ -821,6 +821,25 @@ export class SupabaseBackend {
     if (importError) throw importError;
   }
 
+  async requestDatabricksGeneralExportSync(action, periodMonth, jobId = null) {
+    this.ensureConfigured();
+    const { data, error } = await this.client.functions.invoke('sync-databricks-export', {
+      body: { action, periodMonth, ...(jobId ? { jobId } : {}) }
+    });
+    if (error) {
+      let detail = error.message;
+      try {
+        const payload = await error.context?.json();
+        detail = payload?.error || detail;
+      } catch {
+        // A network or gateway failure may not contain JSON.
+      }
+      throw new Error(detail);
+    }
+    if (data?.error) throw new Error(data.error);
+    return data?.job || null;
+  }
+
   async replaceAdminNoteScoreImport({ sourceFilename, periodMonth, rows }) {
     this.ensureConfigured();
     const normalizedMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(periodMonth || ''))

@@ -9,7 +9,7 @@ import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=21.0';
 import { ValidatorUI } from './validator-ui.js?v=35.0';
-import { SupabaseBackend } from './supabase-backend.js?v=54.0';
+import { SupabaseBackend } from './supabase-backend.js?v=55.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
@@ -1450,6 +1450,88 @@ class ValidaFlowApp {
     }
   }
 
+  updateAdminDatabricksSyncStatus(job) {
+    const element = document.getElementById('admin-alerts-databricks-status');
+    const approveButton = document.getElementById('admin-alerts-databricks-approve-button');
+    const previewElement = document.getElementById('admin-alerts-databricks-preview');
+    const previewRows = document.getElementById('admin-alerts-databricks-preview-rows');
+    this.adminDatabricksReviewJob = job?.status === 'review' ? job : null;
+    if (approveButton) approveButton.disabled = !this.adminDatabricksReviewJob || !['admin', 'supervisor'].includes(this.currentRole);
+    if (previewElement) previewElement.hidden = !this.adminDatabricksReviewJob;
+    if (previewRows) {
+      previewRows.innerHTML = (job?.status === 'review' ? job.preview || [] : []).map(item => {
+        const record = item.record || {};
+        return `<div class="admin-analysis-ranking-row"><strong>ID ${escapeHtml(item.audit_external_id || '—')}</strong><span>PDV ${escapeHtml(record.pdv_id || '—')} · ${escapeHtml(record.study || 'Sin estudio')} · ${escapeHtml(record.country || 'Sin país')} · ${escapeHtml(record.audit_date || 'Sin fecha')}</span></div>`;
+      }).join('');
+    }
+    if (!element) return;
+    if (!job) {
+      element.textContent = 'Este mes aún no tiene una carga programada. Los datos publicados anteriormente se conservan.';
+      return;
+    }
+    const count = Number(job.rowsStaged || 0).toLocaleString('es-CO');
+    const month = this.formatExternalImportMonth(job.periodMonth);
+    if (job.status === 'complete') {
+      element.textContent = `${month}: ${count} auditorías revisadas y publicadas desde Reporting Cluster.`;
+    } else if (job.status === 'review') {
+      element.textContent = `${month}: ${count} auditorías listas para revisión. La base publicada todavía no se ha reemplazado.`;
+    } else if (job.status === 'failed') {
+      element.textContent = `${month}: no se completó la carga. ${job.error || 'Los datos publicados se conservaron.'}`;
+    } else {
+      element.textContent = `${month}: carga programada en curso · ${count} auditorías recibidas. Puedes continuar usando el portal.`;
+    }
+  }
+
+  async checkAdminDatabricksSyncStatus() {
+    const periodMonth = document.getElementById('admin-alerts-export-period')?.value;
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(periodMonth || ''))) return;
+    try {
+      const job = await this.backend.requestDatabricksGeneralExportSync('status', periodMonth);
+      this.updateAdminDatabricksSyncStatus(job);
+    } catch (error) {
+      const element = document.getElementById('admin-alerts-databricks-status');
+      if (element) element.textContent = `No se pudo consultar Databricks: ${error.message || error}`;
+    }
+  }
+
+  async showAdminDatabricksMonth(periodMonth) {
+    const input = document.getElementById('admin-alerts-export-period');
+    if (input) input.value = String(periodMonth || '').slice(0, 7);
+    await this.checkAdminDatabricksSyncStatus();
+    document.getElementById('admin-alerts-databricks-status')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
+
+  async publishAdminDatabricksGeneralExport() {
+    if (!this.canUseExternalAnalysis() || this.adminDatabricksSyncPromise) return;
+    const job = this.adminDatabricksReviewJob;
+    if (!job || !['admin', 'supervisor'].includes(this.currentRole)) return;
+    const periodMonth = String(job.periodMonth || '').slice(0, 7);
+    const count = Number(job.rowsStaged || 0).toLocaleString('es-CO');
+    if (!confirm(`¿Publicar ${count} auditorías de ${this.formatExternalImportMonth(periodMonth)}? Esto reemplazará únicamente el Export general visible de ese mes.`)) return;
+    const button = document.getElementById('admin-alerts-databricks-approve-button');
+    const request = (async () => {
+      try {
+        if (button) button.disabled = true;
+        const published = await this.backend.requestDatabricksGeneralExportSync('approve', periodMonth, job.id);
+        this.updateAdminDatabricksSyncStatus(published);
+        this.invalidateAdminExternalAnalysisCache();
+        await this.refreshAdminExternalAnalysis({ force: true });
+        this.showToast(`${count} auditorías de ${this.formatExternalImportMonth(periodMonth)} publicadas.`, 'success');
+      } catch (error) {
+        this.showToast(error.message || 'No fue posible publicar la base revisada.', 'error');
+        await this.checkAdminDatabricksSyncStatus();
+      } finally {
+        if (button) button.disabled = !this.adminDatabricksReviewJob;
+      }
+    })();
+    this.adminDatabricksSyncPromise = request;
+    try {
+      await request;
+    } finally {
+      if (this.adminDatabricksSyncPromise === request) this.adminDatabricksSyncPromise = null;
+    }
+  }
+
   async importAdminScoreChangeAnalysis() {
     if (!this.canUseExternalAnalysis()) return;
     const input = document.getElementById('admin-score-changes-input');
@@ -1491,6 +1573,10 @@ class ValidaFlowApp {
     const periodInput = document.getElementById(target.period);
     const fileInput = document.getElementById(target.file);
     if (periodInput) periodInput.value = month;
+    if (datasetType === 'alerts') {
+      const manualImport = document.getElementById('admin-alerts-manual-import');
+      if (manualImport) manualImport.open = true;
+    }
     fileInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     fileInput?.focus();
     this.showToast(`Selecciona el nuevo ${target.label} para ${this.formatExternalImportMonth(month)}. Al cargarlo, reemplazará solo ese mes.`, 'info');
@@ -1793,9 +1879,24 @@ class ValidaFlowApp {
       const element = document.getElementById(id);
       if (!element) return;
       element.innerHTML = items.length
-        ? items.map(item => `<div class="admin-analysis-ranking-row"><div><strong>${escapeHtml(this.formatExternalImportMonth(item.period_month))}</strong><small>${escapeHtml(item.source_filename || 'Archivo sin nombre')} · ${formatNumber(item.row_count)} registros · ${escapeHtml(formatImportedAt(item.imported_at))}</small></div><button class="btn btn-outline btn-sm" type="button" onclick="window.app?.prepareAdminMonthlyImportUpdate('${datasetType}', '${String(item.period_month || '').slice(0, 10)}')">Actualizar</button></div>`).join('')
+        ? items.map(item => {
+          const month = String(item.period_month || '').slice(0, 10);
+          const fromDatabricks = datasetType === 'alerts' && /^Databricks/i.test(String(item.source_filename || ''));
+          const updateAction = fromDatabricks
+            ? `window.app?.showAdminDatabricksMonth('${month}')`
+            : `window.app?.prepareAdminMonthlyImportUpdate('${datasetType}', '${month}')`;
+          return `<div class="admin-analysis-ranking-row"><div><strong>${escapeHtml(this.formatExternalImportMonth(item.period_month))}</strong><small>${escapeHtml(item.source_filename || 'Archivo sin nombre')} · ${formatNumber(item.row_count)} registros · ${escapeHtml(formatImportedAt(item.imported_at))}</small></div><button class="btn btn-outline btn-sm" type="button" onclick="${updateAction}">${fromDatabricks ? 'Ver carga' : 'Actualizar'}</button></div>`;
+        }).join('')
         : `<span class="text-muted">${emptyMessage}</span>`;
     };
+
+    const databricksPeriodInput = document.getElementById('admin-alerts-export-period');
+    if (databricksPeriodInput && databricksPeriodInput.dataset.syncBound !== 'true') {
+      databricksPeriodInput.value = String(alertImport?.period_month || new Date().toISOString()).slice(0, 7);
+      databricksPeriodInput.addEventListener('change', () => this.checkAdminDatabricksSyncStatus());
+      databricksPeriodInput.dataset.syncBound = 'true';
+      this.checkAdminDatabricksSyncStatus();
+    }
 
     const moduleStatus = visualizationModule === 'all' ? '' : ` · Vista: ${this.getVisualizationModuleLabel(visualizationModule)}.`;
     setText('admin-alerts-import-status', alertImport ? `Último export: ${alertImport.source_filename} · ${this.formatExternalImportMonth(alertImport.period_month)} · ${formatNumber(alertImport.row_count)} registros útiles.${moduleStatus}` : 'Aún no se ha cargado un export general.');

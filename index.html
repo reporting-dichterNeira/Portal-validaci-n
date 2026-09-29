@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=58.0" />
+  <link rel="stylesheet" href="css/styles.css?v=59.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -768,15 +768,28 @@
             <div>
               <div class="corporate-badge">Cruce por ID de auditoría</div>
               <h2>Export general con contexto de auditoría</h2>
-              <p>Carga el export consolidado para enriquecer las alertas con auditor, PDV, país, ciudad y canal. El sistema conserva la última versión que subas para cada mes.</p>
+              <p>Reporting Cluster prepara automáticamente los meses actual y anterior. Revisa la muestra y publica cada mes cuando esté listo; hasta entonces, los datos visibles no cambian.</p>
             </div>
             <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis({ force: true })">↻ Actualizar</button>
           </div>
           <div class="admin-analysis-upload">
-            <label class="admin-analysis-period" for="admin-alerts-export-period">Mes del consolidado <input class="form-control" type="month" id="admin-alerts-export-period" required /></label>
-            <input class="form-control" type="file" id="admin-alerts-export-input" accept=".xlsx,.xls,.csv,.txt" />
-            <button class="btn btn-navy btn-glow" type="button" onclick="window.app?.importAdminExternalAnalysis('alerts')">📥 Cargar export general</button>
+            <label class="admin-analysis-period" for="admin-alerts-export-period">Mes a revisar <input class="form-control" type="month" id="admin-alerts-export-period" required /></label>
+            <button class="btn btn-outline" id="admin-alerts-databricks-check-button" type="button" onclick="window.app?.checkAdminDatabricksSyncStatus()">↻ Consultar carga</button>
+            <button class="btn btn-navy btn-glow" id="admin-alerts-databricks-approve-button" type="button" onclick="window.app?.publishAdminDatabricksGeneralExport()" disabled>✓ Publicar base revisada</button>
           </div>
+          <p class="form-help" id="admin-alerts-databricks-status" role="status">La carga programada se ejecuta a las 5:00 a. m. (Bogotá) en Reporting Cluster. Selecciona un mes para consultar su estado.</p>
+          <details class="admin-analysis-manual-import" id="admin-alerts-databricks-preview" hidden>
+            <summary>Revisar muestra de auditorías antes de publicar</summary>
+            <p class="form-help">Muestra de hasta 12 registros. Confirma el mes y el total antes de reemplazar la base visible.</p>
+            <div class="admin-analysis-ranking" id="admin-alerts-databricks-preview-rows"></div>
+          </details>
+          <details class="admin-analysis-manual-import" id="admin-alerts-manual-import">
+            <summary>Usar archivo Excel o CSV como respaldo</summary>
+            <div class="admin-analysis-upload">
+              <input class="form-control" type="file" id="admin-alerts-export-input" accept=".xlsx,.xls,.csv,.txt" />
+              <button class="btn btn-outline" type="button" onclick="window.app?.importAdminExternalAnalysis('alerts')">📥 Cargar archivo</button>
+            </div>
+          </details>
           <p class="form-help" id="admin-alerts-import-status">Aún no se ha cargado un export de auditorías.</p>
           <section class="admin-analysis-card admin-analysis-imports-card">
             <h3>🗂️ Exports generales cargados</h3>
@@ -2886,6 +2899,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=110.0"></script>
+  <script type="module" src="js/app.js?v=111.0"></script>
 </body>
 </html>
