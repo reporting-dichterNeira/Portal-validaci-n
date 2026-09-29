@@ -48,6 +48,15 @@ test('the scheduled warm-up runs on the Reporting Cluster before export synchron
   assert.match(warmup, /spark\.range\(1\)\.count\(\)/);
 });
 
+test('batch uploads retry transient errors and preserve database error details', () => {
+  const notebook = read('databricks/validaflow_general_export.py');
+  const receiver = read('supabase/functions/sync-databricks-export/index.ts');
+  assert.match(notebook, /range\(4 if action == "batch" else 1\)/);
+  assert.match(notebook, /response\.status_code in \(429, 500, 502, 503, 504\)/);
+  assert.match(notebook, /response\.text\[:500\]/);
+  assert.match(receiver, /failure\.code, failure\.message, failure\.details/);
+});
+
 test('the portal leaves past general exports read-only while allowing current-month backup', () => {
   const app = read('js/app.js');
   const backend = read('js/supabase-backend.js');

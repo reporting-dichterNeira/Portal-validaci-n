@@ -7,6 +7,7 @@ are never queried again after their final snapshot has been published.
 
 from itertools import chain
 import re
+import time
 
 import requests
 
@@ -17,13 +18,25 @@ session = requests.Session()
 
 
 def send(sync_job_id, callback_token, action, **values):
-    response = session.post(
-        callback_url,
-        headers={"x-sync-token": callback_token},
-        json={"action": action, "jobId": sync_job_id, **values},
-        timeout=90,
-    )
-    response.raise_for_status()
+    for attempt in range(4 if action == "batch" else 1):
+        try:
+            response = session.post(
+                callback_url,
+                headers={"x-sync-token": callback_token},
+                json={"action": action, "jobId": sync_job_id, **values},
+                timeout=90,
+            )
+        except requests.RequestException:
+            if action != "batch" or attempt == 3:
+                raise
+            time.sleep(2 ** attempt)
+            continue
+        if response.ok:
+            return
+        if action == "batch" and response.status_code in (429, 500, 502, 503, 504) and attempt < 3:
+            time.sleep(2 ** attempt)
+            continue
+        raise RuntimeError(f"{action}: HTTP {response.status_code}: {response.text[:500]}")
 
 
 def clean(value):

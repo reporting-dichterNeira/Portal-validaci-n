@@ -23,7 +23,14 @@ function respond(body: unknown, status = 200) {
 }
 
 function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object') {
+    const failure = error as JsonRecord;
+    return [failure.code, failure.message, failure.details]
+      .filter(value => typeof value === 'string' && value)
+      .join(' | ') || 'Error de base de datos sin mensaje.';
+  }
+  return String(error);
 }
 
 function normalizePeriod(value: unknown) {
