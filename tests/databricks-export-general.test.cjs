@@ -7,26 +7,38 @@ const vm = require('node:vm');
 const root = path.join(__dirname, '..');
 const read = relativePath => fs.readFileSync(path.join(root, relativePath), 'utf8');
 
-test('Databricks only stages fixed monthly exports for supervisor review', () => {
+test('Databricks only queries the current month and an unfinished prior-month close', () => {
   const notebook = read('databricks/validaflow_general_export.py');
   assert.match(notebook, /FROM storeview\.slv_sv_ceres_ag_export/);
   assert.match(notebook, /lower\(Survey\) LIKE '%ko_trad%'/);
   assert.match(notebook, /lower\(Survey\) LIKE '%ko_moderno%'/);
   assert.match(notebook, /lower\(Survey\) LIKE '%lindley%'/);
-  assert.match(notebook, /period_override not in \(previous_period, current_month\)/);
+  assert.match(notebook, /"action": "schedule"/);
+  assert.match(notebook, /month_to_close = schedule\.get\("monthToClose"\)/);
+  assert.match(notebook, /periods = \[\(month_to_close, True\)\] if month_to_close else \[\]/);
+  assert.match(notebook, /periods\.append\(\(current_month, False\)\)/);
   assert.match(notebook, /"complete", expectedCount=sent_count/);
   assert.doesNotMatch(notebook, /["']approve["']/);
 });
 
-test('the Edge receiver cannot publish with the Databricks staging token', () => {
+test('only the preceding month can be closed automatically, and closed months are rejected', () => {
   const receiver = read('supabase/functions/sync-databricks-export/index.ts');
-  const publishing = read('supabase/migrations/20260929172300_databricks_staged_review.sql');
-  assert.match(receiver, /allowedScheduledPeriods\(\)\.has\(period\)/);
+  const publishing = read('supabase/migrations/20260929201144_freeze_monthly_databricks_exports.sql');
+  assert.match(receiver, /period !== previous \|\| period < '2026-09'/);
+  assert.match(receiver, /MONTH_ALREADY_CLOSED/);
   assert.match(receiver, /status: 'review'/);
   assert.match(receiver, /if \(!publishingRoles\.has\(user\.role\)\)/);
   assert.match(receiver, /adminClient\.rpc\('finish_admin_databricks_sync'/);
-  assert.match(publishing, /v_job\.status <> 'review'/);
-  assert.match(publishing, /SYNC_NEWER_STAGE_EXISTS/);
+  assert.match(receiver, /p_close_month: true/);
+  assert.match(publishing, /where id = p_job_id and status = 'review'/);
+  assert.match(publishing, /SYNC_MONTH_FROZEN/);
+  assert.match(publishing, /SYNC_NOT_PREVIOUS_MONTH/);
+  assert.match(read('supabase/migrations/20260929172300_databricks_staged_review.sql'), /SYNC_NEWER_STAGE_EXISTS/);
+});
+
+test('the scheduled warm-up runs on the Reporting Cluster before export synchronization', () => {
+  const warmup = read('databricks/validaflow_reporting_warmup.py');
+  assert.match(warmup, /spark\.range\(1\)\.count\(\)/);
 });
 
 test('the portal offers a distinct review and publish step', () => {

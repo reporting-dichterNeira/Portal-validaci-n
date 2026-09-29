@@ -1,8 +1,9 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.95.0';
 
-// Only the SHA-256 digest is deployed. The staging token itself lives in the
-// Databricks secret scope and cannot publish data without supervisor review.
+// Only the SHA-256 digest is deployed. The receiver token lives in Databricks.
+// It can close the preceding month automatically after the calendar rolls;
+// current-month snapshots still require an authenticated review.
 const ingestTokenHash = '64d66952047bf74ef6290a166cf6255b697255c0e5ae019dd8af88bab6947930';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,15 +31,15 @@ function normalizePeriod(value: unknown) {
   return /^20\d{2}-(0[1-9]|1[0-2])$/.test(period) ? period : null;
 }
 
-function allowedScheduledPeriods() {
+function scheduledMonths() {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Bogota', year: 'numeric', month: '2-digit',
   }).formatToParts(new Date());
   const year = Number(parts.find(part => part.type === 'year')?.value);
   const month = Number(parts.find(part => part.type === 'month')?.value);
-  const current = `${year}-${String(month).padStart(2, '0')}`;
-  const previous = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
-  return new Set([previous, current]);
+  const current = year + '-' + String(month).padStart(2, '0');
+  const previous = month === 1 ? (year - 1) + '-12' : year + '-' + String(month - 1).padStart(2, '0');
+  return { previous, current };
 }
 
 function toHex(bytes: ArrayBuffer) {
@@ -75,6 +76,7 @@ function publicJob(job: JsonRecord, preview: JsonRecord[] = []) {
   return {
     id: job.id,
     periodMonth: job.period_month,
+    closeMonth: job.close_month,
     status: job.status,
     rowsStaged: job.rows_staged,
     error: job.error_message,
@@ -99,16 +101,39 @@ Deno.serve(async (req) => {
   try {
     const adminClient = createAdminClient();
 
+    if (action === 'schedule') {
+      const token = req.headers.get('x-ingest-token') || '';
+      if (token.length < 40 || await hashToken(token) !== ingestTokenHash) {
+        return respond({ error: 'INVALID_INGEST_TOKEN' }, 401);
+      }
+      const { previous, current } = scheduledMonths();
+      const { data: closed, error: closedError } = await adminClient
+        .from('admin_databricks_closed_months').select('period_month')
+        .eq('period_month', previous + '-01').maybeSingle();
+      if (closedError) throw closedError;
+      return respond({ currentMonth: current,
+        monthToClose: previous >= '2026-09' && !closed ? previous : null });
+    }
+
     if (action === 'begin') {
       const token = req.headers.get('x-ingest-token') || '';
       if (token.length < 40 || await hashToken(token) !== ingestTokenHash) {
         return respond({ error: 'INVALID_INGEST_TOKEN' }, 401);
       }
       const period = normalizePeriod(body.periodMonth);
-      if (!period || !allowedScheduledPeriods().has(period)) {
+      const { previous, current } = scheduledMonths();
+      const closeMonth = body.closeMonth === true;
+      if (!period || (closeMonth
+        ? period !== previous || period < '2026-09'
+        : period !== current)) {
         return respond({ error: 'INVALID_SCHEDULED_MONTH' }, 400);
       }
-      const periodMonth = `${period}-01`;
+      const periodMonth = period + '-01';
+      const { data: closed, error: closedError } = await adminClient
+        .from('admin_databricks_closed_months').select('period_month')
+        .eq('period_month', periodMonth).maybeSingle();
+      if (closedError) throw closedError;
+      if (closed) return respond({ error: 'MONTH_ALREADY_CLOSED' }, 409);
       const now = new Date().toISOString();
       await adminClient.from('admin_databricks_sync_jobs').update({
         status: 'failed', error_message: 'La carga programada expiró.', callback_token_hash: '', updated_at: now,
@@ -118,10 +143,11 @@ Deno.serve(async (req) => {
       if (activeError) throw activeError;
       if (activeJobs?.length) return respond({ error: 'MONTH_ALREADY_STAGING' }, 409);
 
-      const callbackToken = `${crypto.randomUUID()}${crypto.randomUUID()}`;
+      const callbackToken = crypto.randomUUID() + crypto.randomUUID();
       const { data: job, error: insertError } = await adminClient.from('admin_databricks_sync_jobs')
         .insert({
           period_month: periodMonth,
+          close_month: closeMonth,
           status: 'running',
           callback_token_hash: await hashToken(callbackToken),
           token_expires_at: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
@@ -138,7 +164,7 @@ Deno.serve(async (req) => {
         return respond({ error: 'INVALID_CALLBACK' }, 401);
       }
       const { data: job, error: jobError } = await adminClient.from('admin_databricks_sync_jobs')
-        .select('id, period_month, status, callback_token_hash, token_expires_at, rows_staged')
+        .select('id, period_month, close_month, status, callback_token_hash, token_expires_at, rows_staged')
         .eq('id', jobId).maybeSingle();
       if (jobError || !job || job.status !== 'running' ||
           new Date(job.token_expires_at).getTime() < Date.now() ||
@@ -196,6 +222,20 @@ Deno.serve(async (req) => {
           }).eq('id', previous.id);
           await adminClient.from('admin_databricks_sync_stage').delete().eq('job_id', previous.id);
         }
+        if (job.close_month) {
+          const { error: publishError } = await adminClient.rpc('finish_admin_databricks_sync', {
+            p_job_id: jobId, p_expected_count: count, p_close_month: true,
+          });
+          if (publishError) {
+            await adminClient.from('admin_databricks_sync_jobs').update({
+              status: 'failed', error_message: ('No se pudo cerrar el mes: ' + publishError.message).slice(0, 500),
+              updated_at: new Date().toISOString(),
+            }).eq('id', jobId);
+            await adminClient.from('admin_databricks_sync_stage').delete().eq('job_id', jobId);
+            throw publishError;
+          }
+          return respond({ ok: true, rowCount: count, monthClosed: true });
+        }
         return respond({ ok: true, rowCount: count, pendingReview: true });
       }
 
@@ -213,8 +253,8 @@ Deno.serve(async (req) => {
     const period = normalizePeriod(body.periodMonth);
     if (!period) return respond({ error: 'INVALID_MONTH' }, 400);
     const { data: jobs, error: jobsError } = await adminClient.from('admin_databricks_sync_jobs')
-      .select('id, period_month, status, rows_staged, error_message, created_at, updated_at, token_expires_at')
-      .eq('period_month', `${period}-01`).order('created_at', { ascending: false }).limit(1);
+      .select('id, period_month, close_month, status, rows_staged, error_message, created_at, updated_at, token_expires_at')
+      .eq('period_month', period + '-01').order('created_at', { ascending: false }).limit(1);
     if (jobsError) throw jobsError;
     const job = jobs?.[0];
     if (!job) return respond({ job: null });
@@ -225,7 +265,7 @@ Deno.serve(async (req) => {
         return respond({ error: 'STAGE_NOT_READY' }, 409);
       }
       const { data: rowCount, error: publishError } = await adminClient.rpc('finish_admin_databricks_sync', {
-        p_job_id: job.id, p_expected_count: job.rows_staged,
+        p_job_id: job.id, p_expected_count: job.rows_staged, p_close_month: false,
       });
       if (publishError) throw publishError;
       return respond({ job: publicJob({ ...job, status: 'complete', rows_staged: rowCount }) });

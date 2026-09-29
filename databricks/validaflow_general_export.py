@@ -1,13 +1,12 @@
 # Databricks notebook source
-"""Stage the current and previous monthly exports from Reporting Cluster.
+"""Stage only the active month; close the previous month once at rollover.
 
-This job never publishes data. A supervisor reviews each completed staging
-load in ValidaFlow before replacing the visible export for that month.
+The Reporting Cluster runs this notebook after its warm-up task. Older months
+are never queried again after their final snapshot has been published.
 """
 
-from datetime import datetime
+from itertools import chain
 import re
-from zoneinfo import ZoneInfo
 
 import requests
 
@@ -31,22 +30,9 @@ def clean(value):
     return None if value is None else str(value).strip()[:1000]
 
 
-def sync_month(period_month):
+def sync_month(period_month, close_month=False):
     if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", period_month):
         raise ValueError("Mes de sincronización no válido")
-    begin_response = session.post(
-        callback_url,
-        headers={"x-ingest-token": ingest_token},
-        json={"action": "begin", "periodMonth": period_month},
-        timeout=90,
-    )
-    begin_response.raise_for_status()
-    begin_result = begin_response.json()
-    sync_job_id = str(begin_result["jobId"])
-    callback_token = str(begin_result["callbackToken"])
-    if not re.fullmatch(r"[0-9a-f-]{36}", sync_job_id, flags=re.I) or len(callback_token) < 40:
-        raise ValueError("La respuesta de inicio no fue válida")
-
     year, month = period_month.split("-")
     wave = f"{month_names[int(month) - 1]} {year}"
     # The fixed table and a validated year/month prevent arbitrary SQL.
@@ -61,11 +47,32 @@ def sync_month(period_month):
       AND CAST(ID_de_audito AS STRING) RLIKE '^[0-9]+$'
     """
 
+    rows = iter(spark.sql(query).toLocalIterator())
+    first_row = next(rows, None)
+    if first_row is None:
+        if close_month:
+            raise ValueError(f"No hay datos para el cierre de {period_month}; se reintentará mañana")
+        print(f"{period_month}: todavía no hay auditorías; se conserva la base publicada")
+        return
+
+    begin_response = session.post(
+        callback_url,
+        headers={"x-ingest-token": ingest_token},
+        json={"action": "begin", "periodMonth": period_month, "closeMonth": close_month},
+        timeout=90,
+    )
+    begin_response.raise_for_status()
+    begin_result = begin_response.json()
+    sync_job_id = str(begin_result["jobId"])
+    callback_token = str(begin_result["callbackToken"])
+    if not re.fullmatch(r"[0-9a-f-]{36}", sync_job_id, flags=re.I) or len(callback_token) < 40:
+        raise ValueError("La respuesta de inicio no fue válida")
+
     seen_ids = set()
     batch = []
     sent_count = 0
     try:
-        for item in spark.sql(query).toLocalIterator():
+        for item in chain((first_row,), rows):
             row = item.asDict()
             audit_id = clean(row.get("ID_de_audito"))
             if not audit_id or not re.fullmatch(r"[0-9]+", audit_id) or audit_id in seen_ids:
@@ -92,7 +99,8 @@ def sync_month(period_month):
             sent_count += len(batch)
             send(sync_job_id, callback_token, "batch", rows=batch, processedCount=sent_count)
         send(sync_job_id, callback_token, "complete", expectedCount=sent_count)
-        print(f"{period_month}: {sent_count} auditorías listas para revisión")
+        state = "cierre definitivo publicado" if close_month else "listas para revisión"
+        print(f"{period_month}: {sent_count} auditorías {state}")
     except Exception as exc:
         try:
             send(sync_job_id, callback_token, "failed", message=str(exc)[:500])
@@ -101,21 +109,33 @@ def sync_month(period_month):
         raise
 
 
-today = datetime.now(ZoneInfo("America/Bogota"))
-current_month = f"{today.year:04d}-{today.month:02d}"
-previous_year = today.year - 1 if today.month == 1 else today.year
-previous_month = 12 if today.month == 1 else today.month - 1
-previous_period = f"{previous_year:04d}-{previous_month:02d}"
+schedule_response = session.post(
+    callback_url,
+    headers={"x-ingest-token": ingest_token},
+    json={"action": "schedule"},
+    timeout=90,
+)
+schedule_response.raise_for_status()
+schedule = schedule_response.json()
+current_month = str(schedule["currentMonth"])
+month_to_close = schedule.get("monthToClose")
+if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", current_month):
+    raise ValueError("La programación devolvió un mes inválido")
+if month_to_close and not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", str(month_to_close)):
+    raise ValueError("La programación devolvió un cierre inválido")
 
 errors = []
 dbutils.widgets.text("period_override", "")
 period_override = dbutils.widgets.get("period_override").strip()
-if period_override and period_override not in (previous_period, current_month):
-    raise ValueError("Solo se puede probar el mes actual o el anterior")
-periods = (period_override,) if period_override else (previous_period, current_month)
-for period in periods:
+periods = [(month_to_close, True)] if month_to_close else []
+periods.append((current_month, False))
+if period_override:
+    periods = [item for item in periods if item[0] == period_override]
+    if not periods:
+        raise ValueError("Solo se puede probar el mes vigente o un cierre pendiente")
+for period, close_month in periods:
     try:
-        sync_month(period)
+        sync_month(period, close_month=close_month)
     except Exception as exc:
         errors.append(f"{period}: {exc}")
 if errors:

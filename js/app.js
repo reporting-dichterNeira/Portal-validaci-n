@@ -1457,7 +1457,13 @@ class ValidaFlowApp {
     const approveButton = document.getElementById('admin-alerts-databricks-approve-button');
     const previewElement = document.getElementById('admin-alerts-databricks-preview');
     const previewRows = document.getElementById('admin-alerts-databricks-preview-rows');
-    this.adminDatabricksReviewJob = job?.status === 'review' ? job : null;
+    const selectedMonth = document.getElementById('admin-alerts-export-period')?.value;
+    const currentParts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Bogota', year: 'numeric', month: '2-digit'
+    }).formatToParts(new Date());
+    const currentMonth = `${currentParts.find(part => part.type === 'year')?.value}-${currentParts.find(part => part.type === 'month')?.value}`;
+    const isHistorical = Boolean(selectedMonth && selectedMonth < currentMonth);
+    this.adminDatabricksReviewJob = job?.status === 'review' && !isHistorical ? job : null;
     if (approveButton) approveButton.disabled = !this.adminDatabricksReviewJob || !['admin', 'supervisor'].includes(this.currentRole);
     if (previewElement) previewElement.hidden = !this.adminDatabricksReviewJob;
     if (previewRows) {
@@ -1468,15 +1474,21 @@ class ValidaFlowApp {
     }
     if (!element) return;
     if (!job) {
-      element.textContent = 'Este mes aún no tiene una carga programada. Los datos publicados anteriormente se conservan.';
+      element.textContent = isHistorical
+        ? 'Histórico fijo: este mes ya no se consulta ni se actualiza automáticamente.'
+        : 'Este mes aún no tiene una carga programada. Los datos publicados anteriormente se conservan.';
       return;
     }
     const count = Number(job.rowsStaged || 0).toLocaleString('es-CO');
     const month = this.formatExternalImportMonth(job.periodMonth);
     if (job.status === 'complete') {
-      element.textContent = `${month}: ${count} auditorías revisadas y publicadas desde Reporting Cluster.`;
+      element.textContent = job.closeMonth
+        ? `${month}: cierre definitivo de ${count} auditorías publicado. Este histórico ya no se actualiza automáticamente.`
+        : `${month}: ${count} auditorías revisadas y publicadas desde Reporting Cluster.`;
     } else if (job.status === 'review') {
-      element.textContent = `${month}: ${count} auditorías listas para revisión. La base publicada todavía no se ha reemplazado.`;
+      element.textContent = isHistorical
+        ? `${month}: carga anterior sin publicar; el histórico publicado permanece fijo.`
+        : `${month}: ${count} auditorías listas para revisión. La base publicada todavía no se ha reemplazado.`;
     } else if (job.status === 'failed') {
       element.textContent = `${month}: no se completó la carga. ${job.error || 'Los datos publicados se conservaron.'}`;
     } else {

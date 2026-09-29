@@ -768,7 +768,7 @@
             <div>
               <div class="corporate-badge">Cruce por ID de auditoría</div>
               <h2>Export general con contexto de auditoría</h2>
-              <p>Reporting Cluster prepara automáticamente los meses actual y anterior. Revisa la muestra y publica cada mes cuando esté listo; hasta entonces, los datos visibles no cambian.</p>
+              <p>Reporting Cluster carga cada mañana solo el mes vigente. Al comenzar un nuevo mes, publica el último corte del anterior y lo deja fijo en el histórico. Las bases anteriores no se vuelven a consultar.</p>
             </div>
             <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis({ force: true })">↻ Actualizar</button>
           </div>
@@ -777,7 +777,7 @@
             <button class="btn btn-outline" id="admin-alerts-databricks-check-button" type="button" onclick="window.app?.checkAdminDatabricksSyncStatus()">↻ Consultar carga</button>
             <button class="btn btn-navy btn-glow" id="admin-alerts-databricks-approve-button" type="button" onclick="window.app?.publishAdminDatabricksGeneralExport()" disabled>✓ Publicar base revisada</button>
           </div>
-          <p class="form-help" id="admin-alerts-databricks-status" role="status">La carga programada se ejecuta a las 5:00 a. m. (Bogotá) en Reporting Cluster. Selecciona un mes para consultar su estado.</p>
+          <p class="form-help" id="admin-alerts-databricks-status" role="status">La carga diaria comienza a las 5:00 a. m. (Bogotá): primero se enciende Reporting Cluster y después se consulta el mes vigente. Selecciona un mes para consultar su estado.</p>
           <details class="admin-analysis-manual-import" id="admin-alerts-databricks-preview" hidden>
             <summary>Revisar muestra de auditorías antes de publicar</summary>
             <p class="form-help">Muestra de hasta 12 registros. Confirma el mes y el total antes de reemplazar la base visible.</p>
