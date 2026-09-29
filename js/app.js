@@ -1451,6 +1451,7 @@ class ValidaFlowApp {
   }
 
   updateAdminDatabricksSyncStatus(job) {
+    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
     const element = document.getElementById('admin-alerts-databricks-status');
     const approveButton = document.getElementById('admin-alerts-databricks-approve-button');
     const previewElement = document.getElementById('admin-alerts-databricks-preview');
