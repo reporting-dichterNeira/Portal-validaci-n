@@ -790,6 +790,15 @@ export class SupabaseBackend {
       ? `${periodMonth}-01`
       : null;
     if (!normalizedMonth) throw new Error('Selecciona el mes de referencia del export.');
+    if (datasetType === 'alerts') {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/Bogota', year: 'numeric', month: '2-digit'
+      }).formatToParts(new Date());
+      const currentMonth = `${parts.find(part => part.type === 'year')?.value}-${parts.find(part => part.type === 'month')?.value}-01`;
+      if (normalizedMonth !== currentMonth) {
+        throw new Error('El Export general histórico está fijo. Solo se puede actualizar el mes vigente.');
+      }
+    }
 
     const { error: deleteError } = await this.client
       .from(table)

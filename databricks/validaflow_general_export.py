@@ -1,5 +1,5 @@
 # Databricks notebook source
-"""Stage only the active month; close the previous month once at rollover.
+"""Publish the active month daily; close the previous month at rollover.
 
 The Reporting Cluster runs this notebook after its warm-up task. Older months
 are never queried again after their final snapshot has been published.
@@ -99,7 +99,7 @@ def sync_month(period_month, close_month=False):
             sent_count += len(batch)
             send(sync_job_id, callback_token, "batch", rows=batch, processedCount=sent_count)
         send(sync_job_id, callback_token, "complete", expectedCount=sent_count)
-        state = "cierre definitivo publicado" if close_month else "listas para revisión"
+        state = "cierre definitivo publicado" if close_month else "publicadas automáticamente"
         print(f"{period_month}: {sent_count} auditorías {state}")
     except Exception as exc:
         try:

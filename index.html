@@ -768,23 +768,17 @@
             <div>
               <div class="corporate-badge">Cruce por ID de auditoría</div>
               <h2>Export general con contexto de auditoría</h2>
-              <p>Reporting Cluster carga cada mañana solo el mes vigente. Al comenzar un nuevo mes, publica el último corte del anterior y lo deja fijo en el histórico. Las bases anteriores no se vuelven a consultar.</p>
+              <p>Reporting Cluster publica automáticamente cada mañana el mes vigente. Al comenzar un nuevo mes, publica el último corte del anterior y lo deja fijo en el histórico. Las bases anteriores no se vuelven a consultar.</p>
             </div>
             <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis({ force: true })">↻ Actualizar</button>
           </div>
           <div class="admin-analysis-upload">
-            <label class="admin-analysis-period" for="admin-alerts-export-period">Mes a revisar <input class="form-control" type="month" id="admin-alerts-export-period" required /></label>
+            <label class="admin-analysis-period" for="admin-alerts-export-period">Mes a consultar <input class="form-control" type="month" id="admin-alerts-export-period" required /></label>
             <button class="btn btn-outline" id="admin-alerts-databricks-check-button" type="button" onclick="window.app?.checkAdminDatabricksSyncStatus()">↻ Consultar carga</button>
-            <button class="btn btn-navy btn-glow" id="admin-alerts-databricks-approve-button" type="button" onclick="window.app?.publishAdminDatabricksGeneralExport()" disabled>✓ Publicar base revisada</button>
           </div>
           <p class="form-help" id="admin-alerts-databricks-status" role="status">La carga diaria comienza a las 5:00 a. m. (Bogotá): primero se enciende Reporting Cluster y después se consulta el mes vigente. Selecciona un mes para consultar su estado.</p>
-          <details class="admin-analysis-manual-import" id="admin-alerts-databricks-preview" hidden>
-            <summary>Revisar muestra de auditorías antes de publicar</summary>
-            <p class="form-help">Muestra de hasta 12 registros. Confirma el mes y el total antes de reemplazar la base visible.</p>
-            <div class="admin-analysis-ranking" id="admin-alerts-databricks-preview-rows"></div>
-          </details>
           <details class="admin-analysis-manual-import" id="admin-alerts-manual-import">
-            <summary>Usar archivo Excel o CSV como respaldo</summary>
+            <summary>Usar archivo Excel o CSV como respaldo del mes vigente</summary>
             <div class="admin-analysis-upload">
               <input class="form-control" type="file" id="admin-alerts-export-input" accept=".xlsx,.xls,.csv,.txt" />
               <button class="btn btn-outline" type="button" onclick="window.app?.importAdminExternalAnalysis('alerts')">📥 Cargar archivo</button>
@@ -793,7 +787,7 @@
           <p class="form-help" id="admin-alerts-import-status">Aún no se ha cargado un export de auditorías.</p>
           <section class="admin-analysis-card admin-analysis-imports-card">
             <h3>🗂️ Exports generales cargados</h3>
-            <p class="form-help">Todos los supervisores con acceso pueden ver los meses cargados. Actualizar reemplaza únicamente la versión de ese mismo mes.</p>
+            <p class="form-help">Todos los supervisores con acceso pueden consultar el histórico. Solo el mes vigente admite actualización; al cerrarse queda fijo.</p>
             <div id="admin-alerts-import-list" class="admin-analysis-ranking"><span class="text-muted">Aún no hay exports generales cargados.</span></div>
           </section>
           <div class="admin-analysis-filter-bar">

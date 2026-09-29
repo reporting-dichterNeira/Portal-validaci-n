@@ -1435,6 +1435,9 @@ class ValidaFlowApp {
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(periodMonth || ''))) {
         throw new Error('Selecciona el mes de referencia antes de cargar el export.');
       }
+      if (datasetType === 'alerts' && periodMonth !== this.getCurrentBogotaMonth()) {
+        throw new Error('El Export general histórico está fijo. Solo se puede actualizar el mes vigente.');
+      }
       const rawRows = await this.readExternalExportRows(file);
       const rows = datasetType === 'alerts'
         ? this.normalizeAlertExportRows(rawRows)
@@ -1452,26 +1455,10 @@ class ValidaFlowApp {
   }
 
   updateAdminDatabricksSyncStatus(job) {
-    const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
     const element = document.getElementById('admin-alerts-databricks-status');
-    const approveButton = document.getElementById('admin-alerts-databricks-approve-button');
-    const previewElement = document.getElementById('admin-alerts-databricks-preview');
-    const previewRows = document.getElementById('admin-alerts-databricks-preview-rows');
     const selectedMonth = document.getElementById('admin-alerts-export-period')?.value;
-    const currentParts = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Bogota', year: 'numeric', month: '2-digit'
-    }).formatToParts(new Date());
-    const currentMonth = `${currentParts.find(part => part.type === 'year')?.value}-${currentParts.find(part => part.type === 'month')?.value}`;
+    const currentMonth = this.getCurrentBogotaMonth();
     const isHistorical = Boolean(selectedMonth && selectedMonth < currentMonth);
-    this.adminDatabricksReviewJob = job?.status === 'review' && !isHistorical ? job : null;
-    if (approveButton) approveButton.disabled = !this.adminDatabricksReviewJob || !['admin', 'supervisor'].includes(this.currentRole);
-    if (previewElement) previewElement.hidden = !this.adminDatabricksReviewJob;
-    if (previewRows) {
-      previewRows.innerHTML = (job?.status === 'review' ? job.preview || [] : []).map(item => {
-        const record = item.record || {};
-        return `<div class="admin-analysis-ranking-row"><strong>ID ${escapeHtml(item.audit_external_id || '—')}</strong><span>PDV ${escapeHtml(record.pdv_id || '—')} · ${escapeHtml(record.study || 'Sin estudio')} · ${escapeHtml(record.country || 'Sin país')} · ${escapeHtml(record.audit_date || 'Sin fecha')}</span></div>`;
-      }).join('');
-    }
     if (!element) return;
     if (!job) {
       element.textContent = isHistorical
@@ -1484,11 +1471,11 @@ class ValidaFlowApp {
     if (job.status === 'complete') {
       element.textContent = job.closeMonth
         ? `${month}: cierre definitivo de ${count} auditorías publicado. Este histórico ya no se actualiza automáticamente.`
-        : `${month}: ${count} auditorías revisadas y publicadas desde Reporting Cluster.`;
+        : `${month}: ${count} auditorías publicadas automáticamente desde Reporting Cluster.`;
     } else if (job.status === 'review') {
       element.textContent = isHistorical
         ? `${month}: carga anterior sin publicar; el histórico publicado permanece fijo.`
-        : `${month}: ${count} auditorías listas para revisión. La base publicada todavía no se ha reemplazado.`;
+        : `${month}: corte anterior en espera; la próxima ejecución publicará automáticamente el corte nuevo. La base visible se conserva mientras tanto.`;
     } else if (job.status === 'failed') {
       element.textContent = `${month}: no se completó la carga. ${job.error || 'Los datos publicados se conservaron.'}`;
     } else {
@@ -1500,12 +1487,7 @@ class ValidaFlowApp {
     const input = document.getElementById('admin-alerts-export-period');
     if (!input) return;
     if (!input.value) {
-      const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/Bogota', year: 'numeric', month: '2-digit'
-      }).formatToParts(new Date());
-      const year = parts.find(part => part.type === 'year')?.value;
-      const month = parts.find(part => part.type === 'month')?.value;
-      input.value = String(preferredMonth || `${year}-${month}`).slice(0, 7);
+      input.value = String(preferredMonth || this.getCurrentBogotaMonth()).slice(0, 7);
     }
     if (input.dataset.syncBound === 'true') return;
     input.addEventListener('change', () => this.checkAdminDatabricksSyncStatus());
@@ -1530,37 +1512,6 @@ class ValidaFlowApp {
     if (input) input.value = String(periodMonth || '').slice(0, 7);
     await this.checkAdminDatabricksSyncStatus();
     document.getElementById('admin-alerts-databricks-status')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }
-
-  async publishAdminDatabricksGeneralExport() {
-    if (!this.canUseExternalAnalysis() || this.adminDatabricksSyncPromise) return;
-    const job = this.adminDatabricksReviewJob;
-    if (!job || !['admin', 'supervisor'].includes(this.currentRole)) return;
-    const periodMonth = String(job.periodMonth || '').slice(0, 7);
-    const count = Number(job.rowsStaged || 0).toLocaleString('es-CO');
-    if (!confirm(`¿Publicar ${count} auditorías de ${this.formatExternalImportMonth(periodMonth)}? Esto reemplazará únicamente el Export general visible de ese mes.`)) return;
-    const button = document.getElementById('admin-alerts-databricks-approve-button');
-    const request = (async () => {
-      try {
-        if (button) button.disabled = true;
-        const published = await this.backend.requestDatabricksGeneralExportSync('approve', periodMonth, job.id);
-        this.updateAdminDatabricksSyncStatus(published);
-        this.invalidateAdminExternalAnalysisCache();
-        await this.refreshAdminExternalAnalysis({ force: true });
-        this.showToast(`${count} auditorías de ${this.formatExternalImportMonth(periodMonth)} publicadas.`, 'success');
-      } catch (error) {
-        this.showToast(error.message || 'No fue posible publicar la base revisada.', 'error');
-        await this.checkAdminDatabricksSyncStatus();
-      } finally {
-        if (button) button.disabled = !this.adminDatabricksReviewJob;
-      }
-    })();
-    this.adminDatabricksSyncPromise = request;
-    try {
-      await request;
-    } finally {
-      if (this.adminDatabricksSyncPromise === request) this.adminDatabricksSyncPromise = null;
-    }
   }
 
   async importAdminScoreChangeAnalysis() {
@@ -1601,6 +1552,10 @@ class ValidaFlowApp {
       this.showToast('No fue posible identificar el mes de este export.', 'error');
       return;
     }
+    if (datasetType === 'alerts' && month !== this.getCurrentBogotaMonth()) {
+      this.showToast('Este Export general ya es histórico fijo y no admite actualización.', 'info');
+      return;
+    }
     const periodInput = document.getElementById(target.period);
     const fileInput = document.getElementById(target.file);
     if (periodInput) periodInput.value = month;
@@ -1618,6 +1573,13 @@ class ValidaFlowApp {
     if (!match) return 'el mes seleccionado';
     return new Intl.DateTimeFormat('es-CO', { month: 'long', year: 'numeric' })
       .format(new Date(Number(match[1]), Number(match[2]) - 1, 1));
+  }
+
+  getCurrentBogotaMonth() {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Bogota', year: 'numeric', month: '2-digit'
+    }).formatToParts(new Date());
+    return `${parts.find(part => part.type === 'year')?.value}-${parts.find(part => part.type === 'month')?.value}`;
   }
 
   getAdminExternalAnalysisCacheKey() {
@@ -1912,11 +1874,15 @@ class ValidaFlowApp {
       element.innerHTML = items.length
         ? items.map(item => {
           const month = String(item.period_month || '').slice(0, 10);
+          const isFixedHistory = datasetType === 'alerts' && month.slice(0, 7) < this.getCurrentBogotaMonth();
           const fromDatabricks = datasetType === 'alerts' && /^Databricks/i.test(String(item.source_filename || ''));
           const updateAction = fromDatabricks
             ? `window.app?.showAdminDatabricksMonth('${month}')`
             : `window.app?.prepareAdminMonthlyImportUpdate('${datasetType}', '${month}')`;
-          return `<div class="admin-analysis-ranking-row"><div><strong>${escapeHtml(this.formatExternalImportMonth(item.period_month))}</strong><small>${escapeHtml(item.source_filename || 'Archivo sin nombre')} · ${formatNumber(item.row_count)} registros · ${escapeHtml(formatImportedAt(item.imported_at))}</small></div><button class="btn btn-outline btn-sm" type="button" onclick="${updateAction}">${fromDatabricks ? 'Ver carga' : 'Actualizar'}</button></div>`;
+          const action = isFixedHistory
+            ? '<span class="text-muted">Histórico fijo</span>'
+            : `<button class="btn btn-outline btn-sm" type="button" onclick="${updateAction}">${fromDatabricks ? 'Ver carga' : 'Actualizar'}</button>`;
+          return `<div class="admin-analysis-ranking-row"><div><strong>${escapeHtml(this.formatExternalImportMonth(item.period_month))}</strong><small>${escapeHtml(item.source_filename || 'Archivo sin nombre')} · ${formatNumber(item.row_count)} registros · ${escapeHtml(formatImportedAt(item.imported_at))}</small></div>${action}</div>`;
         }).join('')
         : `<span class="text-muted">${emptyMessage}</span>`;
     };

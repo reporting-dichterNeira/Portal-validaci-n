@@ -21,18 +21,22 @@ test('Databricks only queries the current month and an unfinished prior-month cl
   assert.doesNotMatch(notebook, /["']approve["']/);
 });
 
-test('only the preceding month can be closed automatically, and closed months are rejected', () => {
+test('current-month snapshots auto-publish, only the preceding month can close, and closed months are rejected', () => {
   const receiver = read('supabase/functions/sync-databricks-export/index.ts');
   const publishing = read('supabase/migrations/20260929201144_freeze_monthly_databricks_exports.sql');
+  const daily = read('supabase/migrations/20260929203815_auto_publish_current_databricks_month.sql');
   assert.match(receiver, /period !== previous \|\| period < '2026-09'/);
   assert.match(receiver, /MONTH_ALREADY_CLOSED/);
   assert.match(receiver, /status: 'review'/);
   assert.match(receiver, /if \(!publishingRoles\.has\(user\.role\)\)/);
   assert.match(receiver, /adminClient\.rpc\('finish_admin_databricks_sync'/);
-  assert.match(receiver, /p_close_month: true/);
+  assert.match(receiver, /p_close_month: Boolean\(job\.close_month\)/);
+  assert.match(receiver, /published: true/);
   assert.match(publishing, /where id = p_job_id and status = 'review'/);
   assert.match(publishing, /SYNC_MONTH_FROZEN/);
   assert.match(publishing, /SYNC_NOT_PREVIOUS_MONTH/);
+  assert.match(daily, /SYNC_ONLY_CURRENT_MONTH/);
+  assert.match(daily, /sincronización diaria/);
   assert.match(read('supabase/migrations/20260929172300_databricks_staged_review.sql'), /SYNC_NEWER_STAGE_EXISTS/);
 });
 
@@ -41,36 +45,44 @@ test('the scheduled warm-up runs on the Reporting Cluster before export synchron
   assert.match(warmup, /spark\.range\(1\)\.count\(\)/);
 });
 
-test('the portal offers a distinct review and publish step', () => {
-  const html = read('index.html');
+test('the portal leaves past general exports read-only while allowing current-month backup', () => {
   const app = read('js/app.js');
-  assert.match(html, /Publicar base revisada/);
-  assert.match(html, /Revisar muestra de auditorías antes de publicar/);
-  assert.match(app, /job\?\.status === 'review'/);
-  assert.match(app, /requestDatabricksGeneralExportSync\('approve'/);
+  const backend = read('js/supabase-backend.js');
+  assert.match(app, /isFixedHistory = datasetType === 'alerts'/);
+  assert.match(app, /Histórico fijo/);
+  assert.match(app, /periodMonth !== this\.getCurrentBogotaMonth\(\)/);
+  assert.match(backend, /if \(normalizedMonth !== currentMonth\)/);
 });
 
-test('the pending review renders its preview without executable HTML', () => {
+test('the portal offers an automatic-publishing status without a review button', () => {
+  const html = read('index.html');
+  const app = read('js/app.js');
+  assert.match(html, /publica automáticamente cada mañana el mes vigente/);
+  assert.doesNotMatch(html, /Publicar base revisada/);
+  assert.doesNotMatch(html, /Revisar muestra de auditorías antes de publicar/);
+  assert.match(app, /auditorías publicadas automáticamente desde Reporting Cluster/);
+});
+
+test('the status distinguishes a published current month from fixed history', () => {
   const app = read('js/app.js');
   const start = app.indexOf('  updateAdminDatabricksSyncStatus(job) {');
   const end = app.indexOf('\n  ensureAdminDatabricksMonthStatus(', start);
   assert.ok(start > 0 && end > start);
   const elements = new Map([
-    'admin-alerts-databricks-status', 'admin-alerts-databricks-approve-button',
-    'admin-alerts-databricks-preview', 'admin-alerts-databricks-preview-rows'
-  ].map(id => [id, {}]));
+    ['admin-alerts-databricks-status', {}],
+    ['admin-alerts-export-period', { value: '2026-09' }],
+  ]);
   const render = vm.runInNewContext(`({${app.slice(start, end)}}).updateAdminDatabricksSyncStatus`, {
     document: { getElementById: id => elements.get(id) }
   });
-  const instance = { currentRole: 'supervisor', formatExternalImportMonth: () => 'septiembre de 2026' };
+  const instance = { formatExternalImportMonth: () => 'septiembre de 2026', getCurrentBogotaMonth: () => '2026-09' };
   render.call(instance, {
-    id: 'job', periodMonth: '2026-09-01', status: 'review', rowsStaged: 1,
-    preview: [{ audit_external_id: '123', record: { pdv_id: '<script>alert(1)</script>', study: 'KO' } }]
+    id: 'job', periodMonth: '2026-09-01', status: 'complete', rowsStaged: 42617,
   });
-  assert.equal(elements.get('admin-alerts-databricks-approve-button').disabled, false);
-  assert.equal(elements.get('admin-alerts-databricks-preview').hidden, false);
-  assert.match(elements.get('admin-alerts-databricks-preview-rows').innerHTML, /&lt;script&gt;/);
-  assert.match(elements.get('admin-alerts-databricks-status').textContent, /listas para revisión/);
+  assert.match(elements.get('admin-alerts-databricks-status').textContent, /42\.617 auditorías publicadas automáticamente/);
+  elements.get('admin-alerts-export-period').value = '2026-08';
+  render.call(instance, null);
+  assert.match(elements.get('admin-alerts-databricks-status').textContent, /Histórico fijo/);
 });
 
 test('opening Export general checks the current month before large visual data loads', () => {
@@ -83,7 +95,7 @@ test('opening Export general checks the current month before large visual data l
     document: { getElementById: () => input }, Intl, Date
   });
   let checks = 0;
-  const instance = { checkAdminDatabricksSyncStatus: () => { checks += 1; } };
+  const instance = { checkAdminDatabricksSyncStatus: () => { checks += 1; }, getCurrentBogotaMonth: () => '2026-09' };
   ensure.call(instance);
   ensure.call(instance, '2026-08-01');
   assert.match(input.value, /^20\d{2}-(0[1-9]|1[0-2])$/);

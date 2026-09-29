@@ -2,8 +2,8 @@ import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
 import { createClient } from 'npm:@supabase/supabase-js@2.95.0';
 
 // Only the SHA-256 digest is deployed. The receiver token lives in Databricks.
-// It can close the preceding month automatically after the calendar rolls;
-// current-month snapshots still require an authenticated review.
+// It can publish the current month daily and close the preceding month
+// automatically after the calendar rolls.
 const ingestTokenHash = '64d66952047bf74ef6290a166cf6255b697255c0e5ae019dd8af88bab6947930';
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -222,21 +222,18 @@ Deno.serve(async (req) => {
           }).eq('id', previous.id);
           await adminClient.from('admin_databricks_sync_stage').delete().eq('job_id', previous.id);
         }
-        if (job.close_month) {
-          const { error: publishError } = await adminClient.rpc('finish_admin_databricks_sync', {
-            p_job_id: jobId, p_expected_count: count, p_close_month: true,
-          });
-          if (publishError) {
-            await adminClient.from('admin_databricks_sync_jobs').update({
-              status: 'failed', error_message: ('No se pudo cerrar el mes: ' + publishError.message).slice(0, 500),
-              updated_at: new Date().toISOString(),
-            }).eq('id', jobId);
-            await adminClient.from('admin_databricks_sync_stage').delete().eq('job_id', jobId);
-            throw publishError;
-          }
-          return respond({ ok: true, rowCount: count, monthClosed: true });
+        const { error: publishError } = await adminClient.rpc('finish_admin_databricks_sync', {
+          p_job_id: jobId, p_expected_count: count, p_close_month: Boolean(job.close_month),
+        });
+        if (publishError) {
+          await adminClient.from('admin_databricks_sync_jobs').update({
+            status: 'failed', error_message: ('No se pudo publicar el corte: ' + publishError.message).slice(0, 500),
+            updated_at: new Date().toISOString(),
+          }).eq('id', jobId);
+          await adminClient.from('admin_databricks_sync_stage').delete().eq('job_id', jobId);
+          throw publishError;
         }
-        return respond({ ok: true, rowCount: count, pendingReview: true });
+        return respond({ ok: true, rowCount: count, monthClosed: Boolean(job.close_month), published: true });
       }
 
       const message = String(body.message ?? 'Databricks interrumpió la carga.').slice(0, 500);
