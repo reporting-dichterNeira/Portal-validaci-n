@@ -7,6 +7,29 @@ import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 export class ExcelParser {
+  static normalizeAuditId(value) {
+    // Los IDs de auditoría son numéricos. Los proveedores pueden serializarlos
+    // como texto, número de Excel o con separadores; se conserva un único valor
+    // canónico para cargar, deduplicar y cruzar los archivos.
+    const compact = String(value ?? '').replace(/[\uFEFF\u00A0\s]/g, '').trim();
+    if (!compact) return '';
+
+    let normalized = compact;
+    if (/^\d+[.,]0+$/.test(normalized)) {
+      normalized = normalized.replace(/[.,]0+$/, '');
+    } else if (/^\d{1,3}(?:,\d{3})+(?:\.0+)?$/.test(normalized)) {
+      normalized = normalized.replace(/,/g, '').replace(/\.0+$/, '');
+    } else if (/^\d{1,3}(?:\.\d{3})+(?:,0+)?$/.test(normalized)) {
+      normalized = normalized.replace(/\./g, '').replace(/,0+$/, '');
+    }
+
+    // Un cero a la izquierda es formato de presentación en estos exports, no
+    // parte del identificador. No se transforma ningún ID no numérico.
+    return /^\d+$/.test(normalized)
+      ? normalized.replace(/^0+(?=\d)/, '')
+      : compact;
+  }
+
   static normalizeHeader(value) {
     return String(value ?? '')
       .normalize('NFD')
@@ -289,7 +312,7 @@ export class ExcelParser {
         const hLower = ExcelParser.normalizeHeader(h);
 
         if (hLower === 'id_de_audito' || hLower === 'id_audito' || hLower === 'id' || colIndex === 0) {
-          auditObj.id = val;
+          auditObj.id = ExcelParser.normalizeAuditId(val);
         } else if (hLower === 'id_de_pdv' || hLower === 'id_pdv' || hLower === 'pdv') {
           auditObj.idPDV = val;
         } else if (hLower === 'fecha_del_audito' || hLower === 'fecha_audito' || hLower === 'fecha' || hLower.includes('fecha')) {
@@ -369,9 +392,9 @@ export class ExcelParser {
     const map = new Map();
     audits.forEach(a => {
       if (!a || !a.id) return;
-      const key = String(a.id).trim();
+      const key = this.normalizeAuditId(a.id);
       if (!map.has(key)) {
-        map.set(key, { ...a });
+        map.set(key, { ...a, id: key });
       } else {
         const existing = map.get(key);
         // Si el registro entrante o existente tiene validación completada, preservar el resultado
@@ -429,7 +452,7 @@ export class ExcelParser {
       const row = rows[r];
       if (!row || row.length === 0) continue;
 
-      const rawId = idAuditoIdx !== -1 ? (row[idAuditoIdx] || '').toString().trim() : (row[0] || '').toString().trim();
+      const rawId = ExcelParser.normalizeAuditId(idAuditoIdx !== -1 ? row[idAuditoIdx] : row[0]);
       if (!rawId || rawId.toLowerCase().startsWith('total') || rawId.toLowerCase().startsWith('filtro')) {
         continue;
       }

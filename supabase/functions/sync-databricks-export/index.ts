@@ -38,6 +38,13 @@ function normalizePeriod(value: unknown) {
   return /^20\d{2}-(0[1-9]|1[0-2])$/.test(period) ? period : null;
 }
 
+function normalizeAuditId(value: unknown) {
+  const raw = String(value ?? '').replace(/[\uFEFF\u00A0\s]/g, '').trim();
+  if (!/^\d+(?:[.,]0+)?$/.test(raw)) return null;
+  const integer = raw.replace(/[.,]0+$/, '');
+  return integer.replace(/^0+(?=\d)/, '');
+}
+
 function scheduledMonths() {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Bogota', year: 'numeric', month: '2-digit',
@@ -188,8 +195,8 @@ Deno.serve(async (req) => {
         }
         const staged = rows.map(raw => {
           const record = raw && typeof raw === 'object' ? raw as JsonRecord : {};
-          const auditId = String(record.audit_external_id ?? '').trim();
-          if (!/^\d+$/.test(auditId)) throw new Error('Databricks devolvió un ID de auditoría no numérico.');
+          const auditId = normalizeAuditId(record.audit_external_id);
+          if (!auditId) throw new Error('Databricks devolvió un ID de auditoría no numérico.');
           const auditDate = record.audit_date == null ? '' : String(record.audit_date);
           if (auditDate && !/^\d{4}-\d{2}-\d{2}$/.test(auditDate)) {
             throw new Error('Databricks devolvió una fecha de auditoría no válida.');

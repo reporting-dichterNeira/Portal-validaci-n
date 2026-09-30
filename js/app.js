@@ -4,7 +4,7 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=27.0';
+import { ExcelParser } from './excel-parser.js?v=28.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=21.0';
@@ -1248,6 +1248,10 @@ class ValidaFlowApp {
     return '';
   }
 
+  normalizeAuditId(value) {
+    return ExcelParser.normalizeAuditId(value);
+  }
+
   parseExternalExportInteger(value) {
     const parsed = Number(String(value || '0').replace(/[^0-9.-]/g, ''));
     return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
@@ -1308,7 +1312,7 @@ class ValidaFlowApp {
       // Los Excel de Power BI incluyen filas de contexto como “Filtros
       // aplicados”. Nunca son auditorías: el ID válido se compone solo de
       // dígitos. También normalizamos el sufijo .0 de algunos Excel.
-      const auditId = String(importedAuditId || '').trim().replace(/\.0+$/, '');
+      const auditId = this.normalizeAuditId(importedAuditId);
       if (!/^\d+$/.test(auditId)) return;
       const auditStatus = this.getExternalExportValue(row, ['estado']);
       const alertStatus = this.getExternalExportValue(row, ['substatus', 'sub status']);
@@ -1343,8 +1347,8 @@ class ValidaFlowApp {
   normalizeEditionExportRows(rows) {
     const records = new Map();
     rows.forEach(row => {
-      const auditId = this.getExternalExportValue(row, ['id auditoria', 'id auditor', 'id audito', 'id de audito', 'audit id']);
-      if (!auditId) return;
+      const auditId = this.normalizeAuditId(this.getExternalExportValue(row, ['id auditoria', 'id auditor', 'id audito', 'id de audito', 'audit id']));
+      if (!/^\d+$/.test(auditId)) return;
       const record = {
         audit_external_id: auditId,
         study: this.getExternalExportValue(row, ['estudio', 'study']) || null,
@@ -1401,9 +1405,9 @@ class ValidaFlowApp {
       // Conserva el campo histórico como respaldo para archivos anteriores;
       // el nuevo reporte se analiza con sus dos notas finales de PDV.
       const score = currentTotalScore ?? currentSubkpiScore ?? this.parseExternalScore(this.getExternalExportValue(row, ['nota subkpi', 'nota']));
-      if (!pdvId || !subkpi || score === null) return;
-      const auditId = this.getExternalExportValue(row, ['id auditoria', 'id audito', 'id de audito', 'audit id']) || null;
-      const key = `${String(auditId || pdvId).trim().toLowerCase()}::${subkpi.trim().toLowerCase()}`;
+      const auditId = this.normalizeAuditId(this.getExternalExportValue(row, ['id auditoria', 'id audito', 'id de audito', 'audit id']));
+      if (!/^\d+$/.test(auditId) || !pdvId || !subkpi || score === null) return;
+      const key = `${auditId}::${subkpi.trim().toLowerCase()}`;
       const record = {
         audit_external_id: auditId,
         pdv_id: pdvId,
@@ -1418,7 +1422,7 @@ class ValidaFlowApp {
         previous_subkpi_score: previousSubkpiScore,
         current_subkpi_score: currentSubkpiScore
       };
-      // La comparación es uno a uno por PDV y sub-KPI. Si el archivo trae
+      // La comparación es uno a uno por auditoría y sub-KPI. Si el archivo trae
       // un duplicado, se conserva la última fila del consolidado.
       records.set(key, record);
     });
@@ -1705,7 +1709,7 @@ class ValidaFlowApp {
           noteScorePromise,
           platformAuditsPromise
         ]);
-        const platformAuditIds = new Set(platformAudits.map(audit => String(audit.id || '').trim()).filter(Boolean));
+        const platformAuditIds = new Set(platformAudits.map(audit => this.normalizeAuditId(audit.id)).filter(Boolean));
         const platformAlertAudits = platformAudits.reduce((items, audit) => {
           if (audit.validationStatus !== 'completada') return items;
           const alertKpis = (Array.isArray(audit.kpis) ? audit.kpis : []).filter(kpi => (
@@ -1767,26 +1771,28 @@ class ValidaFlowApp {
     // Oculta también los registros de contexto que pudieron haberse guardado
     // antes de aplicar la validación estricta del ID de auditoría.
     const allAlertRows = (analysis.alertRecords || []).filter(record => (
-      /^\d+$/.test(String(record?.audit_external_id || '').trim())
+      /^\d+$/.test(this.normalizeAuditId(record?.audit_external_id))
       && (record.audit_date
         ? this.isWithinVisualizationDateRange(record.audit_date)
         : this.isVisualizationMonthInRange(record.period_month))
     ));
     const platformIds = visualizationModule === 'all'
       ? (analysis.platformAuditIds || new Set())
-      : new Set(platformAlertAudits.map(item => String(item.audit?.id || '').trim()).filter(Boolean));
+      : new Set(platformAlertAudits
+        .map(item => this.normalizeAuditId(item.audit?.id))
+        .filter(Boolean));
     // El export externo no conserva el módulo. En una vista segmentada se
     // muestran únicamente los IDs que ValidaFlow identifica en ese módulo.
     const alertRows = visualizationModule === 'all'
       ? allAlertRows
-      : allAlertRows.filter(record => platformIds.has(String(record.audit_external_id || '').trim()));
+      : allAlertRows.filter(record => platformIds.has(this.normalizeAuditId(record.audit_external_id)));
     const platformAlertByAuditId = new Map(platformAlertAudits.map(item => [
-      String(item.audit?.id || '').trim(),
+      this.normalizeAuditId(item.audit?.id),
       item
     ]));
-    const platformAuditByAuditId = new Map(platformAudits.map(audit => [String(audit?.id || '').trim(), audit]));
+    const platformAuditByAuditId = new Map(platformAudits.map(audit => [this.normalizeAuditId(audit?.id), audit]));
     const buildAlertItem = record => {
-      const auditId = String(record.audit_external_id || '').trim();
+      const auditId = this.normalizeAuditId(record.audit_external_id);
       const platformAlert = platformAlertByAuditId.get(auditId) || null;
       const audit = platformAlert?.audit || platformAuditByAuditId.get(auditId) || null;
       const alertKpis = audit
@@ -1935,10 +1941,10 @@ class ValidaFlowApp {
       }).join('') : '<tr><td colspan="12" class="text-center text-muted">No hay auditorías que cumplan con los filtros seleccionados.</td></tr>';
     }
 
-    const contextByAuditId = new Map(alertRows.map(record => [String(record.audit_external_id || '').trim(), record]));
-    const editsById = new Map((analysis.editRecords || []).map(record => [String(record.audit_external_id || '').trim(), record]));
+    const contextByAuditId = new Map(alertRows.map(record => [this.normalizeAuditId(record.audit_external_id), record]));
+    const editsById = new Map((analysis.editRecords || []).map(record => [this.normalizeAuditId(record.audit_external_id), record]));
     const alertEditionRows = platformAlertAudits.map(platformAlert => {
-      const auditId = String(platformAlert.audit?.id || '').trim();
+      const auditId = this.normalizeAuditId(platformAlert.audit?.id);
       return {
         platformAlert,
         context: contextByAuditId.get(auditId) || null,
@@ -2134,28 +2140,22 @@ class ValidaFlowApp {
         appliesFilterElement.dataset.filterBound = 'true';
       }
     }
-    const platformAuditsById = new Map((analysis.platformAudits || []).map(audit => [normalize(audit?.id), audit]));
-    const alertContextByAuditId = new Map((analysis.alertRecords || []).map(record => [normalize(record?.audit_external_id), record]));
-    const alertContextByPdvId = new Map((analysis.alertRecords || []).map(record => [normalize(record?.pdv_id), record]).filter(([key]) => key));
-    const pdvNoteKey = (pdvId, score) => Number.isFinite(Number(score))
-      ? `${normalize(pdvId)}::${Number(score)}`
-      : '';
-    const alertContextByPdvNote = new Map((analysis.alertRecords || [])
-      .map(record => [pdvNoteKey(record?.pdv_id, record?.pdv_note), record])
-      .filter(([key]) => key));
+    // Todos los cruces usan solo ID de auditoría. ID de PDV describe el punto
+    // de venta, pero no identifica de forma única una auditoría ni se usa como
+    // alternativa cuando falte el ID de auditoría.
+    const platformAuditsById = new Map((analysis.platformAudits || []).map(audit => [this.normalizeAuditId(audit?.id), audit]));
+    const alertContextByAuditId = new Map((analysis.alertRecords || []).map(record => [this.normalizeAuditId(record?.audit_external_id), record]));
     const noteRows = currentRows.map(record => {
-      const audit = platformAuditsById.get(normalize(record.audit_external_id)) || null;
+      const auditId = this.normalizeAuditId(record.audit_external_id);
+      const audit = platformAuditsById.get(auditId) || null;
       const currentScore = Number(record.current_total_score ?? record.score);
-      const alertContext = alertContextByAuditId.get(normalize(record.audit_external_id))
-        || alertContextByPdvNote.get(pdvNoteKey(record.pdv_id, currentScore))
-        || alertContextByPdvId.get(normalize(record.pdv_id))
-        || null;
+      const alertContext = alertContextByAuditId.get(auditId) || null;
       const alertKpis = (Array.isArray(audit?.kpis) ? audit.kpis : []).filter(kpi => (
         kpi?.needsReview || /alerta/i.test(String(kpi?.alertaStatus || ''))
       ));
       // El export de notas trae el nombre técnico del sub-KPI, mientras que
       // ValidaFlow puede guardar el nombre operativo de la alerta. El vínculo
-      // fiable entre ambas fuentes es la auditoría/PDV; por eso se evalúan
+      // fiable entre ambas fuentes es el ID de auditoría; por eso se evalúan
       // todas las alertas bloqueantes de esa auditoría, no solo una igualdad
       // literal de nombres que dejaría cruces válidos por fuera.
       const decisions = alertKpis.map(kpi => audit?.validationResults?.[kpi?.name] || {});
@@ -2181,8 +2181,8 @@ class ValidaFlowApp {
         : null;
       // The supervisor export is the primary link: it carries "Nota de PDV".
       // Validation data completes the answer and gives us the decision and
-      // typology for the matching blocking alert.  The ID/PDV fallback keeps
-      // older monthly files visible until they are uploaded again.
+      // typology for the matching blocking alert. ID de PDV is only display
+      // context and never changes the matching result.
       const alertName = normalize(alertContext?.alert_label || alertContext?.alert_status);
       const subkpiName = normalize(record.subkpi);
       const isMatchingExportAlert = Boolean(alertContext?.is_alert && alertName && subkpiName
@@ -2212,7 +2212,7 @@ class ValidaFlowApp {
     // the PDV result aligned with the direction of its final note.
     const rowsByPdv = new Map();
     noteRows.forEach(item => {
-      const key = `${normalize(item.study)}::${normalize(item.record.pdv_id)}::${normalize(item.record.audit_external_id)}`;
+      const key = `${normalize(item.study)}::${this.normalizeAuditId(item.record.audit_external_id)}`;
       const group = rowsByPdv.get(key) || [];
       group.push(item);
       rowsByPdv.set(key, group);
@@ -2419,7 +2419,7 @@ class ValidaFlowApp {
   }
 
   showAlertAuditDetail(auditId) {
-    const item = this.adminAlertCrossByAuditId?.get(String(auditId || '').trim());
+    const item = this.adminAlertCrossByAuditId?.get(this.normalizeAuditId(auditId));
     if (!item?.matched) {
       this.showToast('No se encontró el detalle de alertas de esta auditoría en ValidaFlow.', 'warning');
       return;

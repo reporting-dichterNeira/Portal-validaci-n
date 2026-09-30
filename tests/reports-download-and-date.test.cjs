@@ -39,6 +39,11 @@ function loadAppClass(document = { getElementById: () => null }) {
     SAMPLE_CSV_DATA: '', BLOCKING_ALERTS_SAMPLE_CSV: '', DEFAULT_VALIDATORS: [], DEFAULT_TIPIFICACIONES: [],
     TIPIFICACIONES_POR_DECISION: {}, seedSampleValidations: () => {},
     ExcelParser: {
+      normalizeAuditId: value => {
+        const raw = String(value ?? '').replace(/[\uFEFF\u00A0\s]/g, '').trim();
+        if (!/^\d+(?:[.,]0+)?$/.test(raw)) return raw;
+        return raw.replace(/[.,]0+$/, '').replace(/^0+(?=\d)/, '');
+      },
       cleanDateOnly: value => String(value || '').slice(0, 10),
       normalizeHeader: value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''),
       normalizeCountry: value => {
@@ -96,6 +101,47 @@ test('las cargas KO toman el nombre de país y nunca el ID_PAIS numérico', () =
     ['7003', '90002', 'Alerta', '2026-10-01', 'MODERNO', 'El Salvador', 'auditor', 'Revisar']
   ]);
   assert.equal(smartWithoutCountryHeader.audits[0].pais, 'El Salvador');
+});
+
+test('normaliza el ID de auditoría antes de cargar, deduplicar o cruzar', () => {
+  const { ExcelParser } = loadExcelParser();
+  assert.equal(ExcelParser.normalizeAuditId(' 000123 '), '123');
+  assert.equal(ExcelParser.normalizeAuditId('123.0'), '123');
+  assert.equal(ExcelParser.normalizeAuditId('1,234.0'), '1234');
+  assert.equal(ExcelParser.normalizeAuditId('1.234,0'), '1234');
+  assert.equal(ExcelParser.normalizeAuditId('PDV-123'), 'PDV-123');
+
+  const deduplicated = ExcelParser.deduplicateById([
+    { id: '00123', kpis: [] },
+    { id: '123.0', kpis: [] }
+  ]);
+  assert.equal(deduplicated.length, 1);
+  assert.equal(deduplicated[0].id, '123');
+});
+
+test('los exports usan ID de auditoría normalizado y nunca ID de PDV como clave', () => {
+  const ValidaFlowApp = loadAppClass();
+  const app = Object.create(ValidaFlowApp.prototype);
+  const scoreRows = app.normalizeScoreChangeRows([
+    {
+      'ID Auditoría': '000123.0', 'ID PDV': '9001', SubKPI: 'Disponibilidad',
+      'Nota final mes actual': '1'
+    },
+    {
+      'ID PDV': '9001', SubKPI: 'Precio', 'Nota final mes actual': '1'
+    }
+  ]);
+  assert.equal(scoreRows.length, 1);
+  assert.equal(scoreRows[0].audit_external_id, '123');
+  assert.equal(scoreRows[0].pdv_id, '9001');
+
+  const alertRows = app.normalizeAlertExportRows([
+    { 'ID Auditoría': '123.0', 'ID PDV': '9001' },
+    { 'ID Auditoría': '000123', 'ID PDV': '9999' }
+  ]);
+  assert.equal(alertRows.length, 1);
+  assert.equal(alertRows[0].audit_external_id, '123');
+  assert.equal(alertRows[0].pdv_id, '9001');
 });
 
 test('el rango de fecha filtra el histórico operativo y conserva los meses que se cruzan con el rango', () => {

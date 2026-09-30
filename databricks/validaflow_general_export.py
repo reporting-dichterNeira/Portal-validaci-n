@@ -43,6 +43,13 @@ def clean(value):
     return None if value is None else str(value).strip()[:1000]
 
 
+def normalize_audit_id(value):
+    raw = clean(value)
+    if not raw or not re.fullmatch(r"[0-9]+", raw):
+        return None
+    return raw.lstrip("0") or "0"
+
+
 def sync_month(period_month, close_month=False):
     if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", period_month):
         raise ValueError("Mes de sincronización no válido")
@@ -87,8 +94,8 @@ def sync_month(period_month, close_month=False):
     try:
         for item in chain((first_row,), rows):
             row = item.asDict()
-            audit_id = clean(row.get("ID_de_audito"))
-            if not audit_id or not re.fullmatch(r"[0-9]+", audit_id) or audit_id in seen_ids:
+            audit_id = normalize_audit_id(row.get("ID_de_audito"))
+            if not audit_id or audit_id in seen_ids:
                 continue
             seen_ids.add(audit_id)
             audit_date = clean(row.get("Fecha_del_audito"))
