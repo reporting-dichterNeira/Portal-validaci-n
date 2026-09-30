@@ -1857,6 +1857,7 @@ class ValidaFlowApp {
       : studyFilteredAlertRows.filter(record => String(record.auditor || '').trim() === activeAuditor);
     const filteredAlertItems = filteredAlertRows.map(buildAlertItem);
     const matchedAlerts = filteredAlertItems.filter(item => item.matched);
+    const unmatchedAlerts = filteredAlertItems.filter(item => !item.matched);
     const percentage = filteredAlertItems.length ? `${Math.round((matchedAlerts.length / filteredAlertItems.length) * 100)}%` : '0%';
     const renderRanking = (id, rows) => {
       const element = document.getElementById(id);
@@ -1903,10 +1904,10 @@ class ValidaFlowApp {
     renderImportList('admin-alerts-import-list', alertImports, 'alerts', 'Aún no hay exports generales cargados.');
     renderImportList('admin-editions-import-list', editionImports, 'editions', 'Aún no hay exports de ediciones cargados.');
     setText('admin-alerts-source-count', formatNumber(filteredAlertRows.length));
-    setText('admin-alerts-count', formatNumber(filteredAlertRows.length));
+    setText('admin-alerts-count', formatNumber(unmatchedAlerts.length));
     setText('admin-alerts-matched-count', formatNumber(matchedAlerts.length));
     setText('admin-alerts-match-rate', percentage);
-    setText('admin-alerts-filter-count', `${formatNumber(filteredAlertRows.length)} de ${formatNumber(alertRows.length)} alertas mostradas.`);
+    setText('admin-alerts-filter-count', `${formatNumber(filteredAlertRows.length)} de ${formatNumber(alertRows.length)} auditorías del export mostradas.`);
     renderRanking('admin-alerts-top-auditors', rank(filteredAlertRows, 'auditor'));
     renderRanking('admin-alerts-top-cities', rank(filteredAlertRows, 'city'));
     renderRanking('admin-alerts-top-channels', rank(filteredAlertRows, 'channel'));
