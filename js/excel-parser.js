@@ -298,7 +298,7 @@ export class ExcelParser {
         usuario: '',
         validadorPrevio: '',
         ciudad: '',
-        tipo: '',
+        cantidadFotosPR: 0,
         meta: {},
         kpis: [], // Lista de KPIs para esta auditoría
         assignedValidatorId: null,
@@ -330,8 +330,9 @@ export class ExcelParser {
           auditObj.validadorPrevio = val;
         } else if (hLower === 'ciudad') {
           auditObj.ciudad = val;
-        } else if (hLower === 'tipo') {
-          auditObj.tipo = val.replace(/\s+/g, ' ').trim();
+        } else if (hLower === 'cantidad_de_fotos_pr') {
+          const photoCount = Number(val.replace(/\s/g, '').replace(/^(\d+),0+$/, '$1'));
+          auditObj.cantidadFotosPR = Number.isSafeInteger(photoCount) && photoCount >= 0 ? photoCount : 0;
         } else if (hLower === 'estado' && !auditObj.estado) {
           auditObj.estado = val;
         }

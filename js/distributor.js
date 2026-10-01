@@ -45,49 +45,97 @@ export class Distributor {
     return this.distributeSimultaneous(audits, validators, options);
   }
 
-  static getAuditType(audit) {
-    const metaType = Object.entries(audit.meta || {}).find(([header]) => header.trim().toLowerCase() === 'tipo')?.[1];
-    const label = String(audit.tipo || metaType || '').replace(/\s+/g, ' ').trim() || 'Sin tipo';
-    const key = label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-    return { key, label: key === 'photo recognition' ? 'Photo Recognition' : key === 'manuales' ? 'Manuales' : label };
+  static getPrPhotoCount(audit) {
+    const metaCount = Object.entries(audit.meta || {}).find(([header]) => (
+      header.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_') === 'cantidad_de_fotos_pr'
+    ))?.[1];
+    const raw = String(audit.cantidadFotosPR ?? metaCount ?? '').replace(/\s/g, '');
+    const value = Number(raw.replace(/^(\d+),0+$/, '$1'));
+    return Number.isSafeInteger(value) && value >= 0 ? value : 0;
   }
 
   /**
-   * Smart Lindley: cuotas por tipo y por total (diferencia máxima de una
-   * auditoría), priorizando menor carga de KPIs dentro de las cuotas.
+   * Smart Lindley: cuotas de auditorías (diferencia máxima de una) y balance
+   * conjunto de las sumas de fotos PR y KPIs. Normaliza ambas cargas por su
+   * promedio objetivo para que sus diferentes escalas no dominen el reparto.
    */
-  static distributeByType(audits, validators) {
-    const groups = new Map();
-    audits.forEach((audit, originalIndex) => {
-      const { key } = this.getAuditType(audit);
-      if (!groups.has(key)) groups.set(key, []);
+  static distributeByPrPhotos(audits, validators) {
+    const items = audits.map((audit, originalIndex) => {
       const alertCount = (audit.kpis || []).filter(k => k.needsReview || k.alertaStatus === 'SE ALERTA').length;
-      groups.get(key).push({ audit, originalIndex, weight: Math.max(1, alertCount) });
+      return { audit, originalIndex, weight: Math.max(1, alertCount), photos: this.getPrPhotoCount(audit) };
     });
-    const loads = validators.map(val => ({ val, totalAudits: 0, totalKpis: 0 }));
+    const photoTarget = items.reduce((sum, item) => sum + item.photos, 0) / validators.length || 1;
+    const kpiTarget = items.reduce((sum, item) => sum + item.weight, 0) / validators.length;
+    const loads = validators.map((val, index) => ({
+      val, totalAudits: 0, totalKpis: 0, totalPhotos: 0, items: [],
+      quota: Math.floor(audits.length / validators.length) + (index < audits.length % validators.length ? 1 : 0)
+    }));
     const updated = new Array(audits.length);
-    const orderedGroups = [...groups.values()].sort((a, b) => b.length - a.length);
-    for (const items of orderedGroups) {
-      const baseQuota = Math.floor(items.length / validators.length);
-      const extraCount = items.length % validators.length;
-      const quotaOrder = loads.slice().sort((a, b) => a.totalAudits - b.totalAudits || a.totalKpis - b.totalKpis);
-      const quotas = new Map(loads.map(load => [load, baseQuota]));
-      quotaOrder.slice(0, extraCount).forEach(load => quotas.set(load, baseQuota + 1));
-      items.sort((a, b) => b.weight - a.weight || a.originalIndex - b.originalIndex);
-      for (const item of items) {
-        const eligible = loads.filter(load => quotas.get(load) > 0);
-        eligible.sort((a, b) => a.totalKpis - b.totalKpis || a.totalAudits - b.totalAudits);
-        const target = eligible[0];
-        quotas.set(target, quotas.get(target) - 1);
-        target.totalAudits++;
-        target.totalKpis += item.weight;
-        updated[item.originalIndex] = {
-          ...item.audit,
-          assignedValidatorId: target.val.id,
-          distributionCriterion: 'simultaneous_type'
-        };
-      }
+    const work = item => item.photos / photoTarget + item.weight / kpiTarget;
+    items.sort((a, b) => work(b) - work(a) || b.photos - a.photos || a.originalIndex - b.originalIndex);
+    for (const item of items) {
+      const cost = load => (
+        (2 * load.totalPhotos * item.photos + item.photos ** 2) / photoTarget ** 2
+        + (2 * load.totalKpis * item.weight + item.weight ** 2) / kpiTarget ** 2
+      );
+      const eligible = loads.filter(load => load.totalAudits < load.quota);
+      eligible.sort((a, b) => cost(a) - cost(b) || a.totalAudits - b.totalAudits);
+      const target = eligible[0];
+      target.totalAudits++;
+      target.totalKpis += item.weight;
+      target.totalPhotos += item.photos;
+      target.items.push(item);
     }
+    // Intercambios acotados mejoran ambas cargas sin alterar las cuotas de
+    // auditorías. Se consideran los extremos de fotos y KPIs por validador
+    // para evitar comparar todas las parejas de una base grande.
+    const candidates = load => {
+      const photos = load.items.slice().sort((a, b) => a.photos - b.photos);
+      const kpis = load.items.slice().sort((a, b) => a.weight - b.weight);
+      return [...new Set([...photos.slice(0, 8), ...photos.slice(-8), ...kpis.slice(0, 8), ...kpis.slice(-8)])];
+    };
+    for (let pass = 0; pass < 3; pass++) {
+      let improved = false;
+      for (let i = 0; i < loads.length; i++) {
+        for (let j = i + 1; j < loads.length; j++) {
+          const a = loads[i];
+          const b = loads[j];
+          let best = null;
+          let bestDelta = -1e-9;
+          const leftCandidates = candidates(a);
+          const rightCandidates = candidates(b);
+          for (const left of leftCandidates) {
+            for (const right of rightCandidates) {
+              const photos = right.photos - left.photos;
+              const kpis = right.weight - left.weight;
+              const delta = 2 * ((a.totalPhotos - b.totalPhotos) * photos + photos ** 2) / photoTarget ** 2
+                + 2 * ((a.totalKpis - b.totalKpis) * kpis + kpis ** 2) / kpiTarget ** 2;
+              if (delta < bestDelta) {
+                bestDelta = delta;
+                best = { left, right, photos, kpis };
+              }
+            }
+          }
+          if (best) {
+            a.items[a.items.indexOf(best.left)] = best.right;
+            b.items[b.items.indexOf(best.right)] = best.left;
+            a.totalPhotos += best.photos;
+            b.totalPhotos -= best.photos;
+            a.totalKpis += best.kpis;
+            b.totalKpis -= best.kpis;
+            improved = true;
+          }
+        }
+      }
+      if (!improved) break;
+    }
+    loads.forEach(load => load.items.forEach(item => {
+      updated[item.originalIndex] = {
+        ...item.audit,
+        assignedValidatorId: load.val.id,
+        distributionCriterion: 'simultaneous_pr_photos'
+      };
+    }));
     return updated;
   }
 
@@ -98,7 +146,7 @@ export class Distributor {
    */
   static distributeSimultaneous(audits, validators, options = {}) {
     if (!validators || validators.length === 0 || !audits || audits.length === 0) return audits;
-    if (options?.balanceByType) return this.distributeByType(audits, validators);
+    if (options?.balanceByPrPhotos) return this.distributeByPrPhotos(audits, validators);
 
     const numValidators = validators.length;
     const maxAuditsPerVal = Math.ceil(audits.length / numValidators);
@@ -177,12 +225,6 @@ export class Distributor {
    * Calcula estadísticas de carga de auditorías, KPIs y progreso por validador
    */
   static getValidatorStats(audits, validators, options = {}) {
-    const types = options.balanceByType
-      ? [...new Map((audits || []).map(audit => {
-        const type = this.getAuditType(audit);
-        return [type.key, type];
-      })).values()]
-      : [];
     return (validators || []).map(val => {
       const assigned = (audits || []).filter(a => a.assignedValidatorId === val.id);
       const completed = assigned.filter(a => a.validationStatus === 'completada');
@@ -211,10 +253,9 @@ export class Distributor {
         ...val,
         totalAssigned: assigned.length,
         totalAssignedKpis: assignedKpisCount,
-        auditTypes: types.map(type => ({
-          label: type.label,
-          count: assigned.filter(audit => this.getAuditType(audit).key === type.key).length
-        })),
+        totalAssignedPrPhotos: options.balanceByPrPhotos
+          ? assigned.reduce((sum, audit) => sum + this.getPrPhotoCount(audit), 0)
+          : 0,
         completedKpis: completedKpisCount,
         pendingKpis: pendingKpisCount,
         completed: completed.length,

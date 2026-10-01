@@ -4,10 +4,10 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=29.0';
+import { ExcelParser } from './excel-parser.js?v=30.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
-import { Distributor } from './distributor.js?v=22.0';
+import { Distributor } from './distributor.js?v=23.0';
 import { ValidatorUI } from './validator-ui.js?v=35.0';
 import { SupabaseBackend } from './supabase-backend.js?v=55.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
@@ -4757,7 +4757,7 @@ class ValidaFlowApp {
   }
 
   getDistributionOptions(study = this.currentProject) {
-    return { balanceByType: this.currentModule === 'smart' && String(study || '').trim().toLowerCase() === 'lindley' };
+    return { balanceByPrPhotos: this.currentModule === 'smart' && String(study || '').trim().toLowerCase() === 'lindley' };
   }
 
   redistributePendingAudits() {
@@ -4828,8 +4828,8 @@ class ValidaFlowApp {
   renderAdminView() {
     const distributionHelp = document.getElementById('admin-distribution-description');
     if (distributionHelp) {
-      distributionHelp.textContent = this.getDistributionOptions().balanceByType
-        ? 'Reparte las auditorías de Smart Lindley equilibrando el total de auditorías, los KPIs a revisar y la cantidad de cada Tipo del export.'
+      distributionHelp.textContent = this.getDistributionOptions().balanceByPrPhotos
+        ? 'Reparte las auditorías de Smart Lindley equilibrando el total de auditorías, los KPIs a revisar y la suma de Cantidad_de_fotos_PR del export.'
         : 'Sube el archivo Excel con las auditorías pendientes, administra los validadores y distribuye los casos con balanceo simultáneo por cantidad de auditorías y KPIs a revisar.';
     }
     const totalAuditsEl = document.getElementById('admin-stat-total-audits');
@@ -4876,7 +4876,6 @@ class ValidaFlowApp {
     }
 
     const stats = Distributor.getValidatorStats(projectAudits, projectValidators, this.getDistributionOptions());
-    const escapeTypeLabel = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
     const flagMap = {
       'Chile': '🇨🇱 Chile',
@@ -4920,7 +4919,7 @@ class ValidaFlowApp {
             </div>
           </div>
 
-           ${this.getDistributionOptions().balanceByType ? `<div class="val-type-breakdown">${val.auditTypes.map(type => `<span class="badge badge-secondary">${escapeTypeLabel(type.label)}: ${type.count}</span>`).join(' ')}</div>` : ''}
+           ${this.getDistributionOptions().balanceByPrPhotos ? `<div class="val-photos-breakdown"><span class="badge badge-secondary">Fotos PR asignadas: ${val.totalAssignedPrPhotos.toLocaleString('es-CO')}</span></div>` : ''}
            <div class="val-progress-bar-wrap">
              <div class="val-progress-bar-fill" style="width: ${val.percentProgress}%"></div>
            </div>
