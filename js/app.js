@@ -4,10 +4,10 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=28.0';
+import { ExcelParser } from './excel-parser.js?v=29.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
-import { Distributor } from './distributor.js?v=21.0';
+import { Distributor } from './distributor.js?v=22.0';
 import { ValidatorUI } from './validator-ui.js?v=35.0';
 import { SupabaseBackend } from './supabase-backend.js?v=55.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
@@ -4401,7 +4401,7 @@ class ValidaFlowApp {
     // Distribuir entre validadores del estudio con balanceo simultáneo
     const projectVals = this.getValidatorsForCurrentProject();
     if (projectVals.length > 0) {
-      result.audits = Distributor.distribute(result.audits, projectVals);
+      result.audits = Distributor.distribute(result.audits, projectVals, this.getDistributionOptions(studyName));
     }
 
     if (this.backend.configured && this.isSupervisor) {
@@ -4512,7 +4512,7 @@ class ValidaFlowApp {
       if (!audit.modelo) audit.modelo = studyName;
     });
 
-    let distributed = Distributor.distributeEqually(result.audits, this.validators);
+    let distributed = Distributor.distributeEqually(result.audits, this.validators, this.getDistributionOptions(studyName));
     distributed = seedSampleValidations(distributed);
 
     if (isBlocking) {
@@ -4627,7 +4627,7 @@ class ValidaFlowApp {
     const newValidators = this.getValidatorsForCurrentProject();
     if (newValidators.length > 0) {
       const projectAudits = this.getAuditsForCurrentProject();
-      const distributed = Distributor.distribute(projectAudits, newValidators, this.distributionMode || 'audits');
+      const distributed = Distributor.distribute(projectAudits, newValidators, this.getDistributionOptions(targetStudy));
       const distMap = new Map(distributed.map(a => [String(a.id), a]));
       this.audits = this.audits.map(a => distMap.has(String(a.id)) ? distMap.get(String(a.id)) : a);
     }
@@ -4756,6 +4756,10 @@ class ValidaFlowApp {
     return !audit.validationStatus || audit.validationStatus === 'pendiente';
   }
 
+  getDistributionOptions(study = this.currentProject) {
+    return { balanceByType: this.currentModule === 'smart' && String(study || '').trim().toLowerCase() === 'lindley' };
+  }
+
   redistributePendingAudits() {
     const projectAudits = this.getAuditsForCurrentProject();
     const pendingAudits = projectAudits.filter(audit => this.isPendingAudit(audit));
@@ -4769,7 +4773,7 @@ class ValidaFlowApp {
     }
 
     // No modifica auditorías completadas ni las que un validador ya tiene abiertas.
-    const distributedPending = Distributor.distribute(pendingAudits, activeValidators);
+    const distributedPending = Distributor.distribute(pendingAudits, activeValidators, this.getDistributionOptions());
     const auditKey = audit => String(audit._rowId || `${audit._batchId || 'active'}:${audit.id}`);
     const distributedByKey = new Map(distributedPending.map(audit => [auditKey(audit), audit]));
     this.audits = this.audits.map(audit => distributedByKey.get(auditKey(audit)) || audit);
@@ -4822,6 +4826,12 @@ class ValidaFlowApp {
   // RENDERIZADO DE LA VISTA ADMIN
   // ==========================================
   renderAdminView() {
+    const distributionHelp = document.getElementById('admin-distribution-description');
+    if (distributionHelp) {
+      distributionHelp.textContent = this.getDistributionOptions().balanceByType
+        ? 'Reparte las auditorías de Smart Lindley equilibrando el total de auditorías, los KPIs a revisar y la cantidad de cada Tipo del export.'
+        : 'Sube el archivo Excel con las auditorías pendientes, administra los validadores y distribuye los casos con balanceo simultáneo por cantidad de auditorías y KPIs a revisar.';
+    }
     const totalAuditsEl = document.getElementById('admin-stat-total-audits');
     const totalKpisEl = document.getElementById('admin-stat-total-kpis-to-review');
     const totalValidatorsEl = document.getElementById('admin-stat-total-validators');
@@ -4865,7 +4875,8 @@ class ValidaFlowApp {
       return;
     }
 
-    const stats = Distributor.getValidatorStats(projectAudits, projectValidators);
+    const stats = Distributor.getValidatorStats(projectAudits, projectValidators, this.getDistributionOptions());
+    const escapeTypeLabel = value => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
     const flagMap = {
       'Chile': '🇨🇱 Chile',
@@ -4909,6 +4920,7 @@ class ValidaFlowApp {
             </div>
           </div>
 
+           ${this.getDistributionOptions().balanceByType ? `<div class="val-type-breakdown">${val.auditTypes.map(type => `<span class="badge badge-secondary">${escapeTypeLabel(type.label)}: ${type.count}</span>`).join(' ')}</div>` : ''}
            <div class="val-progress-bar-wrap">
              <div class="val-progress-bar-fill" style="width: ${val.percentProgress}%"></div>
            </div>

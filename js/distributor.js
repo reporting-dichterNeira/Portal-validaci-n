@@ -33,7 +33,7 @@ export class Distributor {
    * @param {Array} validators - Lista de validadores disponibles
    * @returns {Array} audits con su assignedValidatorId actualizado
    */
-  static distribute(audits, validators) {
+  static distribute(audits, validators, options = {}) {
     if (!validators || validators.length === 0) {
       throw new Error('Debes agregar al menos un validador disponible para repartir.');
     }
@@ -42,7 +42,53 @@ export class Distributor {
       throw new Error('No hay auditorías cargadas para repartir.');
     }
 
-    return this.distributeSimultaneous(audits, validators);
+    return this.distributeSimultaneous(audits, validators, options);
+  }
+
+  static getAuditType(audit) {
+    const metaType = Object.entries(audit.meta || {}).find(([header]) => header.trim().toLowerCase() === 'tipo')?.[1];
+    const label = String(audit.tipo || metaType || '').replace(/\s+/g, ' ').trim() || 'Sin tipo';
+    const key = label.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    return { key, label: key === 'photo recognition' ? 'Photo Recognition' : key === 'manuales' ? 'Manuales' : label };
+  }
+
+  /**
+   * Smart Lindley: cuotas por tipo y por total (diferencia máxima de una
+   * auditoría), priorizando menor carga de KPIs dentro de las cuotas.
+   */
+  static distributeByType(audits, validators) {
+    const groups = new Map();
+    audits.forEach((audit, originalIndex) => {
+      const { key } = this.getAuditType(audit);
+      if (!groups.has(key)) groups.set(key, []);
+      const alertCount = (audit.kpis || []).filter(k => k.needsReview || k.alertaStatus === 'SE ALERTA').length;
+      groups.get(key).push({ audit, originalIndex, weight: Math.max(1, alertCount) });
+    });
+    const loads = validators.map(val => ({ val, totalAudits: 0, totalKpis: 0 }));
+    const updated = new Array(audits.length);
+    const orderedGroups = [...groups.values()].sort((a, b) => b.length - a.length);
+    for (const items of orderedGroups) {
+      const baseQuota = Math.floor(items.length / validators.length);
+      const extraCount = items.length % validators.length;
+      const quotaOrder = loads.slice().sort((a, b) => a.totalAudits - b.totalAudits || a.totalKpis - b.totalKpis);
+      const quotas = new Map(loads.map(load => [load, baseQuota]));
+      quotaOrder.slice(0, extraCount).forEach(load => quotas.set(load, baseQuota + 1));
+      items.sort((a, b) => b.weight - a.weight || a.originalIndex - b.originalIndex);
+      for (const item of items) {
+        const eligible = loads.filter(load => quotas.get(load) > 0);
+        eligible.sort((a, b) => a.totalKpis - b.totalKpis || a.totalAudits - b.totalAudits);
+        const target = eligible[0];
+        quotas.set(target, quotas.get(target) - 1);
+        target.totalAudits++;
+        target.totalKpis += item.weight;
+        updated[item.originalIndex] = {
+          ...item.audit,
+          assignedValidatorId: target.val.id,
+          distributionCriterion: 'simultaneous_type'
+        };
+      }
+    }
+    return updated;
   }
 
   /**
@@ -50,8 +96,9 @@ export class Distributor {
    * Garantiza que todos los validadores reciban la misma cantidad de auditorías (±1)
    * y una carga de trabajo en KPIs con alerta perfectamente balanceada.
    */
-  static distributeSimultaneous(audits, validators) {
+  static distributeSimultaneous(audits, validators, options = {}) {
     if (!validators || validators.length === 0 || !audits || audits.length === 0) return audits;
+    if (options?.balanceByType) return this.distributeByType(audits, validators);
 
     const numValidators = validators.length;
     const maxAuditsPerVal = Math.ceil(audits.length / numValidators);
@@ -122,14 +169,20 @@ export class Distributor {
   }
 
   // Alias para mantener compatibilidad hacia atrás
-  static distributeEqually(audits, validators) {
-    return this.distributeSimultaneous(audits, validators);
+  static distributeEqually(audits, validators, options = {}) {
+    return this.distributeSimultaneous(audits, validators, options);
   }
 
   /**
    * Calcula estadísticas de carga de auditorías, KPIs y progreso por validador
    */
-  static getValidatorStats(audits, validators) {
+  static getValidatorStats(audits, validators, options = {}) {
+    const types = options.balanceByType
+      ? [...new Map((audits || []).map(audit => {
+        const type = this.getAuditType(audit);
+        return [type.key, type];
+      })).values()]
+      : [];
     return (validators || []).map(val => {
       const assigned = (audits || []).filter(a => a.assignedValidatorId === val.id);
       const completed = assigned.filter(a => a.validationStatus === 'completada');
@@ -158,6 +211,10 @@ export class Distributor {
         ...val,
         totalAssigned: assigned.length,
         totalAssignedKpis: assignedKpisCount,
+        auditTypes: types.map(type => ({
+          label: type.label,
+          count: assigned.filter(audit => this.getAuditType(audit).key === type.key).length
+        })),
         completedKpis: completedKpisCount,
         pendingKpis: pendingKpisCount,
         completed: completed.length,

@@ -298,6 +298,7 @@ export class ExcelParser {
         usuario: '',
         validadorPrevio: '',
         ciudad: '',
+        tipo: '',
         meta: {},
         kpis: [], // Lista de KPIs para esta auditoría
         assignedValidatorId: null,
@@ -329,6 +330,8 @@ export class ExcelParser {
           auditObj.validadorPrevio = val;
         } else if (hLower === 'ciudad') {
           auditObj.ciudad = val;
+        } else if (hLower === 'tipo') {
+          auditObj.tipo = val.replace(/\s+/g, ' ').trim();
         } else if (hLower === 'estado' && !auditObj.estado) {
           auditObj.estado = val;
         }
