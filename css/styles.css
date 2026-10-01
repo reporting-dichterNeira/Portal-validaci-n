@@ -4659,6 +4659,34 @@ button.supervisor-module-option:hover {
   to { opacity: 1; transform: scale(1); }
 }
 
+.blocking-kpi-modal-card {
+  max-width: 1600px;
+  width: 96vw;
+  max-height: 94vh;
+  display: flex;
+  flex-direction: column;
+}
+.blocking-kpi-modal-card .modal-header { padding: 0.75rem 1.5rem; flex-shrink: 0; }
+.blocking-kpi-modal-card .modal-body { overflow-y: auto; min-height: 0; gap: 0.65rem; padding: 1rem 1.5rem; }
+.blocking-kpi-modal-card .modal-desc { margin: 0; }
+.blocking-kpi-modal-card .form-help { margin: 0.25rem 0; }
+.blocking-kpi-filters { display: grid; grid-template-columns: 2fr repeat(4, 1fr); gap: 0.75rem; }
+.blocking-kpi-filters input, .blocking-kpi-filters select { width: 100%; min-width: 0; }
+.blocking-kpi-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; }
+.blocking-kpi-summary .admin-analysis-card { padding: 0.6rem 1rem; }
+.blocking-kpi-summary p { margin: 0.4rem 0 0; font-size: 0.85rem; }
+.blocking-kpi-summary small { display: block; color: var(--text-muted); }
+.blocking-kpi-table-wrap { max-height: 48vh; flex-shrink: 0; }
+.blocking-kpi-table-wrap table { min-width: 1550px; }
+.blocking-kpi-table-wrap td.blocking-kpi-text { white-space: normal; min-width: 160px; max-width: 260px; }
+.blocking-kpi-pagination { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.exec-ranking-panel > .btn-open-blocking-kpis { margin-top: 1rem; }
+@media (max-width: 800px) {
+  .blocking-kpi-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .blocking-kpi-summary { grid-template-columns: 1fr; }
+  .blocking-kpi-pagination { flex-wrap: wrap; }
+}
+
 .modal-header {
   padding: 1.25rem 1.5rem;
   display: flex;

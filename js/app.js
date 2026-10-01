@@ -11,6 +11,7 @@ import { Distributor } from './distributor.js?v=23.0';
 import { ValidatorUI } from './validator-ui.js?v=35.0';
 import { SupabaseBackend } from './supabase-backend.js?v=55.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
+import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
 
 const ADMIN_STUDY_NAMES = ['Tradicional', 'Moderno', 'Chile', 'Lindley'];
 const SUPERVISOR_MODULES = {
@@ -76,6 +77,8 @@ class ValidaFlowApp {
 
     // Sub-Pestaña activa en Métricas & Reportes: 'operational' | 'executive'
     this.reportsSubtab = 'operational';
+    this.blockingKpiFilters = { kpi: 'all', decision: 'all', search: '', minDifference: '', maxDifference: '' };
+    this.blockingKpiPage = 1;
 
     // Filtro multi-estudio activo en Métricas (ej: ['ALL'] o ['Tradicional', 'Stills'])
     this.selectedStudies = ['ALL'];
@@ -148,6 +151,7 @@ class ValidaFlowApp {
     this.initQueriesModule();
     this.initAlertsModule();
     this.initReportsSubtabs();
+    this.initBlockingKpiAnalysis();
     this.initStudyFilter();
     this.initReportCountryFilter();
     this.initVisualizationDateFilter();
@@ -5478,6 +5482,124 @@ class ValidaFlowApp {
     });
   }
 
+  initBlockingKpiAnalysis() {
+    document.querySelectorAll('.btn-open-blocking-kpis').forEach(button => {
+      button.addEventListener('click', () => this.openBlockingKpiAnalysis());
+    });
+    const modal = document.getElementById('modal-blocking-kpis');
+    const close = () => {
+      modal?.classList.add('hidden');
+      this.blockingKpiReturnFocus?.focus();
+    };
+    document.getElementById('btn-close-blocking-kpis')?.addEventListener('click', close);
+    modal?.addEventListener('click', event => { if (event.target === modal) close(); });
+    modal?.addEventListener('keydown', event => {
+      if (event.key === 'Escape') close();
+      if (event.key !== 'Tab') return;
+      const focusable = [...modal.querySelectorAll('button:not(:disabled), input, select')];
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    });
+    const controls = { kpi: 'blocking-kpi-filter', decision: 'blocking-decision-filter', search: 'blocking-audit-search', minDifference: 'blocking-difference-min', maxDifference: 'blocking-difference-max' };
+    Object.entries(controls).forEach(([key, id]) => {
+      document.getElementById(id)?.addEventListener(key === 'kpi' || key === 'decision' ? 'change' : 'input', event => {
+        this.blockingKpiFilters[key] = event.target.value;
+        this.blockingKpiPage = 1;
+        this.renderBlockingKpiAnalysis();
+      });
+    });
+    document.getElementById('blocking-kpi-prev')?.addEventListener('click', () => { this.blockingKpiPage--; this.renderBlockingKpiAnalysis(); });
+    document.getElementById('blocking-kpi-next')?.addEventListener('click', () => { this.blockingKpiPage++; this.renderBlockingKpiAnalysis(); });
+    document.getElementById('blocking-kpi-download')?.addEventListener('click', () => {
+      const rows = filterBlockingKpiRows(this.blockingKpiRows || [], this.blockingKpiFilters);
+      const url = URL.createObjectURL(new Blob([blockingKpiRowsToCsv(rows)], { type: 'text/csv;charset=utf-8;' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'Detalle_KPIs_Bloqueantes.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+  }
+
+  async openBlockingKpiAnalysis() {
+    const modal = document.getElementById('modal-blocking-kpis');
+    if (!modal || this.currentRole === 'commercial') return;
+    this.blockingKpiReturnFocus = document.activeElement;
+    this.blockingKpiPage = 1;
+    modal.classList.remove('hidden');
+    document.getElementById('btn-close-blocking-kpis')?.focus();
+    this.blockingKpiLoading = this.backend.configured && !Array.isArray(this.auditHistoryByModule.blocking);
+    this.refreshBlockingKpiAnalysisRows();
+    this.renderBlockingKpiAnalysis();
+    try {
+      await this.ensureHistoricalReportsLoaded({ module: 'blocking' });
+    } finally {
+      this.blockingKpiLoading = false;
+      this.refreshBlockingKpiAnalysisRows();
+      this.renderBlockingKpiAnalysis();
+    }
+  }
+
+  refreshBlockingKpiAnalysisRows() {
+    const source = Array.isArray(this.auditHistoryByModule?.blocking)
+      ? this.auditHistoryByModule.blocking : (this.blockingAudits || []);
+    const selected = source.filter(audit => {
+      const study = this.getStudyForAudit(audit);
+      const matchesStudy = !this.selectedStudies?.length || this.selectedStudies.includes('ALL')
+        || this.selectedStudies.some(value => value.toUpperCase() === study.toUpperCase());
+      const country = this.selectedReportCountry;
+      const matchesCountry = !country || country === 'all'
+        || (this.isCountryReportPeriod(audit) && this.getReportCountry(audit) === (country === '__missing__' ? '' : country));
+      return matchesStudy && matchesCountry && this.isWithinVisualizationDateRange(this.getAuditOperationDate(audit));
+    });
+    this.blockingKpiRows = buildBlockingKpiRows(selected, audit => ({
+      study: getStudyDisplayName(this.getStudyForAudit(audit)),
+      country: audit.pais || audit.country || '', date: this.getAuditOperationDate(audit)
+    })).sort((a, b) => b.date.localeCompare(a.date) || a.auditId.localeCompare(b.auditId, 'es', { numeric: true }));
+    const select = document.getElementById('blocking-kpi-filter');
+    if (select) {
+      const names = [...new Set(this.blockingKpiRows.map(row => row.kpi))].sort((a, b) => a.localeCompare(b, 'es'));
+      select.replaceChildren(new Option('Todos los KPIs', 'all'), ...names.map(name => new Option(name, name)));
+      if (!names.includes(this.blockingKpiFilters.kpi)) this.blockingKpiFilters.kpi = 'all';
+      select.value = this.blockingKpiFilters.kpi;
+    }
+  }
+
+  renderBlockingKpiAnalysis() {
+    const body = document.getElementById('blocking-kpi-tbody');
+    if (!body) return;
+    const escape = value => String(value ?? '—').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    const format = value => value === null ? '—' : value.toLocaleString('es-CO', { maximumFractionDigits: 4 });
+    const signed = value => value === null ? '—' : `${value > 0 ? '+' : ''}${format(value)}`;
+    const labels = { aplica: 'Aplica', no_aplica: 'No aplica', pendiente: 'Pendiente' };
+    const rows = filterBlockingKpiRows(this.blockingKpiRows || [], this.blockingKpiFilters);
+    this.blockingKpiPage = Math.max(1, Math.min(this.blockingKpiPage || 1, Math.ceil(rows.length / 100) || 1));
+    const offset = (this.blockingKpiPage - 1) * 100;
+    body.innerHTML = rows.slice(offset, offset + 100).map(row => `<tr>
+      <td><strong>${escape(row.auditId)}</strong></td><td>${escape(row.pdvId || '—')}</td>
+      <td>${escape(row.study)}</td><td>${escape(row.date)}</td><td>${escape(row.kpi)}</td><td>${escape(row.model)}</td>
+      <td><span class="badge ${row.decision === 'aplica' ? 'badge-success' : row.decision === 'no_aplica' ? 'badge-danger' : 'badge-warning'}">${labels[row.decision]}</span></td>
+      <td>${format(row.previous)}</td><td>${format(row.current)}</td><td><strong>${signed(row.difference)}</strong></td>
+      <td>${row.variation === null ? '—' : `${signed(row.variation)}%`}</td>
+      <td class="blocking-kpi-text">${escape(row.criterion || '—')}</td><td class="blocking-kpi-text">${escape(row.reason || '—')}</td>
+    </tr>`).join('') || '<tr><td colspan="13">No hay alertas bloqueantes para los filtros seleccionados.</td></tr>';
+    const summary = document.getElementById('blocking-kpi-summary');
+    if (summary) summary.innerHTML = summarizeBlockingKpiRows(rows).map(item => `<div class="admin-analysis-card"><strong>${labels[item.decision]}: ${item.count.toLocaleString('es-CO')}</strong><p>Δ promedio: ${signed(item.averageDifference)} puntos <small>(${item.scoredCount.toLocaleString('es-CO')} con ambas notas)</small></p></div>`).join('');
+    const count = document.getElementById('blocking-kpi-count');
+    if (count) count.textContent = this.blockingKpiLoading ? 'Cargando histórico completo de Bloqueantes…'
+      : `${rows.length.toLocaleString('es-CO')} filas auditoría/KPI · ${new Set(rows.map(row => row.auditId)).size.toLocaleString('es-CO')} IDs de auditoría · ${rows.filter(row => row.difference === null).length.toLocaleString('es-CO')} filas sin ambas notas · Página ${this.blockingKpiPage} de ${Math.ceil(rows.length / 100) || 1}`;
+    const previous = document.getElementById('blocking-kpi-prev');
+    const next = document.getElementById('blocking-kpi-next');
+    if (previous) previous.disabled = this.blockingKpiPage <= 1;
+    if (next) next.disabled = offset + 100 >= rows.length;
+    const download = document.getElementById('blocking-kpi-download');
+    if (download) download.disabled = this.blockingKpiLoading || !rows.length;
+  }
+
   // ==========================================
   // FILTRO MULTI-ESTUDIO / CANAL / MODELO
   // ==========================================
@@ -5686,6 +5808,15 @@ class ValidaFlowApp {
 
     const reportAudits = this.getReportAuditSource();
     const filteredAudits = this.getFilteredAuditsForReports();
+    const module = this.currentView === 'visualizations' ? this.getVisualizationModuleFilter() : this.currentModule;
+    document.querySelectorAll('.btn-open-blocking-kpis').forEach(button => {
+      button.classList.toggle('hidden', this.currentRole === 'commercial' || module === 'smart');
+    });
+    const blockingModal = document.getElementById('modal-blocking-kpis');
+    if (blockingModal && !blockingModal.classList.contains('hidden')) {
+      this.refreshBlockingKpiAnalysisRows();
+      this.renderBlockingKpiAnalysis();
+    }
     const studyLabel = this.selectedStudies.includes('ALL') 
       ? 'Todos los Estudios (Consolidado)' 
       : this.selectedStudies.map(getStudyDisplayName).join(', ');

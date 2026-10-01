@@ -19,7 +19,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=59.0" />
+  <link rel="stylesheet" href="css/styles.css?v=60.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -1425,6 +1425,7 @@
           
           <!-- Selector tipo Toggle / Botones de Sub-Pestaña -->
           <div class="metrics-subtab-switch">
+            <button class="btn btn-outline btn-open-blocking-kpis hidden" type="button">🔎 Detalle KPIs Bloqueantes</button>
             <button class="subtab-btn active" id="btn-subtab-operational" data-subtab="operational" onclick="window.switchReportsSubtab('operational')">
               <span class="subtab-icon">📋</span> Métricas Operacionales
             </button>
@@ -1879,6 +1880,7 @@
               <div class="exec-kpi-ranking-list" id="exec-kpi-ranking-list">
                 <!-- Renderizado dinámico -->
               </div>
+              <button class="btn btn-outline btn-open-blocking-kpis hidden" type="button">Ver auditorías, decisiones y notas</button>
             </div>
 
             <!-- Columna 2: Distribución por Canal / Estudio y Motivos de Descarte -->
@@ -2016,6 +2018,29 @@
   </div>
 
   <!-- ======================================================== -->
+  <!-- MODAL: DETALLE HISTÓRICO DE KPIS BLOQUEANTES              -->
+  <div class="modal-overlay hidden" id="modal-blocking-kpis" role="dialog" aria-modal="true" aria-labelledby="blocking-kpi-title">
+    <div class="modal-card blocking-kpi-modal-card">
+      <div class="modal-header"><div><h3 id="blocking-kpi-title">Auditorías y notas por KPI · Bloqueantes</h3><p class="form-help">Respeta los filtros de estudio, país y fecha seleccionados en Métricas.</p></div><button class="btn-close-modal" id="btn-close-blocking-kpis" type="button" aria-label="Cerrar detalle de KPIs">×</button></div>
+      <div class="modal-body">
+        <p class="modal-desc">Una fila por alerta de KPI y auditoría del histórico. Las notas corresponden a las olas anterior y actual del export de Bloqueantes. Diferencia en puntos = actual − anterior; la variación porcentual se muestra tal como viene en el export. Una nota ausente se muestra como —.</p>
+        <div class="blocking-kpi-filters">
+          <div class="form-group"><label for="blocking-kpi-filter">KPI</label><select class="form-select" id="blocking-kpi-filter"><option value="all">Todos los KPIs</option></select></div>
+          <div class="form-group"><label for="blocking-decision-filter">Decisión</label><select class="form-select" id="blocking-decision-filter"><option value="all">Todas</option><option value="aplica">Aplica</option><option value="no_aplica">No aplica</option><option value="pendiente">Pendiente</option></select></div>
+          <div class="form-group"><label for="blocking-audit-search">Auditoría / PDV</label><input class="form-control" id="blocking-audit-search" type="search" placeholder="Buscar ID" /></div>
+          <div class="form-group"><label for="blocking-difference-min">Δ mínimo (puntos)</label><input class="form-control" id="blocking-difference-min" type="number" step="any" placeholder="Sin mínimo" /></div>
+          <div class="form-group"><label for="blocking-difference-max">Δ máximo (puntos)</label><input class="form-control" id="blocking-difference-max" type="number" step="any" placeholder="Sin máximo" /></div>
+        </div>
+        <div class="blocking-kpi-summary" id="blocking-kpi-summary"></div>
+        <div class="admin-analysis-table-heading"><p class="form-help" id="blocking-kpi-count" role="status"></p><button class="btn btn-success btn-sm" id="blocking-kpi-download" type="button">Descargar tabla filtrada (CSV)</button></div>
+        <div class="table-responsive blocking-kpi-table-wrap" tabindex="0" aria-label="Tabla de alertas y notas por KPI">
+          <table class="custom-table"><thead><tr><th>ID Auditoría</th><th>ID PDV</th><th>Estudio</th><th>Jornada</th><th>KPI</th><th>Modelo</th><th>Decisión</th><th>Nota anterior</th><th>Nota actual</th><th>Δ puntos</th><th>Variación export (%)</th><th>Criterio del export</th><th>Tipificación</th></tr></thead><tbody id="blocking-kpi-tbody"></tbody></table>
+        </div>
+        <div class="blocking-kpi-pagination"><button class="btn btn-secondary btn-sm" id="blocking-kpi-prev" type="button">← Anterior</button><span class="form-help">100 filas por página. La descarga incluye todas las filas filtradas.</span><button class="btn btn-secondary btn-sm" id="blocking-kpi-next" type="button">Siguiente →</button></div>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: LOGIN DEL SUPERVISOR                              -->
   <!-- ======================================================== -->
   <div class="modal-overlay hidden" id="modal-supervisor-login">
@@ -2893,6 +2918,6 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=117.0"></script>
+  <script type="module" src="js/app.js?v=118.0"></script>
 </body>
 </html>
