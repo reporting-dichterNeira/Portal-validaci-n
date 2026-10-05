@@ -290,26 +290,27 @@ test('el benchmark KO despliega países con métricas que suman el total del est
   const parentRows = tbody.innerHTML.match(/<tr class="benchmark-study-parent">[\s\S]*?<\/tr>/g) || [];
   assert.match(tbody.innerHTML, /Chile[\s\S]*?Sin datos/);
   assert.match(parentRows[0], /data-study="Tradicional"[\s\S]*?<strong>5<\/strong>[\s\S]*?2 alertas[\s\S]*?text-success">1[\s\S]*?text-magenta">1/);
-  assert.match(parentRows[0], /desde oct\. 2026/);
+  assert.doesNotMatch(parentRows[0], /desde oct\. 2026/);
   assert.match(parentRows[1], /data-study="Moderno"[\s\S]*?<strong>1<\/strong>[\s\S]*?1 alertas/);
   const row = (study, country) => tbody.innerHTML.match(new RegExp(`<tr[^>]+data-benchmark-parent="${study}"[^>]+data-benchmark-country="${country}"[^>]*>([\\s\\S]*?)<\\/tr>`))?.[1] || '';
   assert.match(row('Tradicional', 'Perú'), /↳ Perú[\s\S]*?<strong>2<\/strong>[\s\S]*?1 alertas[\s\S]*?text-success">1/);
   assert.match(row('Tradicional', 'Colombia'), /↳ Colombia[\s\S]*?<strong>1<\/strong>[\s\S]*?1 alertas[\s\S]*?text-magenta">1/);
-  assert.match(row('Tradicional', 'Sin país'), /↳ Sin país[\s\S]*?<strong>1<\/strong>[\s\S]*?0 alertas/);
+  assert.match(row('Tradicional', 'Sin país identificado'), /↳ Sin país identificado[\s\S]*?<strong>1<\/strong>[\s\S]*?0 alertas/);
   assert.match(row('Moderno', 'Perú'), /↳ Perú[\s\S]*?<strong>1<\/strong>[\s\S]*?1 alertas/);
-  assert.doesNotMatch(tbody.innerHTML, /↳ Costa Rica/);
+  assert.match(tbody.innerHTML, /↳ Costa Rica/);
   assert.match(tbody.innerHTML, /data-study="Tradicional" aria-expanded="false"/);
   assert.match(tbody.innerHTML, /data-benchmark-parent="Tradicional"[^>]*hidden/);
 });
 
-test('un benchmark solo histórico no muestra el desglose por país', () => {
+test('el benchmark histórico muestra país recuperable sin cambiar el corte de otras vistas', () => {
   const tbody = { innerHTML: '' };
   const ValidaFlowApp = loadAppClass({ getElementById: id => id === 'exec-benchmark-tbody' ? tbody : null });
   const app = Object.create(ValidaFlowApp.prototype);
   app.renderUniverseDecisionBreakdown = () => {};
   app.renderExecutiveMetrics([{ estudio: 'Tradicional', pais: 'Costa Rica', fecha: '2026-09-30', kpis: [] }]);
   assert.match(tbody.innerHTML, /KO Tradicional CAM|Tradicional/);
-  assert.doesNotMatch(tbody.innerHTML, /benchmark-expand-toggle|benchmark-country-row|Costa Rica/);
+  assert.match(tbody.innerHTML, /benchmark-country-row[\s\S]*?Costa Rica/);
+  assert.equal(app.getReportCountry({ estudio: 'Tradicional', pais: 'Costa Rica', fecha: '2026-09-30' }), '');
 });
 
 test('el filtro de país se oculta para septiembre y aparece al incluir octubre', () => {

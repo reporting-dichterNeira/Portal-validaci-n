@@ -9,7 +9,7 @@ import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=24.0';
 import { ValidatorUI } from './validator-ui.js?v=35.0';
-import { SupabaseBackend } from './supabase-backend.js?v=56.0';
+import { SupabaseBackend } from './supabase-backend.js?v=57.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
 
@@ -83,7 +83,10 @@ class ValidaFlowApp {
     // Filtro multi-estudio activo en Métricas (ej: ['ALL'] o ['Tradicional', 'Stills'])
     this.selectedStudies = ['ALL'];
     this.selectedReportCountry = 'all';
-    this.expandedBenchmarkStudies = new Set();
+    this.expandedBenchmarkStudies = new Set(['Tradicional', 'Moderno']);
+    this.benchmarkCountryRows = [];
+    this.benchmarkCountryCheckedIds = new Set();
+    this.benchmarkCountryLoadPromise = null;
 
     // Filtro activo en el feed de anomalías
     this.alertsFilter = 'all';
@@ -849,6 +852,11 @@ class ValidaFlowApp {
     this.auditHistoryByModule = { smart: null, blocking: null };
     this.auditHistoryLoadPromises = { smart: null, blocking: null };
     sessionStorage.removeItem('VALIDAFLOW_SUPERVISOR_AUTH');
+    this.benchmarkCountryRows = [];
+    this.benchmarkCountryCheckedIds = new Set();
+    this.benchmarkCountryLoadPromise = null;
+    this.benchmarkCountryRetryAfter = 0;
+    this.benchmarkCountryIndex = null;
     sessionStorage.removeItem('VALIDAFLOW_SELECTED_ASSIGNMENT');
     this.showView('landing');
     this.showToast(`Has salido de ${roleLabel}. Regresando a la pantalla principal.`, 'info');
@@ -1730,6 +1738,7 @@ class ValidaFlowApp {
         this.adminExternalAnalysis = { ...analysis, ...noteScoreAnalysis, platformAudits, platformAuditIds, platformAlertAudits };
         this.adminExternalAnalysisLoadedAt = Date.now();
         this.renderAdminExternalAnalysis();
+        this.renderReportsView();
         this.persistAdminExternalAnalysisCache().catch(error => console.info('No fue posible guardar la caché local de visualizaciones:', error));
       } catch (error) {
         console.error('No fue posible cargar el análisis administrativo:', error);
@@ -5738,11 +5747,109 @@ class ValidaFlowApp {
     const study = this.getStudyForAudit(audit);
     if (study === 'Lindley') return 'Perú';
     if (study === 'Chile') return 'Chile';
+    if (study === 'Tradicional' || study === 'Moderno') return this.getBenchmarkCountry(audit);
     for (const value of [audit.pais, audit.country, audit.meta?.PAIS, audit.meta?.pais]) {
       const country = ExcelParser.normalizeCountry(value);
       if (country) return country;
     }
     return '';
+  }
+
+  normalizeBenchmarkCountry(value) {
+    const country = ExcelParser.normalizeCountry(value);
+    if (!country) return '';
+    const key = ExcelParser.normalizeHeader(country);
+    // A bottler/branch is not a separate country. Never turn ID_PAIS into a name.
+    const names = { guatemala: 'Guatemala', costa_rica: 'Costa Rica', el_salvador: 'El Salvador',
+      honduras: 'Honduras', nicaragua: 'Nicaragua', panama: 'Panamá', peru: 'Perú', chile: 'Chile',
+      colombia: 'Colombia', republica_dominicana: 'República Dominicana', mexico: 'México',
+      ecuador: 'Ecuador', argentina: 'Argentina', bolivia: 'Bolivia', brasil: 'Brasil', brazil: 'Brasil',
+      uruguay: 'Uruguay', paraguay: 'Paraguay', venezuela: 'Venezuela', belice: 'Belice',
+      belize: 'Belice', estados_unidos: 'Estados Unidos', canada: 'Canadá', haiti: 'Haití', jamaica: 'Jamaica' };
+    if (names[key]) return names[key];
+    const matches = [...new Set(Object.entries(names)
+      .filter(([name]) => (`_${key}_`).includes(`_${name}_`)).map(([, name]) => name))];
+    return matches.length === 1 ? matches[0] : '';
+  }
+
+  getDailyBenchmarkCountry(audit) {
+    const metadata = Object.entries(audit.meta || {}).filter(([key]) =>
+      /^(pais|country|nombre_?pais|nombre_del_pais|pais_del_pdv|pais_pdv|country_name)$/i.test(ExcelParser.normalizeHeader(key)))
+      .map(([, value]) => value);
+    for (const value of [audit.pais, audit.country, ...metadata]) {
+      const country = this.normalizeBenchmarkCountry(value);
+      if (country) return country;
+    }
+    return '';
+  }
+
+  rebuildBenchmarkCountryIndex() {
+    const external = this.adminExternalAnalysis?.alertRecords || null;
+    const recovered = this.benchmarkCountryRows || null;
+    if (this.benchmarkCountryIndex && this.benchmarkCountryExternalSource === external
+      && this.benchmarkCountryRecoveredSource === recovered) return;
+    const index = new Map();
+    for (const row of [...(external || []), ...(recovered || [])]) {
+      const id = this.normalizeAuditId(row.audit_external_id);
+      const country = this.normalizeBenchmarkCountry(row.country);
+      if (!/^\d+$/.test(id) || !country) continue;
+      const studyText = ExcelParser.normalizeHeader(row.study);
+      const study = /ko_trad|tradicional/.test(studyText) ? 'Tradicional'
+        : /ko_moderno|moderno/.test(studyText) ? 'Moderno'
+        : /lindley/.test(studyText) ? 'Lindley' : /chile/.test(studyText) ? 'Chile' : '';
+      if (!index.has(id)) index.set(id, []);
+      index.get(id).push({ country, study });
+    }
+    this.benchmarkCountryIndex = index;
+    this.benchmarkCountryExternalSource = external;
+    this.benchmarkCountryRecoveredSource = recovered;
+  }
+
+  getBenchmarkCountry(audit) {
+    const daily = this.getDailyBenchmarkCountry(audit);
+    if (daily) return daily;
+    this.rebuildBenchmarkCountryIndex();
+    const study = this.getStudyForAudit(audit);
+    const candidates = (this.benchmarkCountryIndex.get(this.normalizeAuditId(audit.id)) || [])
+      .filter(row => !row.study || row.study === study);
+    const countries = [...new Set(candidates.map(row => row.country))];
+    // Conflicting export countries are explicit missing data, not an arbitrary match.
+    if (countries.length === 1) return countries[0];
+    if (countries.length > 1) return '';
+    return this.normalizeBenchmarkCountry(audit.benchmark_country);
+  }
+
+  async ensureBenchmarkCountries(audits) {
+    if (!this.backend?.configured || !this.canUseExternalAnalysis()) return;
+    if (this.benchmarkCountryLoadPromise) return this.benchmarkCountryLoadPromise;
+    if (Date.now() < (this.benchmarkCountryRetryAfter || 0)) return;
+    this.benchmarkCountryCheckedIds ||= new Set();
+    const ids = [...new Set(audits.filter(audit => ['Tradicional', 'Moderno'].includes(this.getStudyForAudit(audit))
+      && !this.getBenchmarkCountry(audit)).map(audit => this.normalizeAuditId(audit.id)))]
+      .filter(id => /^\d+$/.test(id) && !this.benchmarkCountryCheckedIds.has(id));
+    if (!ids.length) return;
+    const profile = this.currentProfile;
+    const request = (async () => {
+      try {
+        const rows = await this.backend.loadAuditCountryContext(ids);
+        if (this.currentProfile !== profile || !this.currentRole) return;
+        this.benchmarkCountryRows = [...(this.benchmarkCountryRows || []), ...rows];
+        ids.forEach(id => this.benchmarkCountryCheckedIds.add(id));
+        this.benchmarkCountryRetryAfter = 0;
+        this.renderReportsView();
+      } catch (error) {
+        this.benchmarkCountryRetryAfter = Date.now() + 2 * 60 * 1000;
+        console.error('No fue posible recuperar países del Export general:', error);
+      }
+    })();
+    this.benchmarkCountryLoadPromise = request;
+    try { await request; } finally {
+      if (this.benchmarkCountryLoadPromise === request) this.benchmarkCountryLoadPromise = null;
+    }
+    // The next pass handles any history page that arrived during the request.
+    if (this.currentProfile === profile && this.currentRole && !this.benchmarkCountryRetryAfter) {
+      this.ensureBenchmarkCountries(this.getReportAuditSource());
+    }
   }
 
   isCountryReportPeriod(audit) {
@@ -5939,6 +6046,7 @@ class ValidaFlowApp {
 
     // 3. Renderizar Sub-Vista Ejecutiva para Comité
     this.renderExecutiveMetrics(filteredAudits);
+    this.ensureBenchmarkCountries(reportAudits);
   }
 
   renderOperationalMetrics(audits) {
@@ -6063,8 +6171,8 @@ class ValidaFlowApp {
       }
       channelStats[studyKey].audits++;
       let countryStats = null;
-      if ((studyKey === 'Tradicional' || studyKey === 'Moderno') && this.isCountryReportPeriod(audit)) {
-        const country = this.getReportCountry(audit) || 'Sin país';
+      if (studyKey === 'Tradicional' || studyKey === 'Moderno') {
+        const country = this.getBenchmarkCountry(audit) || 'Sin país identificado';
         const countries = channelStats[studyKey].countries;
         if (!countries.has(country)) {
           countries.set(country, { name: country, audits: 0, alerts: 0, aplica: 0, noAplica: 0 });
@@ -6224,9 +6332,9 @@ class ValidaFlowApp {
         benchmarkTbody.innerHTML = channelList.map(ch => {
           const isKo = ch.key === 'Tradicional' || ch.key === 'Moderno';
           const countries = isKo
-            ? [...ch.countries.values()].sort((a, b) => a.name === 'Sin país' ? 1 : b.name === 'Sin país' ? -1 : a.name.localeCompare(b.name, 'es'))
+            ? [...ch.countries.values()].sort((a, b) => a.name === 'Sin país identificado' ? 1 : b.name === 'Sin país identificado' ? -1 : a.name.localeCompare(b.name, 'es'))
             : [];
-          const expanded = this.expandedBenchmarkStudies?.has(ch.key) || false;
+          const expanded = this.expandedBenchmarkStudies?.has(ch.key) ?? true;
           const countryRows = countries.length
             ? countries.map((country, index) => `
                 <tr id="exec-benchmark-country-${ch.key}-${index}" class="benchmark-country-row" data-benchmark-parent="${ch.key}" data-benchmark-country="${escapeHtml(country.name)}" ${expanded ? '' : 'hidden'}>
@@ -6239,12 +6347,13 @@ class ValidaFlowApp {
             ? countries.map((_, index) => `exec-benchmark-country-${ch.key}-${index}`).join(' ')
             : '';
           const canExpand = isKo && countries.length > 0;
-          const countryCoverage = countries.reduce((total, country) => total + country.audits, 0);
-          const historicalNote = countryCoverage < ch.audits ? ' · desde oct. 2026' : '';
+          const unresolved = countries.find(country => country.name === 'Sin país identificado')?.audits || 0;
+          const countryCount = countries.filter(country => country.name !== 'Sin país identificado').length;
+          const coverageNote = unresolved ? ` · ${unresolved} sin país` : '';
           return `
             <tr class="${canExpand ? 'benchmark-study-parent' : ''}">
               <td>${canExpand
-                ? `<button type="button" class="benchmark-expand-toggle" data-study="${ch.key}" aria-expanded="${expanded}" aria-controls="${controlledRows}" aria-label="${expanded ? 'Ocultar' : 'Mostrar'} detalle por país de ${escapeHtml(ch.name)}"><span class="benchmark-expand-chevron" aria-hidden="true">▶</span><span class="benchmark-badge-flag">${escapeHtml(ch.name)}</span><small>${countries.length} ${countries.length === 1 ? 'país' : 'países'}${historicalNote}</small></button>`
+                ? `<button type="button" class="benchmark-expand-toggle" data-study="${ch.key}" aria-expanded="${expanded}" aria-controls="${controlledRows}" aria-label="${expanded ? 'Ocultar' : 'Mostrar'} detalle por país de ${escapeHtml(ch.name)}"><span class="benchmark-expand-chevron" aria-hidden="true">▶</span><span class="benchmark-badge-flag">${escapeHtml(ch.name)}</span><small>${countryCount} ${countryCount === 1 ? 'país' : 'países'}${coverageNote}</small></button>`
                 : `<span class="benchmark-badge-flag">${escapeHtml(ch.name)}</span>`}</td>
               ${renderMetricCells(ch)}
             </tr>
@@ -6386,6 +6495,16 @@ class ValidaFlowApp {
       const st = this.getStudyForAudit(a);
       if (!studyMap[st]) studyMap[st] = { name: getStudyDisplayName(st), audits: 0, alerts: 0, aplica: 0, noAplica: 0 };
       studyMap[st].audits++;
+      let countryStats = null;
+      if (st === 'Tradicional' || st === 'Moderno') {
+        const name = this.getBenchmarkCountry(a) || 'Sin país identificado';
+        studyMap[st].countries ||= new Map();
+        if (!studyMap[st].countries.has(name)) {
+          studyMap[st].countries.set(name, { name, audits: 0, alerts: 0, aplica: 0, noAplica: 0 });
+        }
+        countryStats = studyMap[st].countries.get(name);
+        countryStats.audits++;
+      }
 
       if (a.validationStatus === 'completada') {
         completedCount++;
@@ -6397,6 +6516,7 @@ class ValidaFlowApp {
         if (k.needsReview) {
           totalAlerts++;
           studyMap[st].alerts++;
+          if (countryStats) countryStats.alerts++;
           const kn = k.kpiName || k.name;
           if (!kpiMap[kn]) kpiMap[kn] = { name: kn, total: 0, aplica: 0, noAplica: 0 };
           kpiMap[kn].total++;
@@ -6406,10 +6526,12 @@ class ValidaFlowApp {
             totalAplica++;
             kpiMap[kn].aplica++;
             studyMap[st].aplica++;
+            if (countryStats) countryStats.aplica++;
           } else if (res && res.status === 'no_aplica') {
             totalNoAplica++;
             kpiMap[kn].noAplica++;
             studyMap[st].noAplica++;
+            if (countryStats) countryStats.noAplica++;
             if (res.tipificacion) reasonsMap[res.tipificacion] = (reasonsMap[res.tipificacion] || 0) + 1;
           }
         }
@@ -6493,7 +6615,8 @@ class ValidaFlowApp {
     // 3. Benchmark Table (Modal + Print)
     const benchTbody = document.getElementById('dossier-benchmark-tbody');
     const printBenchTbody = document.getElementById('print-benchmark-tbody');
-    const studyRowsHtml = Object.values(studyMap).map(st => {
+    const renderStudyRow = (st, isCountry = false) => {
+      const name = String(st.name).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
       const ev = st.aplica + st.noAplica;
       const pConf = ev > 0 ? Math.round((st.aplica / ev) * 100) : 0;
       const execRate = st.audits > 0 
@@ -6501,7 +6624,7 @@ class ValidaFlowApp {
         : null;
       return `
         <tr>
-          <td><strong>${st.name}</strong></td>
+          <td><strong>${isCountry ? '↳ ' : ''}${name}</strong></td>
           <td>${st.audits}</td>
           <td><span class="badge badge-purple">${st.alerts}</span></td>
           <td><strong class="text-success">${st.aplica}</strong></td>
@@ -6510,7 +6633,10 @@ class ValidaFlowApp {
           <td><span class="badge ${execRate === null ? 'badge-warning' : execRate >= 80 ? 'badge-success' : 'badge-warning'}">${execRate === null ? 'Sin datos' : `${execRate}% en PDV`}</span></td>
         </tr>
       `;
-    }).join('');
+    };
+    const studyRowsHtml = Object.values(studyMap).map(st => renderStudyRow(st)
+      + [...(st.countries?.values() || [])].sort((a, b) => a.name.localeCompare(b.name, 'es'))
+        .map(country => renderStudyRow(country, true)).join('')).join('');
 
     if (benchTbody) benchTbody.innerHTML = studyRowsHtml;
     if (printBenchTbody) printBenchTbody.innerHTML = studyRowsHtml;
@@ -6692,6 +6818,7 @@ class ValidaFlowApp {
       return;
     }
 
+    await this.ensureBenchmarkCountries(this.getReportAuditSource());
     // El informe se compone directamente con jsPDF. Así no depende de una
     // captura HTML/canvas, que en algunos equipos devolvía una página en blanco.
     this.openCommercialReportPreview(false);

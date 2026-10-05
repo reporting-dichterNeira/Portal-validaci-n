@@ -1014,6 +1014,30 @@ export class SupabaseBackend {
     };
   }
 
+  async loadAuditCountryContext(auditIds) {
+    this.ensureConfigured();
+    const ids = [...new Set((auditIds || []).map(id => String(id)).filter(id => /^\d+$/.test(id)))];
+    const chunks = [];
+    for (let offset = 0; offset < ids.length; offset += 200) chunks.push(ids.slice(offset, offset + 200));
+    const loadChunk = async chunk => {
+      const rows = [];
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await this.client.from('admin_alert_export_records')
+          .select('audit_external_id, country, study').in('audit_external_id', chunk)
+          .order('id', { ascending: true }).range(from, from + 999);
+        if (error) throw error;
+        rows.push(...(data || []));
+        if ((data || []).length < 1000) return rows;
+      }
+    };
+    const result = [];
+    for (let index = 0; index < chunks.length; index += 4) {
+      const pages = await Promise.all(chunks.slice(index, index + 4).map(loadChunk));
+      pages.forEach(page => result.push(...page));
+    }
+    return result;
+  }
+
   async loadAdminNoteScoreAnalysis() {
     this.ensureConfigured();
     const loadImports = () => this.client
