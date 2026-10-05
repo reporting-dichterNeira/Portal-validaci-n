@@ -101,7 +101,7 @@ test('reparto manual Smart usa RPC por país; Bloqueantes conserva su RPC', asyn
   assert.deepEqual(calls,['reassign_smart_pending_by_country','reassign_pending_audits']);
 });
 
-test('tarjeta despliega países realmente asignados y sus conteos, no inventa casos del país configurado', () => {
+test('tarjeta muestra países pequeños debajo del nombre, sin desplegable, y conteos reales en la ayuda', () => {
   const grid={innerHTML:'',querySelectorAll:()=>[]};
   context.document.getElementById=id=>id==='admin-validators-grid'?grid:null;
   const app=Object.assign(Object.create(App.prototype),{currentProject:'Moderno',currentModule:'smart',isSupervisor:true,
@@ -112,12 +112,52 @@ test('tarjeta despliega países realmente asignados y sus conteos, no inventa ca
       {...audit(2,'Panamá'),assignedValidatorId:'v1',validationStatus:'completada'},
       {...audit(3,'Costa Rica'),assignedValidatorId:'otro'}]});
   app.renderValidatorCards();
-  assert.match(grid.innerHTML,/Ver países asignados \(1\)/);
-  assert.match(grid.innerHTML,/<strong>Panamá<\/strong>\s*<span>2 auditorías<\/span>/);
-  assert.match(grid.innerHTML,/1 completadas · 1 por terminar/);
-  assert.match(grid.innerHTML,/Aún no tiene auditorías asignadas en esta base/);
-  assert.doesNotMatch(grid.innerHTML,/<strong>Honduras<\/strong>/);
+  assert.match(grid.innerHTML,/<h4 class="val-name">Ejemplo<\/h4>\s*<small class="val-assigned-countries"[^>]*>🌎 Países asignados: Panamá<\/small>/);
+  assert.match(grid.innerHTML,/title="Panamá: 2 auditorías \(1 completadas\)"/);
+  assert.match(grid.innerHTML,/title="Sin auditorías asignadas en esta base">🌎 Países asignados: Honduras/);
+  assert.doesNotMatch(grid.innerHTML,/<details|Ver países asignados|<summary/);
   app.currentModule='blocking';
   app.renderValidatorCards();
   assert.doesNotMatch(grid.innerHTML,/val-assigned-countries/);
+});
+
+test('un validador recibe varios países, y jamás recibe uno fuera de su lista', () => {
+  const input=[audit(1,'Panamá'),audit(2,'Costa Rica'),audit(3,'Guatemala'),audit(4,'panama')];
+  const result=Distributor.distribute(input,[{id:'multi',smartCountries:['Panamá','Costa Rica']}],options);
+  assert.deepEqual(Array.from(result,a=>a.assignedValidatorId),['multi','multi',null,'multi']);
+  assert.equal(Distributor.canAssignCountry(audit(1,'Panamá'),{smartCountry:'Guatemala',smartCountries:[]},options),true);
+});
+
+test('reparto multipaís conserva el orden y balancea destinos compatibles', () => {
+  const input=Array.from({length:14},(_,i)=>audit(i,i%2?'Panamá':'Costa Rica'));
+  const result=Distributor.distribute(input,[{id:'a',smartCountries:['Panamá','Costa Rica']},{id:'b',smartCountries:['Costa Rica','Panamá']}],options);
+  assert.deepEqual(Array.from(result,a=>a.id),input.map(a=>a.id));
+  assert.equal(result.filter(a=>a.assignedValidatorId==='a').length,7);
+  assert.equal(result.filter(a=>a.assignedValidatorId==='b').length,7);
+});
+
+test('guardar lista usa RPC multipaís y lee el arreglo persistido del estudio', async () => {
+  const backend=Object.create(SupabaseBackend.prototype);
+  let sent;
+  backend.ensureConfigured=()=>{};
+  backend.currentScope={study:{id:'study-1'},country:{id:'scope-1'}};
+  backend.client={rpc:async(name,args)=>{sent={name,args};return{error:null};}};
+  backend.loadScopeValidators=async()=>[{id:'v',smartCountries:['Costa Rica','Panamá']}];
+  const restored=await backend.setValidatorSmartCountries('v',['Costa Rica','Panamá'],true);
+  assert.equal(sent.name,'set_study_validator_smart_countries');
+  assert.deepEqual(Array.from(sent.args.p_smart_countries),['Costa Rica','Panamá']);
+  assert.equal(sent.args.p_active,true);
+  assert.deepEqual(Array.from(restored.smartCountries),['Costa Rica','Panamá']);
+});
+
+test('lector de casillas distingue varios países, todos y selección vacía inválida', () => {
+  const app=Object.create(App.prototype);
+  const all={checked:false};
+  let values=[{value:'PANAMA'},{value:'Costa Rica'}];
+  const card={querySelector:()=>all,querySelectorAll:()=>values};
+  assert.deepEqual(Array.from(app.readValidatorSmartCountries(card,{})),['Panamá','Costa Rica']);
+  all.checked=true;
+  assert.deepEqual(Array.from(app.readValidatorSmartCountries(card,{})),[]);
+  all.checked=false;values=[];
+  assert.throws(()=>app.readValidatorSmartCountries(card,{}),/Selecciona al menos un país/);
 });

@@ -10,8 +10,17 @@ export class Distributor {
   }
 
   static canAssignCountry(audit, validator, options = {}) {
-    return !options.restrictByCountry || !validator.smartCountry
-      || this.countryKey(audit.pais || audit.country) === this.countryKey(validator.smartCountry);
+    const countries = this.getSmartCountries(validator);
+    return !options.restrictByCountry || !countries.length
+      || countries.some(country => this.countryKey(audit.pais || audit.country) === this.countryKey(country));
+  }
+
+  static getSmartCountries(validator) {
+    const values = Array.isArray(validator.smartCountries) ? validator.smartCountries
+      : validator.smartCountry ? [validator.smartCountry] : [];
+    const unique = new Map();
+    values.filter(Boolean).forEach(country => unique.set(this.countryKey(country), country));
+    return [...unique.values()];
   }
 
   static distributeByCountry(audits, validators, options) {
@@ -175,7 +184,7 @@ export class Distributor {
    */
   static distributeSimultaneous(audits, validators, options = {}) {
     if (!validators || validators.length === 0 || !audits || audits.length === 0) return audits;
-    if (options.restrictByCountry && validators.some(v => v.smartCountry)) {
+    if (options.restrictByCountry && validators.some(v => this.getSmartCountries(v).length)) {
       return this.distributeByCountry(audits, validators, options);
     }
     if (options?.balanceByPrPhotos) return this.distributeByPrPhotos(audits, validators);

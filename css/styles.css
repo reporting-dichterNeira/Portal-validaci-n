@@ -7812,11 +7812,10 @@ body.dark-theme {
 
 /* Alcance de reparto Smart por validador, independiente del país de acceso. */
 .val-country-control { display: grid; gap: 7px; margin: 12px 0; padding: 12px; background: #f4f8fc; border: 1px solid #dbe5ef; border-radius: 10px; }
-.val-country-control label { font-weight: 700; color: #24345f; font-size: 13px; }
+.val-country-control legend { font-weight: 700; color: #24345f; font-size: 13px; padding: 0 4px; }
+.val-country-control .val-country-option { display: flex; align-items: center; gap: 7px; font-weight: 400; color: #24345f; font-size: 13px; cursor: pointer; }
+.val-country-option input { accent-color: #0861b7; flex: none; }
+.val-country-options { display: grid; gap: 7px; max-height: 160px; overflow-y: auto; padding: 4px 0; border-top: 1px solid #dbe5ef; }
 .val-country-control small { color: #596b83; font-size: 12px; }
 .val-country-control .form-select { width: 100%; min-width: 0; }
-.val-assigned-countries { margin: 12px 0; border: 1px solid #c7d9ef; border-radius: 10px; background: #fff; }
-.val-assigned-countries summary { cursor: pointer; padding: 11px; color: #0861b7; font-size: 13px; font-weight: 700; }
-.val-assigned-country-list { padding: 0 11px 11px; display: grid; gap: 9px; }
-.val-assigned-country { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding-top: 9px; border-top: 1px solid #e1e8f0; font-size: 12px; }
-.val-assigned-country small { grid-column: 1 / -1; color: #607089; }
+.val-info .val-assigned-countries { display: block; margin: 3px 0 6px; color: #607089; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }

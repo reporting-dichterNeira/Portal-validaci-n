@@ -7,9 +7,9 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=31.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
-import { Distributor } from './distributor.js?v=24.0';
+import { Distributor } from './distributor.js?v=25.0';
 import { ValidatorUI } from './validator-ui.js?v=35.0';
-import { SupabaseBackend } from './supabase-backend.js?v=57.0';
+import { SupabaseBackend } from './supabase-backend.js?v=58.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
 
@@ -4783,33 +4783,44 @@ class ValidaFlowApp {
     // preparar el equipo incluso antes de subir la primera base del día.
     return [...new Set(['Costa Rica', 'El Salvador', 'Guatemala', 'Honduras', 'Nicaragua', 'Panamá',
       ...this.getAuditsForCurrentProject().map(audit => ExcelParser.normalizeCountry(audit.pais)),
-      ...this.getValidatorsForCurrentProject({ includeInactive: true }).map(val => val.smartCountry)
+      ...this.getValidatorsForCurrentProject({ includeInactive: true }).flatMap(val => Distributor.getSmartCountries(val))
     ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
   }
 
   async saveValidatorSmartCountry(id, button) {
     const validator = this.validators.find(val => val.id === id);
-    const select = button.closest('.validator-admin-card')?.querySelector('.val-smart-country');
-    if (!validator || !select) return;
-    const country = ExcelParser.normalizeCountry(select.value);
+    const card = button.closest('.validator-admin-card');
+    if (!validator || !card) return;
     button.disabled = true;
     try {
+      const countries = this.readValidatorSmartCountries(card, validator);
       if (this.backend.configured && this.isSupervisor) {
-        Object.assign(validator, await this.backend.setValidatorSmartCountry(id, country));
+        Object.assign(validator, await this.backend.setValidatorSmartCountries(id, countries));
       } else {
         if (this.getAuditsForCurrentProject().some(audit => audit.assignedValidatorId === id
-          && audit.validationStatus === 'en_progreso' && !Distributor.canAssignCountry(audit, { smartCountry: country }, this.getDistributionOptions()))) {
-          throw new Error('Termina las auditorías en progreso de otro país antes de cambiar el país.');
+          && audit.validationStatus === 'en_progreso' && !Distributor.canAssignCountry(audit, { smartCountries: countries }, this.getDistributionOptions()))) {
+          throw new Error('Termina las auditorías en progreso de los países que vas a quitar.');
         }
-        validator.smartCountry = country;
+        validator.smartCountries = countries;
+        validator.smartCountry = countries[0] || '';
       }
       if (validator.isActive !== false && this.getValidatorsForCurrentProject().length) this.redistributePendingAudits();
       await this.syncStateAcrossTabs();
       this.renderAdminView(); this.renderAlertsView(); this.renderReportsView();
-      this.showToast(`${validator.name}: ${country ? `solo ${country}` : 'todos los países'}. Configuración guardada para Smart.`, 'success');
+      this.showToast(`${validator.name}: ${countries.length ? countries.join(', ') : 'todos los países'}. Configuración guardada para Smart.`, 'success');
     } catch (error) {
       this.showToast(error.message || 'No fue posible guardar el país.', 'error');
     } finally { if (button.isConnected) button.disabled = false; }
+  }
+
+  readValidatorSmartCountries(card, validator) {
+    const all = card?.querySelector('.val-smart-all');
+    if (!all) return Distributor.getSmartCountries(validator);
+    if (all.checked) return [];
+    const countries = [...card.querySelectorAll('.val-smart-country:checked')]
+      .map(input => ExcelParser.normalizeCountry(input.value)).filter(Boolean);
+    if (!countries.length) throw new Error('Selecciona al menos un país o marca Todos los países.');
+    return [...new Set(countries)];
   }
 
   redistributePendingAudits() {
@@ -4946,16 +4957,15 @@ class ValidaFlowApp {
       const studyLabel = flagMap[val.estudio] || val.estudio || this.currentProject || 'Chile';
       const isActive = val.isActive !== false;
       const escapeCountry = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+      const selectedCountries = Distributor.getSmartCountries(val);
       const countryControl = this.getDistributionOptions().restrictByCountry ? `
-        <div class="val-country-control">
-          <label for="smart-country-${val.id}">🌎 País a revisar en Smart</label>
-          <select id="smart-country-${val.id}" class="form-select val-smart-country">
-            <option value="">Todos los países</option>
-            ${assignmentCountries.map(country => `<option value="${escapeCountry(country)}" ${country === val.smartCountry ? 'selected' : ''}>${escapeCountry(country)}</option>`).join('')}
-          </select>
-          <small>${val.smartCountry ? `Asignación guardada: solo ${escapeCountry(val.smartCountry)}` : 'Asignación guardada: todos los países'}</small>
-          ${isActive ? `<button class="btn btn-sm btn-outline btn-save-smart-country" data-id="${val.id}">Guardar país y repartir pendientes</button>` : '<small>El país elegido se guarda al activar.</small>'}
-        </div>` : '';
+        <fieldset class="val-country-control">
+          <legend>🌎 Países a revisar en Smart</legend>
+          <label class="val-country-option"><input type="checkbox" class="val-smart-all" ${selectedCountries.length ? '' : 'checked'}> Todos los países</label>
+          <div class="val-country-options">${assignmentCountries.map(country => `<label class="val-country-option"><input type="checkbox" class="val-smart-country" value="${escapeCountry(country)}" ${selectedCountries.some(selected => Distributor.countryKey(selected) === Distributor.countryKey(country)) ? 'checked' : ''}> ${escapeCountry(country)}</label>`).join('')}</div>
+          <small>Puedes marcar uno o varios países.</small>
+          ${isActive ? `<button class="btn btn-sm btn-outline btn-save-smart-country" data-id="${val.id}">Guardar países y repartir pendientes</button>` : '<small>Los países elegidos se guardan al activar.</small>'}
+        </fieldset>` : '';
       const assignedCountries = new Map();
       projectAudits.filter(audit => audit.assignedValidatorId === val.id).forEach(audit => {
         const country = this.currentProject === 'Lindley' ? 'Perú' : this.currentProject === 'Chile' ? 'Chile'
@@ -4966,16 +4976,9 @@ class ValidaFlowApp {
         if (audit.validationStatus === 'completada') count.completed++;
       });
       const countryDetail = this.getDistributionOptions().restrictByCountry ? `
-        <details class="val-assigned-countries">
-          <summary>🌎 Ver países asignados${assignedCountries.size ? ` (${assignedCountries.size})` : ''}</summary>
-          <div class="val-assigned-country-list">${assignedCountries.size
-            ? [...assignedCountries].sort(([a], [b]) => a.localeCompare(b, 'es')).map(([country, count]) => `
-              <div class="val-assigned-country"><strong>${escapeCountry(country)}</strong>
-                <span>${count.total} auditoría${count.total === 1 ? '' : 's'}</span>
-                <small>${count.completed} completadas · ${count.total - count.completed} por terminar</small>
-              </div>`).join('')
-            : '<small>Aún no tiene auditorías asignadas en esta base.</small>'}</div>
-        </details>` : '';
+        <small class="val-assigned-countries" title="${escapeCountry(assignedCountries.size
+          ? [...assignedCountries].map(([country, count]) => `${country}: ${count.total} auditorías (${count.completed} completadas)`).join(' · ')
+          : 'Sin auditorías asignadas en esta base')}">🌎 Países asignados: ${selectedCountries.length ? selectedCountries.map(escapeCountry).join(' · ') : 'Todos los países'}</small>` : '';
 
       return `
         <div class="validator-admin-card ${isActive ? '' : 'is-inactive'}" data-id="${val.id}">
@@ -4989,11 +4992,11 @@ class ValidaFlowApp {
 
           <div class="val-info">
             <h4 class="val-name">${val.name}</h4>
+            ${countryDetail}
             <span class="val-email">${val.email || 'Sin correo'}</span>
             <span class="badge ${isActive ? 'badge-success' : 'badge-secondary'} val-activity-badge">${isActive ? '● Activo' : '○ Inactivo'}</span>
           </div>
 
-          ${countryDetail}
           ${countryControl}
           <div class="val-stats-grid">
             <div class="val-stat-box">
@@ -5046,6 +5049,13 @@ class ValidaFlowApp {
     container.querySelectorAll('.btn-save-smart-country').forEach(btn => {
       btn.addEventListener('click', () => this.saveValidatorSmartCountry(btn.dataset.id, btn));
     });
+    container.querySelectorAll('.val-smart-all').forEach(input => input.addEventListener('change', () => {
+      if (input.checked) input.closest('.validator-admin-card').querySelectorAll('.val-smart-country')
+        .forEach(country => { country.checked = false; });
+    }));
+    container.querySelectorAll('.val-smart-country').forEach(input => input.addEventListener('change', () => {
+      if (input.checked) input.closest('.validator-admin-card').querySelector('.val-smart-all').checked = false;
+    }));
 
     container.querySelectorAll('.btn-reassign-validator').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -5499,14 +5509,16 @@ class ValidaFlowApp {
 
     try {
       if (this.backend.configured && this.isSupervisor) {
-        const select = button?.closest('.validator-admin-card')?.querySelector('.val-smart-country');
+        const countries = willBeActive && this.getDistributionOptions().restrictByCountry
+          ? this.readValidatorSmartCountries(button?.closest('.validator-admin-card'), validator) : [];
         const updated = willBeActive && this.getDistributionOptions().restrictByCountry
-          ? await this.backend.setValidatorSmartCountry(id, select?.value ?? validator.smartCountry, true)
+          ? await this.backend.setValidatorSmartCountries(id, countries, true)
           : await this.backend.setValidatorActive(id, willBeActive);
         Object.assign(validator, updated);
       } else {
         if (willBeActive && this.getDistributionOptions().restrictByCountry) {
-          validator.smartCountry = button?.closest('.validator-admin-card')?.querySelector('.val-smart-country')?.value ?? validator.smartCountry ?? '';
+          validator.smartCountries = this.readValidatorSmartCountries(button?.closest('.validator-admin-card'), validator);
+          validator.smartCountry = validator.smartCountries[0] || '';
         }
         validator.isActive = willBeActive;
       }
