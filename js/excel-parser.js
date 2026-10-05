@@ -51,9 +51,18 @@ export class ExcelParser {
       ec: 'Ecuador', ecuador: 'Ecuador',
       mx: 'México', mexico: 'México',
       gt: 'Guatemala', guatemala: 'Guatemala',
+      pa: 'Panamá', panama: 'Panamá',
+      cr: 'Costa Rica', costarica: 'Costa Rica',
+      sv: 'El Salvador', elsalvador: 'El Salvador',
+      hn: 'Honduras', honduras: 'Honduras',
+      ni: 'Nicaragua', nicaragua: 'Nicaragua',
       do: 'República Dominicana', republicadominicana: 'República Dominicana'
     };
     return aliases[key] || raw;
+  }
+
+  static isCountryHeader(value) {
+    return ['pais', 'country', 'country_name', 'nombre_pais', 'pais_nombre', 'nombre_del_pais', 'pais_del_pdv', 'pais_pdv'].includes(this.normalizeHeader(value));
   }
 
   static getTimingExportFields(audit) {
@@ -247,7 +256,9 @@ export class ExcelParser {
     // ----------------------------------------------------
     const kpiColumns = [];
     const metaColumns = [];
-    const hasCountryHeader = headers.some(h => ['pais', 'country', 'country_name', 'nombre_pais', 'pais_nombre'].includes(this.normalizeHeader(h)));
+    const hasCountryHeader = headers.some(h => this.isCountryHeader(h));
+    const declaredIdIndex = headers.findIndex(h => ['id_de_audito', 'id_audito', 'id_auditoria', 'id'].includes(this.normalizeHeader(h)));
+    const auditIdIndex = declaredIdIndex < 0 ? 0 : declaredIdIndex;
 
     headers.forEach((header, index) => {
       if (!header) return;
@@ -265,7 +276,7 @@ export class ExcelParser {
       const row = rows[r];
       if (!row || row.length === 0) continue;
 
-      const firstCell = (row[0] || '').toString().trim();
+      const firstCell = (row[auditIdIndex] || '').toString().trim();
       const firstCellLower = firstCell.toLowerCase();
 
       // Filtrar filas de totales o filtros agregados al pie del export
@@ -287,7 +298,7 @@ export class ExcelParser {
       // Extraer datos
       const auditObj = {
         _rawIndex: r,
-        id: (row[0] || '').toString().trim(),
+        id: (row[auditIdIndex] || '').toString().trim(),
         idPDV: '',
         estado: '',
         fecha: '',
@@ -312,7 +323,7 @@ export class ExcelParser {
         const val = (row[colIndex] || '').toString().trim();
         const hLower = ExcelParser.normalizeHeader(h);
 
-        if (hLower === 'id_de_audito' || hLower === 'id_audito' || hLower === 'id' || colIndex === 0) {
+        if (colIndex === auditIdIndex) {
           auditObj.id = ExcelParser.normalizeAuditId(val);
         } else if (hLower === 'id_de_pdv' || hLower === 'id_pdv' || hLower === 'pdv') {
           auditObj.idPDV = val;
@@ -322,7 +333,7 @@ export class ExcelParser {
           auditObj.canal = val;
         } else if (hLower === 'modelo_name' || hLower === 'modelo') {
           auditObj.modelo = val;
-        } else if (['pais', 'country', 'country_name', 'nombre_pais', 'pais_nombre'].includes(hLower)) {
+        } else if (ExcelParser.isCountryHeader(h)) {
           auditObj.pais = ExcelParser.normalizeCountry(val);
         } else if (hLower === 'nombre_usuario' || hLower === 'usuario' || hLower === 'auditor') {
           auditObj.usuario = val;
@@ -438,7 +449,7 @@ export class ExcelParser {
     const idAuditoIdx = findCol('id_audito', 'id_de_audito', 'idaudito', 'id');
     const idPDVIdx = findCol('id_pdv', 'id_de_pdv', 'idpdv', 'pdv');
     const fechaIdx = findCol('fecha_audito', 'fecha_del_audito', 'fecha_ingreso', 'fecha');
-    const paisIdx = headersLower.findIndex(h => ['pais', 'country', 'country_name', 'nombre_pais', 'pais_nombre'].includes(h));
+    const paisIdx = headers.findIndex(h => this.isCountryHeader(h));
     const canalIdx = findCol('canal', 'id_canal');
     const modeloIdx = findCol('modelo_name', 'modelo', 'estudio');
     const kpiIdx = findCol('kpi_subkpi', 'subkpi', 'kpi', 'variable');

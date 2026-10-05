@@ -7810,3 +7810,13 @@ body.dark-theme {
 
 
 
+/* Alcance de reparto Smart por validador, independiente del país de acceso. */
+.val-country-control { display: grid; gap: 7px; margin: 12px 0; padding: 12px; background: #f4f8fc; border: 1px solid #dbe5ef; border-radius: 10px; }
+.val-country-control label { font-weight: 700; color: #24345f; font-size: 13px; }
+.val-country-control small { color: #596b83; font-size: 12px; }
+.val-country-control .form-select { width: 100%; min-width: 0; }
+.val-assigned-countries { margin: 12px 0; border: 1px solid #c7d9ef; border-radius: 10px; background: #fff; }
+.val-assigned-countries summary { cursor: pointer; padding: 11px; color: #0861b7; font-size: 13px; font-weight: 700; }
+.val-assigned-country-list { padding: 0 11px 11px; display: grid; gap: 9px; }
+.val-assigned-country { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding-top: 9px; border-top: 1px solid #e1e8f0; font-size: 12px; }
+.val-assigned-country small { grid-column: 1 / -1; color: #607089; }

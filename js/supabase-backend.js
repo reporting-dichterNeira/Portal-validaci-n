@@ -49,6 +49,7 @@ function mapAudit(row) {
   const operationDate = row.batch_operation_date || batch.operation_date || null;
   return {
     ...payload,
+    pais: row.study === 'Lindley' ? 'Perú' : row.study === 'Chile' ? 'Chile' : (payload.pais || payload.country || ''),
     id: row.external_id,
     estudio: row.study,
     assignedValidatorId: row.assigned_validator_id,
@@ -75,6 +76,9 @@ function mapAudit(row) {
 
 function auditToRow(audit, module, scope, batchId = null) {
   const payload = { ...audit };
+  const study = scope?.study?.name || audit.estudio || audit.modelo || audit.canal || 'Sin estudio';
+  if (study === 'Lindley') payload.pais = 'Perú';
+  if (study === 'Chile') payload.pais = 'Chile';
   delete payload.validationResults;
   delete payload.validationStatus;
   delete payload.assignedValidatorId;
@@ -335,13 +339,14 @@ export class SupabaseBackend {
     const scope = this.currentScope;
     if (!scope?.study?.id || !scope?.country?.id) throw new Error('Selecciona primero un estudio.');
     const { data, error } = await this.client.from('validator_study_memberships')
-      .select('is_active, validators(id, code, name, email, study, study_id, country_id, is_active)')
+      .select('is_active, smart_country, validators(id, code, name, email, study, study_id, country_id, is_active)')
       .eq('study_id', scope.study.id).eq('country_id', scope.country.id);
     if (error) throw error;
     return (data || []).flatMap(membership => {
       const row = Array.isArray(membership.validators) ? membership.validators[0] : membership.validators;
       return row ? [{ ...mapValidator(row), estudio: scope.study.name, studyId: scope.study.id,
-        countryId: scope.country.id, isActive: membership.is_active !== false }] : [];
+        countryId: scope.country.id, isActive: membership.is_active !== false,
+        smartCountry: membership.smart_country || '' }] : [];
     }).sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name, 'es'));
   }
 
@@ -550,9 +555,19 @@ export class SupabaseBackend {
     return (await this.loadScopeValidators()).find(validator => validator.id === id);
   }
 
+  async setValidatorSmartCountry(id, country, active = null) {
+    this.ensureConfigured();
+    const { error } = await this.client.rpc('set_study_validator_smart_country', {
+      p_validator_id: id, p_study_id: this.currentScope?.study?.id,
+      p_country_id: this.currentScope?.country?.id, p_smart_country: country || '', p_active: active
+    });
+    if (error) throw error;
+    return (await this.loadScopeValidators()).find(validator => validator.id === id);
+  }
+
   async reassignPendingAudits({ sourceValidatorId, targetValidatorIds, module }) {
     this.ensureConfigured();
-    const { data, error } = await this.client.rpc('reassign_pending_audits', {
+    const { data, error } = await this.client.rpc(module === 'smart' ? 'reassign_smart_pending_by_country' : 'reassign_pending_audits', {
       p_study_id: this.currentScope?.study?.id || null,
       p_module: module,
       p_source_validator_id: sourceValidatorId,

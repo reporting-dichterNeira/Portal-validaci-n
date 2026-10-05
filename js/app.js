@@ -4,12 +4,12 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=30.0';
+import { ExcelParser } from './excel-parser.js?v=31.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
-import { Distributor } from './distributor.js?v=23.0';
+import { Distributor } from './distributor.js?v=24.0';
 import { ValidatorUI } from './validator-ui.js?v=35.0';
-import { SupabaseBackend } from './supabase-backend.js?v=55.0';
+import { SupabaseBackend } from './supabase-backend.js?v=56.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
 
@@ -4390,7 +4390,9 @@ class ValidaFlowApp {
       if (isKoCamStudy) {
         // En KO el nombre real viene del export (D en Bloqueantes, F en Smart).
         audit.pais = ExcelParser.normalizeCountry(audit.pais || audit.country || audit.meta?.PAIS || audit.meta?.pais);
-      } else if (this.currentScope?.country?.code !== 'GLB' && this.currentScope?.country?.name) {
+      } else if (studyName === 'Lindley') audit.pais = 'Perú';
+      else if (studyName === 'Chile') audit.pais = 'Chile';
+      else if (this.currentScope?.country?.code !== 'GLB' && this.currentScope?.country?.name) {
         audit.pais = this.currentScope.country.name;
       }
       else if (studyName === 'Chile') audit.pais = 'Chile';
@@ -4761,7 +4763,44 @@ class ValidaFlowApp {
   }
 
   getDistributionOptions(study = this.currentProject) {
-    return { balanceByPrPhotos: this.currentModule === 'smart' && String(study || '').trim().toLowerCase() === 'lindley' };
+    return {
+      balanceByPrPhotos: this.currentModule === 'smart' && String(study || '').trim().toLowerCase() === 'lindley',
+      restrictByCountry: this.currentModule === 'smart' && ['Tradicional', 'Moderno'].includes(study)
+    };
+  }
+
+  getSmartAssignmentCountries() {
+    // Los países de la base son la fuente principal. El catálogo CAM permite
+    // preparar el equipo incluso antes de subir la primera base del día.
+    return [...new Set(['Costa Rica', 'El Salvador', 'Guatemala', 'Honduras', 'Nicaragua', 'Panamá',
+      ...this.getAuditsForCurrentProject().map(audit => ExcelParser.normalizeCountry(audit.pais)),
+      ...this.getValidatorsForCurrentProject({ includeInactive: true }).map(val => val.smartCountry)
+    ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  }
+
+  async saveValidatorSmartCountry(id, button) {
+    const validator = this.validators.find(val => val.id === id);
+    const select = button.closest('.validator-admin-card')?.querySelector('.val-smart-country');
+    if (!validator || !select) return;
+    const country = ExcelParser.normalizeCountry(select.value);
+    button.disabled = true;
+    try {
+      if (this.backend.configured && this.isSupervisor) {
+        Object.assign(validator, await this.backend.setValidatorSmartCountry(id, country));
+      } else {
+        if (this.getAuditsForCurrentProject().some(audit => audit.assignedValidatorId === id
+          && audit.validationStatus === 'en_progreso' && !Distributor.canAssignCountry(audit, { smartCountry: country }, this.getDistributionOptions()))) {
+          throw new Error('Termina las auditorías en progreso de otro país antes de cambiar el país.');
+        }
+        validator.smartCountry = country;
+      }
+      if (validator.isActive !== false && this.getValidatorsForCurrentProject().length) this.redistributePendingAudits();
+      await this.syncStateAcrossTabs();
+      this.renderAdminView(); this.renderAlertsView(); this.renderReportsView();
+      this.showToast(`${validator.name}: ${country ? `solo ${country}` : 'todos los países'}. Configuración guardada para Smart.`, 'success');
+    } catch (error) {
+      this.showToast(error.message || 'No fue posible guardar el país.', 'error');
+    } finally { if (button.isConnected) button.disabled = false; }
   }
 
   redistributePendingAudits() {
@@ -4778,6 +4817,11 @@ class ValidaFlowApp {
 
     // No modifica auditorías completadas ni las que un validador ya tiene abiertas.
     const distributedPending = Distributor.distribute(pendingAudits, activeValidators, this.getDistributionOptions());
+    const unassigned = distributedPending.filter(audit => !audit.assignedValidatorId);
+    if (unassigned.length) {
+      const countries = [...new Set(unassigned.map(audit => audit.pais || 'Sin país'))].join(', ');
+      this.showToast(`${unassigned.length} auditorías sin asignar (${countries}). Activa un validador para esos países o selecciona Todos los países.`, 'warning');
+    }
     const auditKey = audit => String(audit._rowId || `${audit._batchId || 'active'}:${audit.id}`);
     const distributedByKey = new Map(distributedPending.map(audit => [auditKey(audit), audit]));
     this.audits = this.audits.map(audit => distributedByKey.get(auditKey(audit)) || audit);
@@ -4792,7 +4836,7 @@ class ValidaFlowApp {
       (total, audit) => total + (audit.kpis || []).filter(kpi => kpi.needsReview || kpi.alertaStatus === 'SE ALERTA').length,
       0
     );
-    return { pendingCount: pendingAudits.length, activeValidators, totalKpis };
+    return { pendingCount: pendingAudits.length, activeValidators, totalKpis, unassignedCount: unassigned.length };
   }
 
   executeDistribution() {
@@ -4817,8 +4861,8 @@ class ValidaFlowApp {
       this.populateLookupQuickTags();
 
       this.showToast(
-        `¡${result.pendingCount} auditorías pendientes de ${this.currentProject} (${result.totalKpis} KPIs a revisar) repartidas entre ${result.activeValidators.length} validadores activos!`,
-        'success'
+        `${result.pendingCount - (result.unassignedCount || 0)} auditorías pendientes de ${this.currentProject} repartidas.${result.unassignedCount ? ` ${result.unassignedCount} quedaron sin asignar por falta de validador para su país.` : ''}`,
+        result.unassignedCount ? 'warning' : 'success'
       );
     } catch (e) {
       console.error(e);
@@ -4888,9 +4932,41 @@ class ValidaFlowApp {
       'Lindley': '🥤 Lindley'
     };
 
+    const assignmentCountries = this.getDistributionOptions().restrictByCountry ? this.getSmartAssignmentCountries() : [];
     container.innerHTML = stats.map(val => {
       const studyLabel = flagMap[val.estudio] || val.estudio || this.currentProject || 'Chile';
       const isActive = val.isActive !== false;
+      const escapeCountry = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+      const countryControl = this.getDistributionOptions().restrictByCountry ? `
+        <div class="val-country-control">
+          <label for="smart-country-${val.id}">🌎 País a revisar en Smart</label>
+          <select id="smart-country-${val.id}" class="form-select val-smart-country">
+            <option value="">Todos los países</option>
+            ${assignmentCountries.map(country => `<option value="${escapeCountry(country)}" ${country === val.smartCountry ? 'selected' : ''}>${escapeCountry(country)}</option>`).join('')}
+          </select>
+          <small>${val.smartCountry ? `Asignación guardada: solo ${escapeCountry(val.smartCountry)}` : 'Asignación guardada: todos los países'}</small>
+          ${isActive ? `<button class="btn btn-sm btn-outline btn-save-smart-country" data-id="${val.id}">Guardar país y repartir pendientes</button>` : '<small>El país elegido se guarda al activar.</small>'}
+        </div>` : '';
+      const assignedCountries = new Map();
+      projectAudits.filter(audit => audit.assignedValidatorId === val.id).forEach(audit => {
+        const country = this.currentProject === 'Lindley' ? 'Perú' : this.currentProject === 'Chile' ? 'Chile'
+          : ExcelParser.normalizeCountry(audit.pais || audit.country) || 'Sin país identificado';
+        if (!assignedCountries.has(country)) assignedCountries.set(country, { total: 0, completed: 0 });
+        const count = assignedCountries.get(country);
+        count.total++;
+        if (audit.validationStatus === 'completada') count.completed++;
+      });
+      const countryDetail = this.getDistributionOptions().restrictByCountry ? `
+        <details class="val-assigned-countries">
+          <summary>🌎 Ver países asignados${assignedCountries.size ? ` (${assignedCountries.size})` : ''}</summary>
+          <div class="val-assigned-country-list">${assignedCountries.size
+            ? [...assignedCountries].sort(([a], [b]) => a.localeCompare(b, 'es')).map(([country, count]) => `
+              <div class="val-assigned-country"><strong>${escapeCountry(country)}</strong>
+                <span>${count.total} auditoría${count.total === 1 ? '' : 's'}</span>
+                <small>${count.completed} completadas · ${count.total - count.completed} por terminar</small>
+              </div>`).join('')
+            : '<small>Aún no tiene auditorías asignadas en esta base.</small>'}</div>
+        </details>` : '';
 
       return `
         <div class="validator-admin-card ${isActive ? '' : 'is-inactive'}" data-id="${val.id}">
@@ -4908,6 +4984,8 @@ class ValidaFlowApp {
             <span class="badge ${isActive ? 'badge-success' : 'badge-secondary'} val-activity-badge">${isActive ? '● Activo' : '○ Inactivo'}</span>
           </div>
 
+          ${countryDetail}
+          ${countryControl}
           <div class="val-stats-grid">
             <div class="val-stat-box">
               <span class="val-stat-num">${val.totalAssigned}</span>
@@ -4954,6 +5032,10 @@ class ValidaFlowApp {
         e.stopPropagation();
         await this.toggleValidatorActive(btn.dataset.id, btn.dataset.active === 'true', btn);
       });
+    });
+
+    container.querySelectorAll('.btn-save-smart-country').forEach(btn => {
+      btn.addEventListener('click', () => this.saveValidatorSmartCountry(btn.dataset.id, btn));
     });
 
     container.querySelectorAll('.btn-reassign-validator').forEach(btn => {
@@ -5086,9 +5168,11 @@ class ValidaFlowApp {
         await this.refreshFromBackend();
         this.channel?.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
       } else {
-        pendingAudits.forEach((audit, index) => {
-          audit.assignedValidatorId = targetValidatorIds[index % targetValidatorIds.length];
-        });
+        if (pendingAudits.some(audit => !targets.some(target => Distributor.canAssignCountry(audit, target, this.getDistributionOptions())))) {
+          throw new Error('Selecciona un destino habilitado para cada país de las auditorías pendientes.');
+        }
+        const redistributed = Distributor.distribute(pendingAudits, targets, this.getDistributionOptions());
+        pendingAudits.forEach((audit, index) => { audit.assignedValidatorId = redistributed[index].assignedValidatorId; });
         if (this.currentModule === 'blocking') this.blockingAudits = this.audits;
         else this.smartAudits = this.audits;
         await this.syncStateAcrossTabs();
@@ -5406,9 +5490,15 @@ class ValidaFlowApp {
 
     try {
       if (this.backend.configured && this.isSupervisor) {
-        const updated = await this.backend.setValidatorActive(id, willBeActive);
+        const select = button?.closest('.validator-admin-card')?.querySelector('.val-smart-country');
+        const updated = willBeActive && this.getDistributionOptions().restrictByCountry
+          ? await this.backend.setValidatorSmartCountry(id, select?.value ?? validator.smartCountry, true)
+          : await this.backend.setValidatorActive(id, willBeActive);
         Object.assign(validator, updated);
       } else {
+        if (willBeActive && this.getDistributionOptions().restrictByCountry) {
+          validator.smartCountry = button?.closest('.validator-admin-card')?.querySelector('.val-smart-country')?.value ?? validator.smartCountry ?? '';
+        }
         validator.isActive = willBeActive;
       }
 
@@ -5427,12 +5517,12 @@ class ValidaFlowApp {
 
       if (willBeActive) {
         const resultMessage = redistribution.pendingCount
-          ? ` y se redistribuyeron ${redistribution.pendingCount} auditorías pendientes entre ${redistribution.activeValidators.length} validadores activos`
+          ? ` y se repartieron ${redistribution.pendingCount - (redistribution.unassignedCount || 0)} auditorías pendientes entre ${redistribution.activeValidators.length} validadores activos`
           : '';
-        this.showToast(`${validator.name} quedó activo${resultMessage}.`, 'success');
+        this.showToast(`${validator.name} quedó activo${resultMessage}.${redistribution.unassignedCount ? ` ${redistribution.unassignedCount} sin asignar: falta validador habilitado para su país.` : ''}`, redistribution.unassignedCount ? 'warning' : 'success');
       } else {
         const resultMessage = redistribution.pendingCount
-          ? ` Las ${redistribution.pendingCount} auditorías pendientes fueron redistribuidas.`
+          ? ` ${redistribution.pendingCount - (redistribution.unassignedCount || 0)} auditorías pendientes fueron redistribuidas.${redistribution.unassignedCount ? ` ${redistribution.unassignedCount} sin asignar: falta validador habilitado para su país.` : ''}`
           : '';
         this.showToast(`${validator.name} quedó inactivo. Puede reactivarse en cualquier momento.${resultMessage}`, 'info');
       }
@@ -5645,6 +5735,9 @@ class ValidaFlowApp {
     // Los países históricos anteriores a octubre no son comparables: conservar
     // el dato original en Supabase, pero no mostrarlo ni filtrarlo en el panel.
     if (!this.isCountryReportPeriod(audit)) return '';
+    const study = this.getStudyForAudit(audit);
+    if (study === 'Lindley') return 'Perú';
+    if (study === 'Chile') return 'Chile';
     for (const value of [audit.pais, audit.country, audit.meta?.PAIS, audit.meta?.pais]) {
       const country = ExcelParser.normalizeCountry(value);
       if (country) return country;

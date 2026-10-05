@@ -4,6 +4,35 @@
  */
 
 export class Distributor {
+  static countryKey(value) {
+    return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase().replace(/[^a-z]/g, '');
+  }
+
+  static canAssignCountry(audit, validator, options = {}) {
+    return !options.restrictByCountry || !validator.smartCountry
+      || this.countryKey(audit.pais || audit.country) === this.countryKey(validator.smartCountry);
+  }
+
+  static distributeByCountry(audits, validators, options) {
+    // Procesar primero los países con menos validadores elegibles. Las cuotas
+    // globales no deben impedir asignar un país a su único validador disponible.
+    const loads = validators.map(val => ({ val, totalAudits: 0, totalKpis: 0 }));
+    const items = audits.map((audit, index) => ({ audit, index,
+      eligible: loads.filter(load => this.canAssignCountry(audit, load.val, options)),
+      weight: Math.max(1, (audit.kpis || []).filter(k => k.needsReview || k.alertaStatus === 'SE ALERTA').length)
+    }));
+    items.sort((a, b) => a.eligible.length - b.eligible.length || b.weight - a.weight);
+    const result = new Array(audits.length);
+    for (const item of items) {
+      item.eligible.sort((a, b) => a.totalAudits - b.totalAudits || a.totalKpis - b.totalKpis);
+      const target = item.eligible[0];
+      if (target) { target.totalAudits++; target.totalKpis += item.weight; }
+      result[item.index] = { ...item.audit, assignedValidatorId: target?.val.id || null,
+        distributionCriterion: 'smart_country' };
+    }
+    return result;
+  }
   /**
    * Genera un código único alfanumérico legible para un validador (ej. VAL-7B42K9MX)
    */
@@ -146,6 +175,9 @@ export class Distributor {
    */
   static distributeSimultaneous(audits, validators, options = {}) {
     if (!validators || validators.length === 0 || !audits || audits.length === 0) return audits;
+    if (options.restrictByCountry && validators.some(v => v.smartCountry)) {
+      return this.distributeByCountry(audits, validators, options);
+    }
     if (options?.balanceByPrPhotos) return this.distributeByPrPhotos(audits, validators);
 
     const numValidators = validators.length;
