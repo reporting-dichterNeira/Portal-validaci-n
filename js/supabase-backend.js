@@ -340,7 +340,7 @@ export class SupabaseBackend {
     if (!scope?.study?.id || !scope?.country?.id) throw new Error('Selecciona primero un estudio.');
     const { data, error } = await this.client.from('validator_study_memberships')
       .select('is_active, smart_country, smart_countries, validators(id, code, name, email, study, study_id, country_id, is_active)')
-      .eq('study_id', scope.study.id).eq('country_id', scope.country.id);
+      .eq('study_id', scope.study.id).eq('country_id', scope.country.id).is('removed_at', null);
     if (error) throw error;
     return (data || []).flatMap(membership => {
       const row = Array.isArray(membership.validators) ? membership.validators[0] : membership.validators;
@@ -544,7 +544,12 @@ export class SupabaseBackend {
   }
 
   async deleteValidator(id) {
-    await this.setValidatorActive(id, false);
+    this.ensureConfigured();
+    const { error } = await this.client.rpc('remove_study_validator', {
+      p_validator_id: id, p_study_id: this.currentScope?.study?.id,
+      p_country_id: this.currentScope?.country?.id
+    });
+    if (error) throw error;
   }
 
   async setValidatorActive(id, isActive) {

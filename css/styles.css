@@ -7819,3 +7819,5 @@ body.dark-theme {
 .val-country-control small { color: #596b83; font-size: 12px; }
 .val-country-control .form-select { width: 100%; min-width: 0; }
 .val-info .val-assigned-countries { display: block; margin: 3px 0 6px; color: #607089; font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.validator-admin-card .btn-delete-validator { margin-top: 8px; color: #c02c4b; border-color: #edb7c2; }
+.validator-admin-card .btn-delete-validator:hover { background: #fff0f3; border-color: #c02c4b; }

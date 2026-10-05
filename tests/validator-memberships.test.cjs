@@ -31,13 +31,14 @@ test('study roster preserves code/id while presenting local study and activity',
   const source = { id: 'shared', name: 'Example', code: 'VAL-EXAMPLE1', study: 'Chile', is_active: true };
   const filters = [];
   const query = { select() { return this; }, eq(k,v) { filters.push([k,v]); return this; },
+    is(k,v) { filters.push([k,v]); return this; },
     then(resolve) { resolve({data:[{is_active:false,validators:source}],error:null}); } };
   const b = backend({ from: name => { assert.equal(name,'validator_study_memberships'); return query; } });
   const [result] = await b.loadScopeValidators();
   assert.equal(result.id,'shared'); assert.equal(result.code,source.code);
   assert.equal(result.estudio,'Moderno'); assert.equal(result.isActive,false);
   assert.equal(source.study,'Chile'); assert.equal(source.is_active,true);
-  assert.deepEqual(filters,[['study_id','study-2'],['country_id','country-2']]);
+  assert.deepEqual(filters,[['study_id','study-2'],['country_id','country-2'],['removed_at',null]]);
 });
 test('adding sends only identity and destination; no audit or code mutation', async () => {
   const calls=[];
@@ -53,4 +54,13 @@ test('membership errors propagate and do not report a false success', async () =
   b.loadScopeValidators=()=>{throw Error('Should not refresh after a failed mutation');};
   await assert.rejects(b.addExistingStudyValidator('shared'),/SUPERVISOR_SCOPE_REQUIRED/);
   await assert.rejects(b.setValidatorActive('shared',false),/SUPERVISOR_SCOPE_REQUIRED/);
+  await assert.rejects(b.deleteValidator('shared'),/SUPERVISOR_SCOPE_REQUIRED/);
+});
+
+test('removing a validator only calls the scoped roster RPC, never deletes identity or audits', async () => {
+  const calls=[];
+  const b=backend({rpc:async(name,args)=>{calls.push({name,args});return {error:null};}});
+  await b.deleteValidator('shared');
+  assert.equal(calls[0].name,'remove_study_validator');
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].args)),{p_validator_id:'shared',p_study_id:'study-2',p_country_id:'country-2'});
 });

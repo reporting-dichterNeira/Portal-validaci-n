@@ -9,7 +9,7 @@ import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
 import { ValidatorUI } from './validator-ui.js?v=35.0';
-import { SupabaseBackend } from './supabase-backend.js?v=58.0';
+import { SupabaseBackend } from './supabase-backend.js?v=59.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
 
@@ -5025,6 +5025,9 @@ class ValidaFlowApp {
            <button class="btn btn-sm ${isActive ? 'btn-outline' : 'btn-primary'} btn-toggle-validator" data-id="${val.id}" data-active="${isActive}">
              ${isActive ? '⏸ Desactivar' : '▶ Activar'}
            </button>
+           <button class="btn btn-sm btn-outline btn-delete-validator" data-id="${val.id}" title="Quitar de este estudio conservando su histórico y otros estudios">
+             🗑 Eliminar del estudio
+           </button>
         </div>
       `;
     }).join('');
@@ -5048,6 +5051,12 @@ class ValidaFlowApp {
 
     container.querySelectorAll('.btn-save-smart-country').forEach(btn => {
       btn.addEventListener('click', () => this.saveValidatorSmartCountry(btn.dataset.id, btn));
+    });
+    container.querySelectorAll('.btn-delete-validator').forEach(btn => {
+      btn.addEventListener('click', async event => {
+        event.stopPropagation();
+        await this.deleteValidator(btn.dataset.id, btn);
+      });
     });
     container.querySelectorAll('.val-smart-all').forEach(input => input.addEventListener('change', () => {
       if (input.checked) input.closest('.validator-admin-card').querySelectorAll('.val-smart-country')
@@ -5443,32 +5452,35 @@ class ValidaFlowApp {
     }
   }
 
-  async deleteValidator(id) {
+  async deleteValidator(id, button = null) {
     const val = this.validators.find(v => v.id === id);
     if (!val) return;
-
-    const activeAssignments = this.audits.filter(a => a.assignedValidatorId === id).length;
-    if (activeAssignments > 0) {
-      this.showToast(`Antes de desactivar a ${val.name}, reasigna o archiva sus ${activeAssignments} auditorías de la jornada activa.`, 'warning');
+    if (this.backend.configured && !this.isSupervisor) return;
+    // Both modules belong to the same study roster. Completed work is retained.
+    const unfinished = [...new Set([...(this.audits || []), ...(this.smartAudits || []), ...(this.blockingAudits || [])])]
+      .filter(audit => audit.estudio === this.currentProject && audit.assignedValidatorId === id
+        && ['pendiente', 'en_progreso'].includes(audit.validationStatus)
+        && (audit.validationStatus === 'en_progreso' || !this.isExpiredPendingAudit(audit)));
+    if (unfinished.length) {
+      this.showToast(`Antes de eliminar a ${val.name} del estudio, reasigna sus pendientes o termina sus auditorías en progreso. Revisa Smart y Bloqueantes.`, 'warning');
       return;
     }
-
-    if (confirm(`¿Deseas desactivar al validador "${val.name}"? Su histórico y sus auditorías anteriores se conservarán.`)) {
-      if (this.backend.configured && this.isSupervisor) {
-        try {
-          await this.backend.deleteValidator(id);
-        } catch (error) {
-          this.showToast(error.message || 'No fue posible desactivar el validador en Supabase.', 'error');
-          return;
-        }
-      }
+    if (!confirm(`¿Eliminar a "${val.name}" de ${getStudyDisplayName(this.currentProject)}? Desaparecerá de este listado. Se conservarán su código, su histórico y sus otros estudios. Podrás volver a añadirlo con la opción de validador existente.`)) return;
+    if (button) button.disabled = true;
+    try {
+      if (this.backend.configured) await this.backend.deleteValidator(id);
       this.validators = this.validators.filter(v => v.id !== id);
-      this.syncStateAcrossTabs();
+      this.saveState();
+      this.channel?.postMessage({ type: 'STATE_UPDATED', timestamp: Date.now() });
       this.renderAdminView();
       this.renderAlertsView();
       this.validatorUI?.populateQuickSelect(this.validators);
-      this.showToast(`Validador ${val.name} desactivado. Su histórico se conservó.`, 'info');
-    }
+      this.showToast(`${val.name} eliminado del estudio. Su histórico y los demás estudios se conservaron.`, 'success');
+    } catch (error) {
+      this.showToast(error.message === 'VALIDATOR_HAS_UNFINISHED_AUDITS'
+        ? 'Reasigna las auditorías pendientes y termina las que están en progreso, en Smart y Bloqueantes, antes de eliminarlo.'
+        : error.message || 'No fue posible eliminar el validador del estudio.', 'error');
+    } finally { if (button?.isConnected) button.disabled = false; }
   }
 
   async toggleValidatorActive(id, isCurrentlyActive, button = null) {

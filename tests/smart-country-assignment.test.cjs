@@ -116,9 +116,33 @@ test('tarjeta muestra países pequeños debajo del nombre, sin desplegable, y co
   assert.match(grid.innerHTML,/title="Panamá: 2 auditorías \(1 completadas\)"/);
   assert.match(grid.innerHTML,/title="Sin auditorías asignadas en esta base">🌎 Países asignados: Honduras/);
   assert.doesNotMatch(grid.innerHTML,/<details|Ver países asignados|<summary/);
+  assert.match(grid.innerHTML,/btn-delete-validator[^>]*data-id="v1"/);
   app.currentModule='blocking';
   app.renderValidatorCards();
   assert.doesNotMatch(grid.innerHTML,/val-assigned-countries/);
+});
+
+test('eliminar exige confirmación, conserva auditorías y bloquea trabajo sin terminar de ambos módulos', async () => {
+  let calls=0, confirmed=0;
+  const completed={...audit(1,'Panamá'),estudio:'Moderno',assignedValidatorId:'v',validationStatus:'completada'};
+  const app=Object.assign(Object.create(App.prototype),{currentProject:'Moderno',isSupervisor:true,
+    validators:[{id:'v',name:'Ejemplo',estudio:'Moderno'}],audits:[completed],smartAudits:[completed],blockingAudits:[],
+    backend:{configured:true,deleteValidator:async()=>{calls++;}},saveState(){},renderAdminView(){},renderAlertsView(){},
+    showToast(){},isExpiredPendingAudit:()=>false});
+  context.confirm=()=>{confirmed++;return false;};
+  await app.deleteValidator('v');
+  assert.equal(calls,0); assert.equal(app.validators.length,1);
+  app.blockingAudits=[{...completed,id:'2',validationStatus:'pendiente'}];
+  context.confirm=()=>{confirmed++;return true;};
+  await app.deleteValidator('v');
+  assert.equal(calls,0);assert.equal(confirmed,1);
+  app.blockingAudits=[];
+  app.backend.deleteValidator=async()=>{throw Error('Offline');};
+  await app.deleteValidator('v');
+  assert.equal(app.validators.length,1);
+  app.backend.deleteValidator=async()=>{calls++;};
+  await app.deleteValidator('v');
+  assert.equal(calls,1);assert.equal(app.validators.length,0);assert.equal(app.audits[0],completed);
 });
 
 test('un validador recibe varios países, y jamás recibe uno fuera de su lista', () => {
