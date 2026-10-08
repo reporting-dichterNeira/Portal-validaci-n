@@ -9,7 +9,7 @@ La documentación detallada está en [`docs/`](docs/README.md).
 | Capa | Tecnología | Lenguaje |
 | --- | --- | --- |
 | Interfaz | Página web estática, sin framework | HTML5, CSS3 y JavaScript moderno (ES modules) |
-| Lectura y descarga de archivos | SheetJS, jsPDF y html2pdf cargados desde CDN | JavaScript |
+| Lectura y descarga de archivos | SheetJS y jsPDF cargados desde CDN | JavaScript |
 | Servicio de datos y autenticación | Supabase Database, Auth, Realtime y RPC | PostgreSQL y PL/pgSQL |
 | Operación administrativa privilegiada | Supabase Edge Function `manage-supervisors` | TypeScript sobre Deno |
 | Publicación | GitHub Pages | Sitio estático |

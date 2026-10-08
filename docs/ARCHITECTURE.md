@@ -106,6 +106,15 @@ Los roles no son una condición visual únicamente: RLS en PostgreSQL los valida
 4. Si se vuelve a cargar el mismo tipo de archivo y el mismo mes, se reemplaza esa versión; otros meses no se alteran.
 5. `app.js` cruza por ID de auditoría o por PDV, según el análisis, y actualiza tarjetas, filtros y tabla descargable.
 
+### 5.3 Cargas y rendimiento de visualizaciones
+
+- Seguimiento diario no precarga los exports, las notas ni las ediciones. Cada pestaña solicita únicamente sus dependencias.
+- El histórico se comparte entre métricas y cruces; las solicitudes simultáneas reutilizan una promesa en curso. El histórico por validador se agrega desde las mismas auditorías autorizadas por RLS, respetando sus filtros y excluyendo pendientes vencidos.
+- Cambio de nota descarga únicamente el mes seleccionado. Las bases externas se reutilizan en IndexedDB por usuario; al vencer la vigencia se comprueban los metadatos antes de descargar otra vez una base sin cambios. Los avances activos recién consultados prevalecen sobre la caché histórica.
+- Ediciones presenta 100 filas por página. Los totales, filtros y la descarga siguen usando todos los registros filtrados.
+- Las auditorías activas y los históricos se leen con paginación para no depender del límite de 1.000 filas de la API. Realtime agrupa notificaciones durante un segundo y solo repinta la vista visible.
+- Estas optimizaciones no modifican los registros, las asignaciones ni los permisos de Supabase.
+
 ## 6. Seguridad
 
 - **Autenticación directa:** las sesiones de personal se crean y verifican directamente con Supabase Auth. El portal no almacena ni valida contraseñas por su cuenta.

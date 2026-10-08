@@ -66,6 +66,7 @@ function mapAudit(row) {
     _studyId: row.study_id || null,
     _countryId: row.country_id || null,
     _updatedAt: row.updated_at,
+    _createdAt: row.created_at,
     _batchOperationDate: operationDate,
     _batchStatus: row.batch_status || batch.status || null,
     _batchSourceFilename: row.batch_source_filename || batch.source_filename || '',
@@ -288,22 +289,23 @@ export class SupabaseBackend {
     if (batchesResult.error) throw batchesResult.error;
 
     const activeBatchIds = (batchesResult.data || []).map(batch => batch.id);
-    const auditsResult = activeBatchIds.length
-      ? await this.client
-          .from('audits')
-          .select('*')
-          .in('batch_id', activeBatchIds)
-          .order('created_at', { ascending: true })
-      : { data: [], error: null };
-
-    if (auditsResult.error) throw auditsResult.error;
-
     const smartAudits = [];
     const blockingAudits = [];
-    for (const row of auditsResult.data || []) {
-      const audit = mapAudit(row);
-      if (row.module === 'blocking') blockingAudits.push(audit);
-      else smartAudits.push(audit);
+    let cursor = 0;
+    while (activeBatchIds.length) {
+      const { data, error } = await this.client.from('audits')
+        .select('*, upload_batches(operation_date, status, source_filename)')
+        .in('batch_id', activeBatchIds).gt('id', cursor)
+        .order('id', { ascending: true }).limit(1000);
+      if (error) throw error;
+      const page = data || [];
+      for (const row of page) {
+        const audit = mapAudit(row);
+        if (row.module === 'blocking') blockingAudits.push(audit);
+        else smartAudits.push(audit);
+      }
+      if (page.length < 1000) break;
+      cursor = Number(page[page.length - 1].id);
     }
 
     return {
@@ -960,14 +962,15 @@ export class SupabaseBackend {
     if (importError) throw importError;
   }
 
-  async loadAllAdminAnalysisRows(table, columns) {
+  async loadAllAdminAnalysisRows(table, columns, { periodMonth = null } = {}) {
     const pageSize = 1000;
     const loadPage = async from => {
-      const { data, error } = await this.client
+      let query = this.client
         .from(table)
         .select(columns)
-        .order('id', { ascending: true })
-        .range(from, from + pageSize - 1);
+        .order('id', { ascending: true });
+      if (periodMonth) query = query.eq('period_month', periodMonth);
+      const { data, error } = await query.range(from, from + pageSize - 1);
       if (error) throw error;
       return data || [];
     };
@@ -978,9 +981,11 @@ export class SupabaseBackend {
     const firstPage = await loadPage(0);
     if (firstPage.length < pageSize) return firstPage;
 
-    const { count, error: countError } = await this.client
+    let countQuery = this.client
       .from(table)
       .select('id', { count: 'exact', head: true });
+    if (periodMonth) countQuery = countQuery.eq('period_month', periodMonth);
+    const { count, error: countError } = await countQuery;
     if (countError) throw countError;
     const totalRows = Number(count || firstPage.length);
     if (totalRows <= firstPage.length) return firstPage;
@@ -998,7 +1003,7 @@ export class SupabaseBackend {
     return rows;
   }
 
-  async loadAdminExternalAnalysis() {
+  async loadAdminExternalAnalysis({ includeAlerts = true, includeEdits = true } = {}) {
     this.ensureConfigured();
     const alertColumns = 'audit_external_id, period_month, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, pdv_note, country, channel, city, auditor, audit_date, wave, study';
     const legacyAlertColumns = alertColumns.replace(', pdv_note', '');
@@ -1010,8 +1015,8 @@ export class SupabaseBackend {
     try {
       [imports, alertRecords, editRecords] = await Promise.all([
         this.loadAdminAnalysisImports(),
-        this.loadAllAdminAnalysisRows('admin_alert_export_records', alertColumns),
-        this.loadAllAdminAnalysisRows('admin_edit_export_records', editColumns)
+        includeAlerts ? this.loadAllAdminAnalysisRows('admin_alert_export_records', alertColumns) : Promise.resolve([]),
+        includeEdits ? this.loadAllAdminAnalysisRows('admin_edit_export_records', editColumns) : Promise.resolve([])
       ]);
     } catch (error) {
       // The presentation remains usable while the one-time database migration
@@ -1020,8 +1025,8 @@ export class SupabaseBackend {
       if (!/question_detail|pdv_note|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
       [imports, alertRecords, editRecords] = await Promise.all([
         this.loadAdminAnalysisImports(),
-        this.loadAllAdminAnalysisRows('admin_alert_export_records', legacyAlertColumns),
-        this.loadAllAdminAnalysisRows('admin_edit_export_records', legacyEditColumns)
+        includeAlerts ? this.loadAllAdminAnalysisRows('admin_alert_export_records', legacyAlertColumns) : Promise.resolve([]),
+        includeEdits ? this.loadAllAdminAnalysisRows('admin_edit_export_records', legacyEditColumns) : Promise.resolve([])
       ]);
     }
     return {
@@ -1055,9 +1060,9 @@ export class SupabaseBackend {
     return result;
   }
 
-  async loadAdminNoteScoreAnalysis() {
+  async loadAdminNoteScoreImports() {
     this.ensureConfigured();
-    const loadImports = () => this.client
+    return this.client
       .from('admin_note_score_imports')
       .select('period_month, source_filename, row_count, imported_at')
       .order('period_month', { ascending: false })
@@ -1065,20 +1070,21 @@ export class SupabaseBackend {
         if (error) throw error;
         return data || [];
       });
+  }
+
+  async loadAdminNoteScoreAnalysis({ periodMonth = null, latestOnly = false } = {}) {
+    this.ensureConfigured();
+    const noteScoreImports = await this.loadAdminNoteScoreImports();
+    const month = periodMonth || (latestOnly ? noteScoreImports[0]?.period_month : null);
     const expandedColumns = 'audit_external_id, period_month, pdv_id, source, study, subkpi, wave, kpi, score, previous_total_score, current_total_score, previous_subkpi_score, current_subkpi_score';
     const legacyColumns = 'audit_external_id, period_month, pdv_id, source, study, subkpi, wave, kpi, score';
     try {
-      const [noteScoreImports, noteScoreRecords] = await Promise.all([
-        loadImports(),
-        this.loadAllAdminAnalysisRows('admin_note_score_records', expandedColumns)
-      ]);
+      const noteScoreRecords = latestOnly && !month ? []
+        : await this.loadAllAdminAnalysisRows('admin_note_score_records', expandedColumns, { periodMonth: month });
       return { noteScoreImports, noteScoreRecords };
     } catch (error) {
       if (!/previous_total_score|current_total_score|previous_subkpi_score|current_subkpi_score|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
-      const [noteScoreImports, noteScoreRecords] = await Promise.all([
-        loadImports(),
-        this.loadAllAdminAnalysisRows('admin_note_score_records', legacyColumns)
-      ]);
+      const noteScoreRecords = await this.loadAllAdminAnalysisRows('admin_note_score_records', legacyColumns, { periodMonth: month });
       return { noteScoreImports, noteScoreRecords };
     }
   }

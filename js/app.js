@@ -9,7 +9,7 @@ import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
 import { ValidatorUI } from './validator-ui.js?v=35.0';
-import { SupabaseBackend } from './supabase-backend.js?v=59.0';
+import { SupabaseBackend } from './supabase-backend.js?v=60.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
 
@@ -51,6 +51,12 @@ class ValidaFlowApp {
     this.adminExternalAnalysisLoadPromise = null;
     this.adminExternalAnalysisCacheMs = 2 * 60 * 1000;
     this.adminExternalAnalysisCacheHydrationPromise = null;
+    this.adminAnalysisResourcePromises = {};
+    this.adminAnalysisResourceLoadedAt = {};
+    this.adminAnalysisResourceVersions = {};
+    this.adminExternalAnalysisCacheHydrated = false;
+    this.adminEditionPage = 1;
+    this.remoteRefreshPromise = null;
     this.adminAlertsStudyFilter = 'all';
     this.adminAlertsAuditorFilter = 'all';
     this.adminAlertsFilteredRows = [];
@@ -200,11 +206,7 @@ class ValidaFlowApp {
     // Siempre iniciar en la pantalla principal de 2 botones al abrir la aplicación
     this.showView('landing');
 
-    this.renderAdminView();
-    this.renderReportsView();
-    this.renderQueriesView();
-    this.renderAlertsView();
-    this.renderDailyReportsView();
+    this.renderCurrentDataViews();
     this.listenCrossTabEvents();
   }
 
@@ -317,10 +319,9 @@ class ValidaFlowApp {
     }
     this.visualizationDateFrom = start;
     this.visualizationDateTo = end;
+    this.adminEditionPage = 1;
     this.updateVisualizationDateControls();
-    this.renderReportsView();
-    this.renderDailyReportsView();
-    this.renderAdminExternalAnalysis();
+    this.renderCurrentDataViews();
 
     // El seguimiento diario se consulta por jornada; cuando se elige un solo
     // día lo actualizamos también contra Supabase.
@@ -334,14 +335,15 @@ class ValidaFlowApp {
   async setVisualizationModuleFilter(module) {
     const nextModule = ['all', 'smart', 'blocking'].includes(module) ? module : 'all';
     this.visualizationModuleFilter = nextModule;
+    this.adminEditionPage = 1;
     this.updateVisualizationModuleControls();
-    this.renderAdministratorProductivity();
-    this.renderAdminExternalAnalysis();
-    this.renderReportsView();
-    this.renderDailyReportsView();
-    const refreshExternal = this.canUseExternalAnalysis()
+    this.renderCurrentDataViews();
+    const section = this.getActiveAdminAnalysisSection();
+    if (section === 'overview') return;
+    const refreshExternal = ['alerts', 'editions', 'score-changes'].includes(section) && this.canUseExternalAnalysis()
       ? this.refreshAdminExternalAnalysis().catch(error => console.error('No fue posible actualizar el cruce segmentado:', error))
       : Promise.resolve();
+    if (['alerts', 'editions', 'score-changes'].includes(section)) return refreshExternal;
     if (nextModule === 'all') {
       await Promise.all([
         refreshExternal,
@@ -413,15 +415,8 @@ class ValidaFlowApp {
     this.updateVisualizationDateControls();
     this.switchReportsSubtab(isCommercial ? 'executive' : 'operational');
     this.switchVisualizationTab(isCommercial ? 'committee' : this.visualizationTab || 'overview');
-    // Primero se muestra la última lectura completa guardada en este navegador.
-    // Luego se valida en segundo plano contra Supabase, sin dejar la pantalla
-    // vacía mientras se descargan nuevamente los exports grandes.
-    if (!isCommercial) {
-      this.hydrateAdminExternalAnalysisCache()
-        .catch(error => console.info('No fue posible restaurar la última visualización:', error))
-        .finally(() => this.refreshAdminExternalAnalysis()
-          .catch(error => console.error('No fue posible precargar los cruces de visualización:', error)));
-    }
+    // Las bases externas se restauran únicamente cuando se abre su pestaña.
+    // Seguimiento diario y Comité no necesitan descargar notas ni ediciones.
   }
 
   async switchVisualizationTab(tabId) {
@@ -451,17 +446,17 @@ class ValidaFlowApp {
       };
       document.getElementById(analysisSheetIds[target])?.classList.remove('hidden');
       if (target === 'alerts') this.ensureAdminDatabricksMonthStatus();
-      await this.refreshAdminExternalAnalysis();
+      await this.refreshAdminExternalAnalysis({ section: target });
     } else {
       this.moveReportsContent('visualization-pane-metrics');
       this.renderReportsView();
-      this.renderDailyReportsView();
       const visualizationModule = this.getVisualizationModuleFilter();
       if (visualizationModule === 'all') {
         Promise.all(['smart', 'blocking'].map(module => this.ensureHistoricalReportsLoaded({ module })))
           .catch(error => console.error('No fue posible cargar el histórico segmentado:', error));
       } else {
-        this.ensureHistoricalReportsLoaded({ module: visualizationModule === 'all' ? this.currentModule : visualizationModule });
+        this.ensureHistoricalReportsLoaded({ module: visualizationModule === 'all' ? this.currentModule : visualizationModule })
+          .catch(error => console.error('No fue posible cargar el histórico:', error?.message));
       }
     }
   }
@@ -852,6 +847,12 @@ class ValidaFlowApp {
     this.auditHistoryByModule = { smart: null, blocking: null };
     this.auditHistoryLoadPromises = { smart: null, blocking: null };
     sessionStorage.removeItem('VALIDAFLOW_SUPERVISOR_AUTH');
+    this.adminExternalAnalysis = { imports: [], alertRecords: [], editRecords: [], noteScoreImports: [], noteScoreRecords: [], platformAuditIds: new Set() };
+    this.adminAnalysisResourceLoadedAt = {};
+    this.adminAnalysisResourceVersions = {};
+    this.adminAnalysisResourcePromises = {};
+    this.adminExternalAnalysisCacheHydrated = false;
+    this.adminExternalAnalysisCacheHydrationPromise = null;
     this.benchmarkCountryRows = [];
     this.benchmarkCountryCheckedIds = new Set();
     this.benchmarkCountryLoadPromise = null;
@@ -967,6 +968,8 @@ class ValidaFlowApp {
   }
 
   saveState() {
+    // Perfiles de consulta no necesitan serializar toda la operación activa.
+    if (this.isVisualizationRole()) return;
     try {
       if (this.currentModule === 'blocking') {
         this.blockingAudits = this.audits;
@@ -977,7 +980,6 @@ class ValidaFlowApp {
       const payload = {
         smartAudits: this.smartAudits,
         blockingAudits: this.blockingAudits,
-        audits: this.audits,
         validators: this.validators,
         tipificaciones: this.tipificaciones,
         headers: this.headers,
@@ -1600,7 +1602,7 @@ class ValidaFlowApp {
 
   getAdminExternalAnalysisCacheKey() {
     const userId = this.currentProfile?.id || this.currentProfile?.username || this.currentRole || 'operaciones';
-    return `external-analysis:${userId}`;
+    return `external-analysis:v2:${userId}`;
   }
 
   openVisualizationCacheDatabase() {
@@ -1641,6 +1643,8 @@ class ValidaFlowApp {
           .put({
             key: this.getAdminExternalAnalysisCacheKey(),
             savedAt: this.adminExternalAnalysisLoadedAt || Date.now(),
+            resourceLoadedAt: this.adminAnalysisResourceLoadedAt,
+            resourceVersions: this.adminAnalysisResourceVersions,
             analysis: this.adminExternalAnalysis
           });
         request.onsuccess = () => resolve();
@@ -1668,11 +1672,21 @@ class ValidaFlowApp {
 
   async hydrateAdminExternalAnalysisCache() {
     if (this.adminExternalAnalysisCacheHydrationPromise) return this.adminExternalAnalysisCacheHydrationPromise;
+    if (this.adminExternalAnalysisCacheHydrated) return false;
     const request = (async () => {
       const cached = await this.readAdminExternalAnalysisCache();
       if (!cached?.analysis || !cached?.savedAt) return false;
       this.adminExternalAnalysis = cached.analysis;
       this.adminExternalAnalysisLoadedAt = Number(cached.savedAt) || 0;
+      this.adminAnalysisResourceLoadedAt = cached.resourceLoadedAt || {};
+      this.adminAnalysisResourceVersions = cached.resourceVersions || {};
+      if (!this.currentScope && Array.isArray(cached.analysis.platformAudits)) {
+        ['smart', 'blocking'].forEach(module => {
+          this.auditHistoryByModule[module] = cached.analysis.platformAudits.filter(audit => audit._module === module);
+          this.mergeActiveAuditsIntoHistory(module, module === 'smart' ? this.smartAudits : this.blockingAudits);
+        });
+        this.updatePlatformAnalysis(['smart', 'blocking'].flatMap(module => this.auditHistoryByModule[module]));
+      }
       this.renderAdminExternalAnalysis();
       return true;
     })();
@@ -1680,86 +1694,119 @@ class ValidaFlowApp {
     try {
       return await request;
     } finally {
+      this.adminExternalAnalysisCacheHydrated = true;
       this.adminExternalAnalysisCacheHydrationPromise = null;
     }
   }
 
   invalidateAdminExternalAnalysisCache() {
     this.adminExternalAnalysisLoadedAt = 0;
+    this.adminAnalysisResourceLoadedAt = {};
   }
 
-  async refreshAdminExternalAnalysis({ force = false } = {}) {
-    if (!this.canUseExternalAnalysis()) return;
-    const isFresh = this.adminExternalAnalysisLoadedAt
-      && (Date.now() - this.adminExternalAnalysisLoadedAt) < this.adminExternalAnalysisCacheMs;
-    if (!force && isFresh) {
-      this.renderAdminExternalAnalysis();
-      return;
-    }
-    // Cambiar rápido de pestaña no debe disparar varias consultas iguales.
-    if (this.adminExternalAnalysisLoadPromise) return this.adminExternalAnalysisLoadPromise;
+  getActiveAdminAnalysisSection() {
+    return this.currentView === 'visualizations' ? this.visualizationTab : (this.adminAnalysisSheet || 'core');
+  }
 
+  updatePlatformAnalysis(platformAudits) {
+    this.adminExternalAnalysis.platformAudits = platformAudits;
+    this.adminExternalAnalysis.platformAuditIds = new Set(platformAudits.map(audit => this.normalizeAuditId(audit.id)).filter(Boolean));
+    this.adminExternalAnalysis.platformAlertAudits = platformAudits.reduce((items, audit) => {
+      if (audit.validationStatus !== 'completada') return items;
+      const alertKpis = (audit.kpis || []).filter(kpi => kpi?.needsReview || /alerta/i.test(String(kpi?.alertaStatus || '')));
+      if (alertKpis.length) items.push({ audit, alertCount: alertKpis.length,
+        applicableAlerts: alertKpis.filter(kpi => audit.validationResults?.[kpi?.name]?.status === 'aplica') });
+      return items;
+    }, []);
+  }
+
+  async ensureAdminAnalysisResource(resource, { force = false } = {}) {
+    this.adminAnalysisResourcePromises ||= {};
+    this.adminAnalysisResourceLoadedAt ||= {};
+    this.adminAnalysisResourceVersions ||= {};
+    if (this.adminAnalysisResourcePromises[resource]) return this.adminAnalysisResourcePromises[resource];
+    const loadedAt = this.adminAnalysisResourceLoadedAt[resource];
+    const wantedMonth = this.adminScoreChangeCurrentMonth || this.adminExternalAnalysis.noteScoreImports?.[0]?.period_month || '';
+    let cachedNoteMonth = '';
+    try { cachedNoteMonth = JSON.parse(this.adminAnalysisResourceVersions.notes || '[]')[0] || ''; } catch { /* invalid cache: reload */ }
+    const sameNoteMonth = resource !== 'notes' || (wantedMonth && cachedNoteMonth === wantedMonth);
+    if (!force && sameNoteMonth && loadedAt && Date.now() - loadedAt < this.adminExternalAnalysisCacheMs) return;
+    const userKey = this.getAdminExternalAnalysisCacheKey();
     const request = (async () => {
-      try {
-        // Los tres orígenes son independientes. Se consultan al mismo tiempo
-        // para que Export general no espere primero Ediciones, luego Notas y
-        // finalmente el historial de ValidaFlow.
-        const analysisPromise = this.backend.loadAdminExternalAnalysis();
-        const noteScorePromise = this.backend.loadAdminNoteScoreAnalysis()
-          .catch(noteScoreError => {
-            // Mantiene disponibles los cruces ya publicados mientras se aplica
-            // la migración inicial de Cambio de nota en Supabase.
-            if (!/admin_note_score|does not exist|PGRST204|PGRST205/i.test(String(noteScoreError?.message || noteScoreError))) {
-              throw noteScoreError;
-            }
-            console.info('Cambio de nota estará disponible cuando finalice la migración de datos.');
-            return { noteScoreImports: [], noteScoreRecords: [] };
-          });
-        const platformAuditsPromise = this.backend.loadAuditHistory({ pageSize: 1000, ignoreScope: true });
-        const [analysis, noteScoreAnalysis, platformAudits] = await Promise.all([
-          analysisPromise,
-          noteScorePromise,
-          platformAuditsPromise
-        ]);
-        const platformAuditIds = new Set(platformAudits.map(audit => this.normalizeAuditId(audit.id)).filter(Boolean));
-        const platformAlertAudits = platformAudits.reduce((items, audit) => {
-          if (audit.validationStatus !== 'completada') return items;
-          const alertKpis = (Array.isArray(audit.kpis) ? audit.kpis : []).filter(kpi => (
-            kpi?.needsReview || /alerta/i.test(String(kpi?.alertaStatus || ''))
-          ));
-          if (alertKpis.length) {
-            const applicableAlerts = alertKpis.filter(kpi => (
-              audit.validationResults?.[kpi?.name]?.status === 'aplica'
-            ));
-            items.push({ audit, alertCount: alertKpis.length, applicableAlerts });
-          }
-          return items;
-        }, []);
-        this.adminExternalAnalysis = { ...analysis, ...noteScoreAnalysis, platformAudits, platformAuditIds, platformAlertAudits };
-        this.adminExternalAnalysisLoadedAt = Date.now();
-        this.renderAdminExternalAnalysis();
-        this.renderReportsView();
-        this.persistAdminExternalAnalysisCache().catch(error => console.info('No fue posible guardar la caché local de visualizaciones:', error));
-      } catch (error) {
-        console.error('No fue posible cargar el análisis administrativo:', error);
-        ['admin-alerts-import-status', 'admin-editions-import-status', 'admin-score-changes-import-status'].forEach(id => {
-          const element = document.getElementById(id);
-          if (element) element.textContent = error.message || 'No fue posible consultar los datos cargados.';
+      if (resource === 'platform') {
+        const modules = ['smart', 'blocking'];
+        const canReuse = !this.currentScope && modules.every(module => Array.isArray(this.auditHistoryByModule[module]));
+        const audits = canReuse && !force
+          ? modules.flatMap(module => this.auditHistoryByModule[module])
+          : await this.backend.loadAuditHistory({ pageSize: 1000, ignoreScope: true });
+        if (userKey !== this.getAdminExternalAnalysisCacheKey()) return;
+        this.updatePlatformAnalysis(audits);
+        if (!this.currentScope) modules.forEach(module => {
+          this.auditHistoryByModule[module] = audits.filter(audit => audit._module === module);
         });
+      } else if (resource === 'notes') {
+        const imports = await this.backend.loadAdminNoteScoreImports();
+        const month = this.adminScoreChangeCurrentMonth || imports[0]?.period_month || '';
+        const version = JSON.stringify([month, imports.filter(item => item.period_month === month)]);
+        if (userKey !== this.getAdminExternalAnalysisCacheKey()) return;
+        if (force || version !== this.adminAnalysisResourceVersions.notes) {
+          const notes = await this.backend.loadAdminNoteScoreAnalysis({ periodMonth: month, latestOnly: true });
+          if (userKey !== this.getAdminExternalAnalysisCacheKey()) return;
+          Object.assign(this.adminExternalAnalysis, notes);
+          this.adminAnalysisResourceVersions.notes = version;
+        } else this.adminExternalAnalysis.noteScoreImports = imports;
+      } else {
+        // Una comprobación de metadatos no vuelve a descargar un mes cerrado.
+        const imports = await this.backend.loadAdminAnalysisImports();
+        const type = resource === 'alerts' ? 'alerts' : 'editions';
+        const version = JSON.stringify(imports.filter(item => item.dataset_type === type));
+        if (userKey !== this.getAdminExternalAnalysisCacheKey()) return;
+        this.adminExternalAnalysis.imports = imports;
+        if (force || version !== this.adminAnalysisResourceVersions[resource]) {
+          const data = await this.backend.loadAdminExternalAnalysis({ includeAlerts: resource === 'alerts', includeEdits: resource === 'editions' });
+          if (userKey !== this.getAdminExternalAnalysisCacheKey()) return;
+          const field = resource === 'alerts' ? 'alertRecords' : 'editRecords';
+          this.adminExternalAnalysis[field] = data[field];
+          this.adminAnalysisResourceVersions[resource] = version;
+        }
       }
+      this.adminAnalysisResourceLoadedAt[resource] = Date.now();
     })();
-    this.adminExternalAnalysisLoadPromise = request;
+    this.adminAnalysisResourcePromises[resource] = request;
     try {
       return await request;
     } finally {
-      if (this.adminExternalAnalysisLoadPromise === request) this.adminExternalAnalysisLoadPromise = null;
+      if (this.adminAnalysisResourcePromises[resource] === request) delete this.adminAnalysisResourcePromises[resource];
+    }
+  }
+
+  async refreshAdminExternalAnalysis({ force = false, section = this.getActiveAdminAnalysisSection() } = {}) {
+    if (!this.canUseExternalAnalysis() || !['alerts', 'editions', 'score-changes'].includes(section)) return;
+    try {
+      await this.hydrateAdminExternalAnalysisCache().catch(() => false);
+      const resources = ['alerts', 'platform'];
+      if (section === 'editions') resources.push('editions');
+      if (section === 'score-changes') resources.push('notes');
+      await Promise.all(resources.map(resource => this.ensureAdminAnalysisResource(resource, { force })));
+      this.adminExternalAnalysisLoadedAt = Date.now();
+      this.renderAdminExternalAnalysis();
+      this.persistAdminExternalAnalysisCache().catch(error => console.info('No fue posible guardar la caché local de visualizaciones:', error));
+    } catch (error) {
+      console.error('No fue posible cargar el análisis administrativo:', error);
+      const id = { alerts: 'admin-alerts-import-status', editions: 'admin-editions-import-status', 'score-changes': 'admin-score-changes-import-status' }[section];
+      const element = document.getElementById(id);
+      if (element) element.textContent = error.message || 'No fue posible consultar los datos cargados.';
     }
   }
 
   renderAdminExternalAnalysis() {
     const analysis = this.adminExternalAnalysis || { imports: [], alertRecords: [], editRecords: [], platformAuditIds: new Set() };
+    const section = this.getActiveAdminAnalysisSection();
+    if (section === 'score-changes') return this.renderAdminScoreChangeAnalysis(analysis);
+    if (!['alerts', 'editions'].includes(section)) return;
     const escapeHtml = value => String(value ?? '—').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
-    const setText = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
+    const getElement = id => id.startsWith(section === 'alerts' ? 'admin-alerts-' : 'admin-editions-') ? document.getElementById(id) : null;
+    const setText = (id, value) => { const element = getElement(id); if (element) element.textContent = value; };
     const formatNumber = value => Number(value || 0).toLocaleString('es-CO');
     const sortImportsByMonth = items => items.slice().sort((a, b) => String(b.period_month || '').localeCompare(String(a.period_month || '')));
     const alertImports = sortImportsByMonth(analysis.imports.filter(item => item.dataset_type === 'alerts'));
@@ -1839,7 +1886,7 @@ class ValidaFlowApp {
     const requestedStudy = this.adminAlertsStudyFilter || 'all';
     const activeStudy = requestedStudy === 'all' || availableStudies.includes(requestedStudy) ? requestedStudy : 'all';
     this.adminAlertsStudyFilter = activeStudy;
-    const studyFilter = document.getElementById('admin-alerts-study-filter');
+    const studyFilter = getElement('admin-alerts-study-filter');
     if (studyFilter) {
       studyFilter.innerHTML = `<option value="all">Todos los estudios</option>${availableStudies.map(study => `<option value="${escapeHtml(study)}">${escapeHtml(study)}</option>`).join('')}`;
       studyFilter.value = activeStudy;
@@ -1856,7 +1903,7 @@ class ValidaFlowApp {
     const requestedAuditor = this.adminAlertsAuditorFilter || 'all';
     const activeAuditor = requestedAuditor === 'all' || availableAuditors.includes(requestedAuditor) ? requestedAuditor : 'all';
     this.adminAlertsAuditorFilter = activeAuditor;
-    const auditorFilter = document.getElementById('admin-alerts-auditor-filter');
+    const auditorFilter = getElement('admin-alerts-auditor-filter');
     if (auditorFilter) {
       auditorFilter.innerHTML = `<option value="all">Todos los auditores</option>${availableAuditors.map(auditor => `<option value="${escapeHtml(auditor)}">${escapeHtml(auditor)}</option>`).join('')}`;
       auditorFilter.value = activeAuditor;
@@ -1873,7 +1920,7 @@ class ValidaFlowApp {
     const unmatchedAlerts = filteredAlertItems.filter(item => !item.matched);
     const percentage = filteredAlertItems.length ? `${Math.round((matchedAlerts.length / filteredAlertItems.length) * 100)}%` : '0%';
     const renderRanking = (id, rows) => {
-      const element = document.getElementById(id);
+      const element = getElement(id);
       if (!element) return;
       element.innerHTML = rows.length ? rows.slice(0, 5).map(([label, count]) => `<div class="admin-analysis-ranking-row"><strong>${escapeHtml(label || 'Sin dato')}</strong><span>${formatNumber(count)}</span></div>`).join('') : '<span class="text-muted">Sin datos para mostrar.</span>';
     };
@@ -1889,7 +1936,7 @@ class ValidaFlowApp {
         : new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
     };
     const renderImportList = (id, items, datasetType, emptyMessage) => {
-      const element = document.getElementById(id);
+      const element = getElement(id);
       if (!element) return;
       element.innerHTML = items.length
         ? items.map(item => {
@@ -1907,7 +1954,7 @@ class ValidaFlowApp {
         : `<span class="text-muted">${emptyMessage}</span>`;
     };
 
-    this.ensureAdminDatabricksMonthStatus(alertImport?.period_month);
+    if (section === 'alerts') this.ensureAdminDatabricksMonthStatus(alertImport?.period_month);
 
     const moduleStatus = visualizationModule === 'all' ? '' : ` · Vista: ${this.getVisualizationModuleLabel(visualizationModule)}.`;
     setText('admin-alerts-import-status', alertImport ? `Último export: ${alertImport.source_filename} · ${this.formatExternalImportMonth(alertImport.period_month)} · ${formatNumber(alertImport.row_count)} registros útiles.${moduleStatus}` : 'Aún no se ha cargado un export general.');
@@ -1939,7 +1986,7 @@ class ValidaFlowApp {
       return [item.auditId, item];
     }));
 
-    const alertsTbody = document.getElementById('admin-alerts-analysis-tbody');
+    const alertsTbody = getElement('admin-alerts-analysis-tbody');
     if (alertsTbody) {
       const previewItems = filteredAlertItems
         .slice()
@@ -1955,6 +2002,7 @@ class ValidaFlowApp {
       }).join('') : '<tr><td colspan="12" class="text-center text-muted">No hay auditorías que cumplan con los filtros seleccionados.</td></tr>';
     }
 
+    if (section !== 'editions') return;
     const contextByAuditId = new Map(alertRows.map(record => [this.normalizeAuditId(record.audit_external_id), record]));
     const editsById = new Map((analysis.editRecords || []).map(record => [this.normalizeAuditId(record.audit_external_id), record]));
     const alertEditionRows = platformAlertAudits.map(platformAlert => {
@@ -2052,7 +2100,8 @@ class ValidaFlowApp {
       });
       const filterCount = document.getElementById('admin-editions-filter-count');
       if (filterCount) filterCount.textContent = `${formatNumber(filteredAlertEditionRows.length)} de ${formatNumber(alertEditionRows.length)} auditorías mostradas.`;
-      editionsTbody.innerHTML = filteredAlertEditionRows.length ? filteredAlertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)).map(({ platformAlert, context, edit, applicableAlerts }) => {
+      const pageRows = this.getAdminEditionPageRows(filteredAlertEditionRows.sort((a, b) => Number(b.edit?.modifications_count || 0) - Number(a.edit?.modifications_count || 0)));
+      editionsTbody.innerHTML = pageRows.length ? pageRows.map(({ platformAlert, context, edit, applicableAlerts }) => {
         const audit = platformAlert.audit || {};
         const auditId = String(audit.id || '—');
         const auditor = context?.auditor || audit.auditor || audit.nombreAuditor || '—';
@@ -2067,7 +2116,28 @@ class ValidaFlowApp {
         return `<tr><td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(month))}</td><td>${escapeHtml(auditor)}</td><td>${escapeHtml(country)}<small>${escapeHtml(city)}</small></td><td>${escapeHtml(alertLabel)}${appliesLabel}</td><td><strong class="${changes ? 'text-magenta' : ''}">${formatNumber(changes)}</strong></td><td>${escapeHtml(edit?.first_validator || '—')}</td><td>${escapeHtml(edit?.last_validator || '—')}</td><td>${escapeHtml(validaFlowValidator)}</td><td><span class="badge ${changes ? 'badge-success' : 'badge-warning'}">${changes ? 'Con modificación' : 'Sin modificación'}</span></td><td><button class="btn btn-outline btn-sm" type="button" onclick="window.app?.showEditionAuditDetail(decodeURIComponent('${detailKey}'))">Ver detalle</button></td></tr>`;
       }).join('') : '<tr><td colspan="11" class="text-center text-muted">No hay auditorías que cumplan con el filtro seleccionado.</td></tr>';
     }
-    this.renderAdminScoreChangeAnalysis(analysis);
+  }
+
+  getAdminEditionPageRows(rows) {
+    const pageSize = 100;
+    const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
+    this.adminEditionPage = Math.min(totalPages, Math.max(1, this.adminEditionPage || 1));
+    const start = (this.adminEditionPage - 1) * pageSize;
+    const label = document.getElementById('admin-editions-page-status');
+    if (label) label.textContent = `${rows.length ? start + 1 : 0}–${Math.min(start + pageSize, rows.length)} de ${rows.length.toLocaleString('es-CO')} · Página ${this.adminEditionPage} de ${totalPages}`;
+    for (const [id, step] of [['admin-editions-page-prev', -1], ['admin-editions-page-next', 1]]) {
+      const button = document.getElementById(id);
+      if (!button) continue;
+      button.disabled = step < 0 ? this.adminEditionPage === 1 : this.adminEditionPage === totalPages;
+      if (!button.dataset.pageBound) {
+        button.addEventListener('click', () => {
+          this.adminEditionPage += step;
+          this.renderAdminExternalAnalysis();
+        });
+        button.dataset.pageBound = 'true';
+      }
+    }
+    return rows.slice(start, start + pageSize);
   }
 
   renderAdminScoreChangeAnalysis(analysis) {
@@ -2330,11 +2400,14 @@ class ValidaFlowApp {
     }
   }
 
-  setAdminScoreChangeMonth(which, value) {
+  async setAdminScoreChangeMonth(which, value) {
     const month = String(value || '');
     if (which === 'previous') this.adminScoreChangePreviousMonth = month;
     else this.adminScoreChangeCurrentMonth = month;
-    this.renderAdminExternalAnalysis();
+    await this.adminAnalysisResourcePromises?.notes?.catch(() => {});
+    if (which !== 'previous' && this.adminScoreChangeCurrentMonth !== month) return;
+    this.adminAnalysisResourceLoadedAt.notes = 0;
+    await this.refreshAdminExternalAnalysis({ section: 'score-changes' });
   }
 
   setAdminScoreChangeStudyFilter(study) {
@@ -2419,6 +2492,7 @@ class ValidaFlowApp {
   setAdminEditionAuditFilter(filter) {
     const allowedFilters = new Set(['all', 'applies_without_changes', 'applies_with_changes', 'with_changes', 'without_changes']);
     this.adminEditionAuditFilter = allowedFilters.has(filter) ? filter : 'all';
+    this.adminEditionPage = 1;
     this.renderAdminExternalAnalysis();
   }
 
@@ -3113,6 +3187,31 @@ class ValidaFlowApp {
   }
 
   async refreshFromBackend() {
+    if (this.remoteRefreshPromise) return this.remoteRefreshPromise;
+    const request = this.loadBackendStateAndRender();
+    this.remoteRefreshPromise = request;
+    try { return await request; }
+    finally { if (this.remoteRefreshPromise === request) this.remoteRefreshPromise = null; }
+  }
+
+  renderCurrentDataViews() {
+    if (this.currentView === 'visualizations') {
+      if (['metrics', 'committee'].includes(this.visualizationTab)) {
+        this.renderReportsView();
+      } else if (this.visualizationTab === 'overview') this.renderAdministratorProductivity();
+      else this.renderAdminExternalAnalysis();
+    } else if (this.currentView === 'administrator') {
+      if (this.adminAnalysisSheet !== 'core') this.renderAdminExternalAnalysis();
+    } else if (this.currentView === 'supervisor-workspace') {
+      if (this.currentTab === 'reports') { this.renderReportsView(); this.renderDailyReportsView(); }
+      else if (this.currentTab === 'queries') this.renderQueriesView();
+      else if (this.currentTab === 'alerts') this.renderAlertsView();
+      else if (this.currentTab === 'lookup') this.populateLookupQuickTags();
+      else this.renderAdminView();
+    }
+  }
+
+  async loadBackendStateAndRender() {
     if (!this.backend.configured) return;
     const state = await this.backend.loadState();
     this.validators = state.validators || [];
@@ -3125,12 +3224,10 @@ class ValidaFlowApp {
 
     this.validatorUI?.populateQuickSelect(this.validators);
     this.populateHistoryValidatorFilter();
-    this.renderAdminView();
-    this.renderReportsView();
-    this.renderQueriesView();
-    this.renderAlertsView();
-    this.renderDailyReportsView();
-    this.populateLookupQuickTags();
+    if (!this.currentScope && ['smart', 'blocking'].every(module => Array.isArray(this.auditHistoryByModule[module]))) {
+      this.updatePlatformAnalysis(['smart', 'blocking'].flatMap(module => this.auditHistoryByModule[module]));
+    }
+    this.renderCurrentDataViews();
 
     if (this.validatorUI?.currentValidator) {
       const freshValidator = this.validators.find(v => v.id === this.validatorUI.currentValidator.id);
@@ -3370,6 +3467,16 @@ class ValidaFlowApp {
     if (!this.backend.configured || !(this.currentRole === 'admin' || this.isSupervisor || this.isVisualizationRole())) return;
     if (!force && Array.isArray(this.auditHistoryByModule[module])) return;
     if (this.auditHistoryLoadPromises[module]) return this.auditHistoryLoadPromises[module];
+    if (!force && !this.currentScope && this.adminAnalysisResourcePromises?.platform) {
+      this.setHistoricalReportsLoading(true);
+      try {
+        await this.adminAnalysisResourcePromises.platform;
+        this.renderCurrentDataViews();
+        if (Array.isArray(this.auditHistoryByModule[module])) return;
+      } finally {
+        this.setHistoricalReportsLoading(Object.values(this.auditHistoryLoadPromises).some(Boolean));
+      }
+    }
 
     this.setHistoricalReportsLoading(true);
     const loadPromise = this.backend.loadAuditHistory({
@@ -3382,23 +3489,19 @@ class ValidaFlowApp {
     try {
       const audits = await loadPromise;
       this.auditHistoryByModule[module] = audits;
-      if (this.currentModule === module || (this.currentView === 'visualizations' && (this.visualizationModuleFilter === 'all' || this.visualizationModuleFilter === module))) {
-        if (this.currentModule === module) this.setHistoryDateRangeFromAudits(audits);
-        this.renderReportsView();
-        this.renderDailyReportsView();
-        if (this.currentModule === module) {
-          this.validatorHistoryLoaded = false;
-          if (audits.length) await this.loadValidatorHistory(true);
-        }
+      if (this.currentModule === module) {
+        this.setHistoryDateRangeFromAudits(audits);
+        this.validatorHistoryLoaded = false;
       }
+      this.renderCurrentDataViews();
     } catch (error) {
       console.error('Error cargando el histórico completo:', error);
-      this.renderReportsView();
-      this.renderDailyReportsView();
+      this.renderCurrentDataViews();
       this.showToast(error.message || 'No fue posible cargar el histórico completo.', 'error');
+      throw error;
     } finally {
       this.auditHistoryLoadPromises[module] = null;
-      this.setHistoricalReportsLoading(false);
+      this.setHistoricalReportsLoading(Object.values(this.auditHistoryLoadPromises).some(Boolean));
     }
   }
 
@@ -3406,11 +3509,14 @@ class ValidaFlowApp {
     if (!this.backend.configured) return;
     this.backend.subscribe(() => {
       clearTimeout(this.remoteRefreshTimer);
-      this.remoteRefreshTimer = setTimeout(() => {
+      this.remoteRefreshTimer = setTimeout(async () => {
+        // Si llegó otra actualización durante una consulta, esperar y leer
+        // una vez más: sin consultas superpuestas ni cambios perdidos.
+        if (this.remoteRefreshPromise) await this.remoteRefreshPromise.catch(() => {});
         this.refreshFromBackend().catch(error => {
           console.error('Error actualizando datos en vivo:', error);
         });
-      }, 200);
+      }, 1000);
     });
   }
 
@@ -3419,10 +3525,7 @@ class ValidaFlowApp {
       this.channel.onmessage = (event) => {
         if (event.data && event.data.type === 'STATE_UPDATED') {
           this.loadState();
-          this.renderAdminView();
-          this.renderReportsView();
-          this.renderAlertsView();
-          this.populateLookupQuickTags();
+          this.renderCurrentDataViews();
           if (this.validatorUI.currentValidator) {
             this.validatorUI.updateProgressHeader();
             this.validatorUI.renderAuditList();
@@ -3438,9 +3541,7 @@ class ValidaFlowApp {
     window.addEventListener('storage', (e) => {
       if (e.key === this.storageKey) {
         this.loadState();
-        this.renderAdminView();
-        this.renderReportsView();
-        this.renderAlertsView();
+        this.renderCurrentDataViews();
       }
     });
   }
@@ -6065,12 +6166,10 @@ class ValidaFlowApp {
       execStudyLabel.textContent = `Estudios Analizados: ${studyLabel}${countryLabel} (${filteredAudits.length} auditorías)`;
     }
 
-    // 2. Renderizar Sub-Vista Operacional
-    this.renderOperationalMetrics(filteredAudits);
-
-    // 3. Renderizar Sub-Vista Ejecutiva para Comité
-    this.renderExecutiveMetrics(filteredAudits);
-    this.ensureBenchmarkCountries(reportAudits);
+    if (this.reportsSubtab === 'executive' || this.visualizationTab === 'committee') {
+      this.renderExecutiveMetrics(filteredAudits);
+      this.ensureBenchmarkCountries(reportAudits);
+    } else this.renderOperationalMetrics(filteredAudits);
   }
 
   renderOperationalMetrics(audits) {
@@ -7155,7 +7254,7 @@ class ValidaFlowApp {
     if (targetTab === 'reports') {
       this.renderReportsView();
       this.renderDailyReportsView();
-      this.ensureHistoricalReportsLoaded();
+      this.ensureHistoricalReportsLoaded().catch(error => console.error('No fue posible cargar el histórico:', error?.message));
     } else if (targetTab === 'admin') {
       this.renderAdminView();
     } else if (targetTab === 'lookup') {
@@ -7599,6 +7698,42 @@ class ValidaFlowApp {
     if ([...select.options].some(option => option.value === selected)) select.value = selected;
   }
 
+  summarizeValidatorHistory(audits, { dateFrom, dateTo, validatorId = null }) {
+    const rows = new Map();
+    for (const audit of audits) {
+      const id = audit.assignedValidatorId;
+      const operationDate = this.getAuditOperationDate(audit);
+      if (!id || operationDate < dateFrom || operationDate > dateTo || !operationDate
+        || (validatorId && id !== validatorId) || this.isExpiredPendingAudit(audit)) continue;
+      const module = audit._module || audit.module || this.currentModule;
+      const key = JSON.stringify([id, operationDate, module]);
+      if (!rows.has(key)) {
+        const validator = (this.validators || []).find(item => item.id === id);
+        rows.set(key, { validatorId: id, validatorCode: audit._validatorCode || validator?.code || id,
+          validatorName: audit._validatorName || validator?.name || id, operationDate, module,
+          totalAudits: 0, completedAudits: 0, inProgressAudits: 0, pendingAudits: 0,
+          timedAudits: 0, totalDurationSeconds: 0, averageDurationSeconds: 0,
+          firstActivityAt: null, lastActivityAt: null });
+      }
+      const row = rows.get(key);
+      row.totalAudits++;
+      if (audit.validationStatus === 'completada') row.completedAudits++;
+      else if (audit.validationStatus === 'en_progreso') row.inProgressAudits++;
+      else row.pendingAudits++;
+      if (audit.durationSeconds !== null && audit.durationSeconds !== undefined && Number.isFinite(Number(audit.durationSeconds))) {
+        row.timedAudits++;
+        row.totalDurationSeconds += Number(audit.durationSeconds);
+      }
+      const first = audit.startedAt || audit._createdAt || null;
+      const last = audit.completedAt || audit.startedAt || audit._updatedAt || null;
+      if (first && (!row.firstActivityAt || first < row.firstActivityAt)) row.firstActivityAt = first;
+      if (last && (!row.lastActivityAt || last > row.lastActivityAt)) row.lastActivityAt = last;
+    }
+    return [...rows.values()].map(row => ({ ...row,
+      averageDurationSeconds: row.timedAudits ? Math.round(row.totalDurationSeconds / row.timedAudits) : 0
+    })).sort((a, b) => b.operationDate.localeCompare(a.operationDate) || a.validatorName.localeCompare(b.validatorName, 'es'));
+  }
+
   async loadValidatorHistory(silent = false) {
     if (!this.backend.configured || !(this.isSupervisor || this.currentRole === 'visualizer')) {
       this.showToast('El histórico operativo está disponible para supervisores o visualizadores autenticados.', 'warning');
@@ -7631,18 +7766,20 @@ class ValidaFlowApp {
     }
 
     try {
-      this.validatorHistoryRows = await this.backend.loadValidatorHistory({
-        dateFrom,
-        dateTo,
-        module,
-        validatorId
-      });
+      // El mismo histórico paginado y protegido por RLS alimenta las métricas
+      // y el detalle por validador. No ejecutamos una segunda agregación RPC
+      // al terminar cada carga de módulo ni dependemos de su disponibilidad.
+      const modules = module ? [module] : ['smart', 'blocking'];
+      await Promise.all(modules.map(item => this.ensureHistoricalReportsLoaded({ module: item })));
+      this.validatorHistoryRows = this.summarizeValidatorHistory(
+        modules.flatMap(item => this.auditHistoryByModule[item] || []), { dateFrom, dateTo, validatorId }
+      );
       this.validatorHistoryLoaded = true;
       this.populateHistoryValidatorFilter();
       this.renderValidatorHistory(dateFrom, dateTo);
       if (!silent) this.showToast(`Histórico consultado: ${dateFrom} a ${dateTo}.`, 'success');
     } catch (error) {
-      console.error('Error consultando el histórico:', error);
+      console.error('Error consultando el histórico:', error?.code, error?.message || String(error));
       this.showToast(error.message || 'No fue posible consultar el histórico.', 'error');
     } finally {
       if (button) {
