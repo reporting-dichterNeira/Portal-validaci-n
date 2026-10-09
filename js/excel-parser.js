@@ -73,6 +73,11 @@ export class ExcelParser {
     };
   }
 
+  static getSmartCommentExportFields(audit) {
+    if (audit._module !== 'smart' && !audit.validationResults?.__audit__) return {};
+    return { 'Comentario general Smart': audit.validationResults?.__audit__?.comentarioGeneral || '' };
+  }
+
   static buildConsolidatedExportRows(audits, validators) {
     const uniqueAudits = this.deduplicateById(audits);
     const valMap = new Map((validators || []).map(v => [v.id, v]));
@@ -92,6 +97,7 @@ export class ExcelParser {
         'Código Validador': validador ? validador.code : '',
         'Estado Validación': (audit.validationStatus || 'pendiente').toUpperCase(),
         ...this.getTimingExportFields(audit),
+        ...this.getSmartCommentExportFields(audit),
         'KPIs a Revisar (Total)': kpisParaRevisar.length
       };
 
@@ -566,7 +572,8 @@ export class ExcelParser {
       let kpisNoAplica = 0;
 
       completed.forEach(a => {
-        Object.values(a.validationResults || {}).forEach(r => {
+        Object.entries(a.validationResults || {}).forEach(([key, r]) => {
+          if (key === '__audit__') return;
           kpisTotal++;
           if (r.status === 'aplica') kpisAplica++;
           if (r.status === 'no_aplica') kpisNoAplica++;
@@ -655,6 +662,7 @@ export class ExcelParser {
           'Código Validador': validador ? validador.code : '',
           'Estado Validación': (audit.validationStatus || 'pendiente').toUpperCase(),
           ...this.getTimingExportFields(audit),
+          ...this.getSmartCommentExportFields(audit),
           'Total KPIs a Revisar': kpisParaRevisar.length
         };
 
@@ -777,7 +785,8 @@ export class ExcelParser {
         'Validador Responsable': validador ? validador.name : 'Sin asignar',
         'Código Validador': validador ? validador.code : '',
         'Estado': (audit.validationStatus || 'pendiente').toUpperCase(),
-        ...this.getTimingExportFields(audit)
+        ...this.getTimingExportFields(audit),
+        ...this.getSmartCommentExportFields(audit)
       };
 
       kpisParaRevisar.forEach(kpi => {

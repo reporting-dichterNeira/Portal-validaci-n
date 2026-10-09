@@ -4,6 +4,12 @@
 
 import { formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
+function escapeValidatorText(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[character]));
+}
+
 export class ValidatorUI {
   constructor(app) {
     this.app = app;
@@ -533,6 +539,8 @@ export class ValidatorUI {
 
     const kpisToReview = (audit.kpis || []).filter(k => k.needsReview);
     const isCompleted = audit.validationStatus === 'completada';
+    const isSmart = this.currentModule === 'smart';
+    audit.validationResults ||= {};
 
     // Generar formulario de KPIs dinámicos
     const kpisHtml = kpisToReview.length > 0 ? kpisToReview.map((kpi, index) => {
@@ -550,11 +558,11 @@ export class ValidatorUI {
       }).join('');
 
       return `
-        <div class="kpi-review-card ${status ? 'answered' : ''} ${status === 'duda' ? 'card-has-doubt' : ''}" data-kpi="${kpi.name}">
+        <div class="kpi-review-card ${status ? 'answered' : ''} ${status === 'duda' ? 'card-has-doubt' : ''}" data-kpi="${escapeValidatorText(kpi.name)}">
           <div class="kpi-header">
             <div class="kpi-title-box">
               <span class="kpi-badge-number">${index + 1}</span>
-              <h4 class="kpi-title">${kpi.name}</h4>
+              <h4 class="kpi-title">${escapeValidatorText(kpi.name)}</h4>
               ${status === 'duda' ? `<span class="badge badge-warning" style="font-size:0.72rem;">❓ Consulta al Supervisor</span>` : ''}
             </div>
             <div class="kpi-header-right">
@@ -572,7 +580,7 @@ export class ValidatorUI {
             </div>
           </div>
 
-          <div class="kpi-action-selector">
+          <div class="kpi-action-selector ${isSmart ? 'kpi-actions-smart' : ''}">
             <label class="kpi-radio-btn ${status === 'aplica' ? 'active-aplica' : ''}">
               <input type="radio" name="kpi_status_${index}" value="aplica" ${status === 'aplica' ? 'checked' : ''} />
               <span class="radio-icon">✓</span>
@@ -590,9 +598,24 @@ export class ValidatorUI {
               <span class="radio-icon">❓</span>
               <span class="radio-text-main">Consultar</span>
             </label>
+            ${isSmart ? `
+              <button type="button" class="kpi-detail-toggle ${observaciones.trim() ? 'has-detail' : ''}" id="kpi_detail_toggle_${index}"
+                aria-controls="kpi_detail_box_${index}" aria-expanded="${Boolean(observaciones.trim())}"
+                aria-label="Detalle opcional de ${escapeValidatorText(kpi.name)}" title="Añadir un detalle opcional de este KPI; no envía una consulta al supervisor">
+                <span aria-hidden="true">📝</span><span>Detalle</span>
+              </button>
+            ` : ''}
           </div>
 
-          <!-- Tipología obligatoria para cada decisión final -->
+          ${isSmart ? `
+          <div class="smart-kpi-detail ${observaciones.trim() ? '' : 'hidden'}" id="kpi_detail_box_${index}">
+            <label for="obs_${index}"><strong>Detalle de este KPI (opcional)</strong></label>
+            <textarea class="form-control obs-textarea" id="obs_${index}" data-kpi="${escapeValidatorText(kpi.name)}" rows="2"
+              placeholder="Escribe un detalle de este KPI solo si lo necesitas...">${escapeValidatorText(observaciones)}</textarea>
+            <p class="smart-comment-hint">Este detalle no cambia tu decisión ni sustituye la consulta ❓ al supervisor.</p>
+          </div>
+          ` : `
+          <!-- Bloqueantes conserva la tipología obligatoria para cada decisión final. -->
           <div class="tipificacion-container ${['aplica', 'no_aplica'].includes(status) ? 'visible' : 'hidden'}" id="tipif_box_${index}">
             <div class="tipificacion-header">
               <span class="tipif-icon">🛡️</span>
@@ -605,9 +628,10 @@ export class ValidatorUI {
 
             <div class="observaciones-box">
               <label for="obs_${index}">Observaciones adicionales (opcional):</label>
-              <textarea class="form-control obs-textarea" id="obs_${index}" data-kpi="${kpi.name}" rows="2" placeholder="Detalla el motivo si es necesario...">${observaciones}</textarea>
+              <textarea class="form-control obs-textarea" id="obs_${index}" data-kpi="${escapeValidatorText(kpi.name)}" rows="2" placeholder="Detalla el motivo si es necesario...">${escapeValidatorText(observaciones)}</textarea>
             </div>
           </div>
+          `}
 
           <!-- Menú condicional cuando el validador marca DUDA / CONSULTA ❓ -->
           <div class="duda-container ${status === 'duda' ? 'visible' : 'hidden'}" id="duda_box_${index}">
@@ -616,7 +640,7 @@ export class ValidatorUI {
               <label for="duda_input_${index}"><strong>Consulta para el Supervisor:</strong></label>
             </div>
             <p class="duda-hint">Escribe qué duda tienes con la foto, producto o criterio para que el supervisor la resuelva:</p>
-            <textarea class="form-control duda-textarea" id="duda_input_${index}" data-kpi="${kpi.name}" rows="2" placeholder="Ej: No queda claro si la exhibición secundaria cumple el criterio de marca en este canal...">${dudaText}</textarea>
+            <textarea class="form-control duda-textarea" id="duda_input_${index}" data-kpi="${escapeValidatorText(kpi.name)}" rows="2" placeholder="Ej: No queda claro si la exhibición secundaria cumple el criterio de marca en este canal...">${escapeValidatorText(dudaText)}</textarea>
 
             ${supervisorResponse ? `
               <div class="supervisor-feedback-box">
@@ -705,6 +729,15 @@ export class ValidatorUI {
         </div>
       </div>
 
+      ${isSmart ? `
+      <section class="smart-audit-comment">
+        <label for="smart-audit-comment"><strong>💬 Comentario general de la auditoría (opcional)</strong></label>
+        <p class="smart-comment-hint">Para una observación general. Si el detalle corresponde a un KPI, usa su botón 📝 Detalle.</p>
+        <textarea class="form-control" id="smart-audit-comment" rows="3"
+          placeholder="Añade un comentario general si hace falta...">${escapeValidatorText(audit.validationResults.__audit__?.comentarioGeneral || '')}</textarea>
+      </section>
+      ` : ''}
+
       <div class="audit-footer-actions">
         <button class="btn btn-secondary" id="btn-prev-audit">⬅️ Anterior</button>
         <div class="footer-center-msg" id="validation-error-msg"></div>
@@ -719,6 +752,7 @@ export class ValidatorUI {
   }
 
   bindDetailEvents(audit, kpisToReview) {
+    const isSmart = this.currentModule === 'smart';
     const kpiCards = this.auditDetailContainer.querySelectorAll('.kpi-review-card');
 
     kpiCards.forEach((card, index) => {
@@ -732,6 +766,15 @@ export class ValidatorUI {
       const dudaBox = card.querySelector(`#duda_box_${index}`);
       const dudaInput = card.querySelector(`#duda_input_${index}`);
       const obsTextarea = card.querySelector(`#obs_${index}`);
+      const detailToggle = card.querySelector(`#kpi_detail_toggle_${index}`);
+      const detailBox = card.querySelector(`#kpi_detail_box_${index}`);
+
+      detailToggle?.addEventListener('click', () => {
+        const expanded = detailToggle.getAttribute('aria-expanded') !== 'true';
+        detailToggle.setAttribute('aria-expanded', String(expanded));
+        detailBox?.classList.toggle('hidden', !expanded);
+        if (expanded) obsTextarea?.focus();
+      });
 
       const labelAplica = radioAplica?.closest('.kpi-radio-btn');
       const labelNoAplica = radioNoAplica?.closest('.kpi-radio-btn');
@@ -764,7 +807,7 @@ export class ValidatorUI {
 
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].status = 'aplica';
-        audit.validationResults[kpiName].tipificacion = populateTipifications('aplica');
+        audit.validationResults[kpiName].tipificacion = isSmart ? '' : populateTipifications('aplica');
         setTimeout(() => tipifSelect?.focus(), 150);
         const decisionAt = new Date().toISOString();
         // This is deliberately separate from updatedAt: observations can be
@@ -791,7 +834,7 @@ export class ValidatorUI {
 
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].status = 'no_aplica';
-        audit.validationResults[kpiName].tipificacion = populateTipifications('no_aplica');
+        audit.validationResults[kpiName].tipificacion = isSmart ? '' : populateTipifications('no_aplica');
         setTimeout(() => tipifSelect?.focus(), 150);
         const decisionAt = new Date().toISOString();
         audit.validationResults[kpiName].decisionAt = decisionAt;
@@ -847,11 +890,20 @@ export class ValidatorUI {
       obsTextarea?.addEventListener('input', (e) => {
         if (!audit.validationResults[kpiName]) audit.validationResults[kpiName] = {};
         audit.validationResults[kpiName].observaciones = e.target.value;
+        detailToggle?.classList.toggle('has-detail', Boolean(e.target.value.trim()));
         audit.validationResults[kpiName].updatedAt = new Date().toISOString();
         this.markCurrentAuditUnsaved(audit);
         this.app.saveState();
       });
     });
+
+    if (isSmart) {
+      this.auditDetailContainer.querySelector('#smart-audit-comment')?.addEventListener('input', event => {
+        this.setSmartGeneralComment(audit, event.target.value);
+        this.markCurrentAuditUnsaved(audit);
+        this.app.saveState();
+      });
+    }
 
     // Guardar borrador
     const btnDraft = document.getElementById('btn-save-draft');
@@ -898,6 +950,10 @@ export class ValidatorUI {
   }
 
   collectFormData(audit) {
+    if (this.currentModule === 'smart') {
+      const comment = this.auditDetailContainer.querySelector('#smart-audit-comment');
+      if (comment) this.setSmartGeneralComment(audit, comment.value.trim());
+    }
     const kpiCards = this.auditDetailContainer.querySelectorAll('.kpi-review-card');
     kpiCards.forEach((card, index) => {
       const kpiName = card.dataset.kpi;
@@ -913,7 +969,7 @@ export class ValidatorUI {
         audit.validationResults[kpiName] = {
           ...previous,
           status: 'aplica',
-          tipificacion: tipifSelect?.value || '',
+          tipificacion: this.currentModule === 'smart' ? previous.tipificacion || '' : tipifSelect?.value || '',
           observaciones: obsTextarea?.value.trim() || '',
           updatedAt: new Date().toISOString(),
           decisionAt: previous.decisionAt || null
@@ -923,7 +979,7 @@ export class ValidatorUI {
         audit.validationResults[kpiName] = {
           ...previous,
           status: 'no_aplica',
-          tipificacion: tipifSelect?.value || '',
+          tipificacion: this.currentModule === 'smart' ? previous.tipificacion || '' : tipifSelect?.value || '',
           observaciones: obsTextarea?.value.trim() || '',
           updatedAt: new Date().toISOString(),
           decisionAt: previous.decisionAt || null
@@ -933,12 +989,26 @@ export class ValidatorUI {
         audit.validationResults[kpiName] = {
           ...prev,
           status: 'duda',
+          observaciones: obsTextarea?.value.trim() || '',
           dudaText: dudaInput?.value.trim() || '',
           dudaCreatedAt: prev.dudaCreatedAt || new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
       }
     });
+  }
+
+  setSmartGeneralComment(audit, value) {
+    if (this.currentModule !== 'smart') return;
+    audit.validationResults ||= {};
+    const previous = audit.validationResults.__audit__;
+    if (!value && !previous) return;
+    // Metadata sin status: viaja por el RPC existente y no es una decisión de KPI.
+    audit.validationResults.__audit__ = {
+      ...previous,
+      comentarioGeneral: value,
+      updatedAt: new Date().toISOString()
+    };
   }
 
   mergeAuditIntoAppState(audit) {
@@ -962,7 +1032,7 @@ export class ValidatorUI {
       const res = audit.validationResults[kpi.name];
       if (!res || !res.status) {
         unselectedKpis.push(kpi.name);
-      } else if (['aplica', 'no_aplica'].includes(res.status) && !res.tipificacion) {
+      } else if (this.currentModule !== 'smart' && ['aplica', 'no_aplica'].includes(res.status) && !res.tipificacion) {
         missingTipification.push(kpi.name);
       } else if (res.status === 'duda') {
         hasDoubts = true;
