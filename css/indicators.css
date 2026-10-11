@@ -78,6 +78,13 @@
   .indicator-cards .indicator-card:hover,.indicator-card:hover .indicator-card-icon,.indicator-bucket:hover .indicator-bucket-link span { transform: none; }
 }
 /* Keep the six macro cards balanced; override the generic auto-fit grid. */
+.story-nav.story-nav--committee{grid-template-columns:repeat(5,minmax(0,1fr))}
+.committee-carryover{padding:22px;margin:20px 0;display:flex;align-items:center;justify-content:space-between;gap:24px;border-left:4px solid var(--dn-orange);background:linear-gradient(110deg,var(--dn-orange-light),transparent),var(--bg-surface)}
+.committee-carryover h3{margin:12px 0;font-size:20px}.committee-carryover p,.committee-carryover small{color:var(--text-secondary);font-size:13px;line-height:1.7}.committee-carryover .btn{flex-shrink:0}.committee-message{font-size:18px;line-height:1.8}
+.committee-proposals{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:20px}.committee-proposals article{padding:22px;border:1px solid var(--border-color);border-top:3px solid var(--dn-purple);border-radius:14px;background:var(--bg-surface-elevated)}.committee-proposals h4{font-size:18px;margin:16px 0}.committee-proposals p{font-size:14px;line-height:1.7}.committee-proposals small{color:var(--text-secondary);line-height:1.6}
+.committee-trend{display:grid;gap:18px;margin:24px 0}.committee-trend article{display:grid;grid-template-columns:140px minmax(120px,1fr) 280px;gap:18px;align-items:center}.committee-trend small{font-size:12px;color:var(--text-secondary);line-height:1.6}.committee-trend-bars{display:grid;gap:5px}.committee-trend-bars span,.committee-trend-bars i{display:block;min-height:10px;border-radius:8px;background:var(--dn-blue)}.committee-trend-bars i{background:var(--dn-green)}
+@media(max-width:1000px){.story-nav.story-nav--committee{grid-template-columns:repeat(3,minmax(0,1fr))}.committee-trend article{grid-template-columns:100px 1fr}.committee-trend small{grid-column:2}}
+@media(max-width:600px){.story-nav.story-nav--committee{grid-template-columns:repeat(2,minmax(0,1fr))}.committee-proposals{grid-template-columns:1fr}.committee-carryover{align-items:flex-start;flex-direction:column}.committee-trend article{grid-template-columns:1fr}.committee-trend small{grid-column:1}}
 .indicator-cards.indicator-cards--macro{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(min-width:1500px){.indicator-cards.indicator-cards--macro{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:850px){.indicator-cards.indicator-cards--macro{grid-template-columns:repeat(2,minmax(0,1fr))}}

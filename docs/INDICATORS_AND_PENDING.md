@@ -34,6 +34,16 @@ El gestor se puede actualizar manualmente y refresca su caché al volver a rende
 
 ## Seguridad y pruebas
 
+### Comité para dirección regional
+
+La vista Operación conserva sus seis apartados y cálculos. Comité tiene navegación propia: Resumen para dirección, Focos de atención, Evolución, Decisiones propuestas y Detalle operativo. Se mantiene la identidad visual del portal. El resumen muestra auditorías, alertas recibidas, cobertura, confirmadas, descartadas y pendientes del mes de jornada seleccionado. Confirmación y descarte de las tarjetas usan solo las revisadas; la barra de composición usa todas las recibidas. No aplica nunca se presenta como una edición.
+
+Los tres focos principales se ordenan por cantidad de pendientes en estudio/territorio, no por una supuesta calificación de desempeño. Cada estudio permite desplegar países (KO) o regiones (Chile/Lindley). Evolución muestra hasta seis meses con datos dentro del rango general, hasta el seleccionado, con volumen recibido/revisado, cobertura, confirmación y descarte. El cambio de volumen exige dos meses completos consecutivos según el rango de fechas; los meses sin registros no se inventan como ceros. Los resultados son cohortes con decisiones actuales, no snapshots de cierre ni productividad de validación por mes. Los tiempos conservan muestras, faltantes y la diferencia entre jornada y fecha real de carga.
+
+El rezago heredado se obtiene de la misma fuente histórica autorizada, respetando estudio, territorio, región/canal/subcanal, pero ignorando los límites de fecha del portal. Solo incluye jornadas anteriores al mes seleccionado que siguen pendientes **hoy**; no reconstruye pendientes al cierre de ese mes. Se muestra separado y no se suma al volumen mensual. Las auditorías retiradas/reemplazadas y cargas duplicadas siguen excluidas por las reglas existentes. Detalle operativo permite descargar todas las alertas heredadas pendientes en CSV (la tabla solo muestra 100 auditorías).
+
+Las decisiones son sugerencias basadas en hechos, sin ejecutar asignaciones o retiros, ni inventar responsables, fechas objetivo, SLA, ahorro o impacto comercial. La gestión real permanece en Supervisión. Smart y las exportaciones clásicas se conservan; estos nuevos apartados son de Bloqueantes. No se requieren cambios de base de datos ni de permisos.
+
 No se añadieron secretos al navegador. Las tablas de historial y respaldos tienen RLS; los snapshots privados no son accesibles a `anon` ni `authenticated`. Los RPC públicos nuevos son invocadores; las mutaciones privilegiadas residen en `private`, verifican sesión y alcance y serializan cargas y decisiones. Una pestaña de validador antigua no puede guardar una auditoría retirada.
 
 Los scripts `supabase/sql/integrate-demo-indicators.sql` y `indicator-export-context.sql` son el registro del despliegue aplicado mediante el editor autorizado de Supabase cuando el acceso del conector/CLI al proyecto no estaba disponible. No modifican migraciones anteriores. No deben aplicarse automáticamente en otros entornos sin revisión.

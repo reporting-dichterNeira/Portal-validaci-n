@@ -5706,7 +5706,7 @@ class ValidaFlowApp {
       viewOp?.classList.add('hidden');
 
       if (titleEl) titleEl.textContent = 'Informe Ejecutivo de Calidad y KPIs (Comité)';
-      if (subtitleEl) subtitleEl.textContent = 'Ranking de variables con alertas, tasa de efectividad de negocio y causas raíz para comités directivos.';
+      if (subtitleEl) subtitleEl.textContent = 'Resultados del mes, avance de revisión, focos de atención y decisiones para la dirección regional.';
       this.renderReportsView();
     });
   }
@@ -6147,6 +6147,19 @@ class ValidaFlowApp {
     return audits.filter(audit => this.getReportGeography(audit) === selectedCountry);
   }
 
+  // Committee carryover needs the same authorized study/geography scope,
+  // but must not lose previous months to the presentation's date filter.
+  getCommitteeHistoryForReports() {
+    return this.getReportAuditSource().filter(a => {
+      const study = this.getStudyForAudit(a);
+      const studyMatches = !this.selectedStudies.length || this.selectedStudies.includes('ALL')
+        || this.selectedStudies.some(s => s.toUpperCase() === study.toUpperCase());
+      const geography = this.selectedReportCountry;
+      return studyMatches && (!geography || geography === 'all'
+        || this.getReportGeography(a) === (geography === '__missing__' ? '' : geography));
+    });
+  }
+
   // ==========================================
   // VISTA DE REPORTES Y MÉTRICAS (OPERACIONALES + EJECUTIVAS)
   // ==========================================
@@ -6192,7 +6205,8 @@ class ValidaFlowApp {
     if (this.reportsSubtab === 'executive' || this.visualizationTab === 'committee') {
       this.renderExecutiveMetrics(filteredAudits);
     } else this.renderOperationalMetrics(filteredAudits);
-    globalThis.PortalIndicators?.render(this, filteredAudits);
+    globalThis.PortalIndicators?.render(this, filteredAudits,
+      this.reportsSubtab === 'executive' || this.visualizationTab === 'committee' ? this.getCommitteeHistoryForReports() : null);
     this.ensureBenchmarkCountries(reportAudits);
   }
 
@@ -8447,7 +8461,7 @@ class ValidaFlowApp {
       viewExec?.classList.remove('hidden');
       viewOp?.classList.add('hidden');
       if (titleEl) titleEl.textContent = 'Informe Ejecutivo de Calidad y KPIs (Comité)';
-      if (subtitleEl) subtitleEl.textContent = 'Ranking de variables con alertas, tasa de efectividad de negocio y causas raíz para comités directivos.';
+      if (subtitleEl) subtitleEl.textContent = 'Resultados del mes, avance de revisión, focos de atención y decisiones para la dirección regional.';
     }
     this.renderReportsView();
   }
