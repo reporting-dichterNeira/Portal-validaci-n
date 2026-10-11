@@ -55,13 +55,24 @@
         auditDate:field(a,['fechaAuditoriaOriginal','auditDate','Fecha_del_audito','FECHA_AUDITORIA','FECHA_AUDITO','FECHA_AU']) || fallback(['audit_date']),
         alertUploadedAt:a._originalUploadedAt || a._batchUploadedAt || a._createdAt,
         country:countryFor ? countryFor(a) : field(a.databricksGeography || {},['country']) || field(a,['pais','country']),
-        // Databricks exports nombre_usuario AS auditor. Generic usuario may be
-        // a portal operator, so it must never identify the field auditor.
-        auditor:fallback(['nombre_usuario','auditor']) || field(a,['nombre_usuario']),
+        // Only the Databricks export / verified historical enrichment can
+        // identify the field auditor. Never read it from the uploaded base.
+        auditor:databricksAuditor(a,candidates),
         pdv:field(a,['idPDV','pdv']) || fallback(['pdv_id']),
         region:field(a.databricksGeography || {},['region']) || field(a,['region']) || fallback(['region']), channel:field(a,['canal','channel']) || fallback(['channel']),
         subchannel:field(a,['subcanal','subchannel']) || fallback(['subchannel']), kpis};
     }));
+  }
+  function databricksAuditor(a, candidates) {
+    const clean=value=>{
+      const text=String(value ?? '').trim();
+      return !text || /^auditor\s*\([^)]*\)$/i.test(text) || /^\d+$/.test(text) || /^(sin (auditor|identificar)|n\/?a|null)$/i.test(text) ? '' : text;
+    };
+    const names=[...new Set(candidates.map(c=>clean(field(c,['nombre_usuario','auditor']))).filter(Boolean))];
+    if(names.length>1)return '';
+    if(names.length===1)return names[0];
+    const verified=a.databricksGeography;
+    return verified?.auditorSource==='storeview.slv_sv_ceres_ag_export.nombre_usuario' ? clean(verified.auditor) : '';
   }
   const row = cells => '<tr>'+cells.map(c=>'<td>'+c+'</td>').join('')+'</tr>';
   function table(headers, rows) {
@@ -199,6 +210,6 @@
       return [a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,a.study,a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,a.decision,a.reason];
     }),'Indicadores-bloqueantes-'+asOf+'.csv'));
   }
-  root.PortalIndicators={adapt,canonical,render,csv,download,esc,table,row,panel,story,decisionBar,journey};
+  root.PortalIndicators={adapt,canonical,render,csv,download,esc,table,row,panel,story,decisionBar,journey,databricksAuditor};
   if(typeof module!=='undefined')module.exports=root.PortalIndicators;
 })(typeof globalThis!=='undefined'?globalThis:this);

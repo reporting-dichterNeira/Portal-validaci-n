@@ -5975,7 +5975,7 @@ class ValidaFlowApp {
     if (this.benchmarkCountryLoadPromise) return this.benchmarkCountryLoadPromise;
     if (Date.now() < (this.benchmarkCountryRetryAfter || 0)) return;
     this.benchmarkCountryCheckedIds ||= new Set();
-    const needsIndicatorContext = ['metrics','committee'].includes(this.visualizationTab);
+    const needsIndicatorContext = ['metrics','committee'].includes(this.visualizationTab) || this.currentTab === 'reports';
     const ids = [...new Set(audits.filter(audit =>
       (needsIndicatorContext && (audit._module || this.currentModule) === 'blocking') ||
       (['Tradicional', 'Moderno', 'Chile', 'Lindley'].includes(this.getStudyForAudit(audit)) && !this.getReportGeography(audit))

@@ -76,11 +76,16 @@ test('field auditor comes from Databricks nombre_usuario alias, never portal usu
  const local={...base,usuario:'operador.portal',auditor:'nombre.ambiguo',_validatorName:'Validador',nombre_usuario:'auditor.base'};
  const [a]=U.adapt([local],[{audit_external_id:'123',auditor:'auditor.databricks'}]);
  assert.equal(a.auditor,'auditor.databricks');
- assert.equal(U.adapt([local],[])[0].auditor,'auditor.base');
+ assert.equal(U.adapt([local],[])[0].auditor,'');
  assert.equal(U.adapt([{...base,usuario:'operador.portal',auditor:'nombre.ambiguo',_validatorName:'Validador'}],[])[0].auditor,'');
  assert.equal(U.adapt([base],[{audit_external_id:'123',nombre_usuario:'auditor.original'}])[0].auditor,'auditor.original');
  assert.equal(U.adapt([base],[{audit_external_id:'123',auditor:'a'},{audit_external_id:'123',auditor:'b'}])[0].auditor,'');
  assert.equal(U.adapt([base],[{audit_external_id:'999',auditor:'otra.auditoria'}])[0].auditor,'');
+ assert.equal(U.adapt([local],[{audit_external_id:'123',auditor:'Auditor (1250)'}])[0].auditor,'');
+ assert.equal(U.adapt([local],[{audit_external_id:'123',auditor:'Auditor ()'}])[0].auditor,'');
+ const historical={...local,databricksGeography:{auditor:'cl.campo.real',auditorSource:'storeview.slv_sv_ceres_ag_export.nombre_usuario'}};
+ assert.equal(U.adapt([historical],[])[0].auditor,'cl.campo.real');
+ assert.equal(U.adapt([{...local,databricksGeography:{auditor:'sin.origen'}}],[])[0].auditor,'');
 });
 test('single CSV escapes formula injection and preserves numeric values',()=>{
  assert.match(U.csv(['Dato'],[['=1+1'],[0]]),/"'=1\+1"/);assert.match(U.csv(['Dato'],[[0]]),/"0"/);
