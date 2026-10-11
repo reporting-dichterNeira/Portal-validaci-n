@@ -6202,12 +6202,22 @@ class ValidaFlowApp {
       execStudyLabel.textContent = `Estudios Analizados: ${studyLabel}${countryLabel} (${filteredAudits.length} auditorías)`;
     }
 
-    if (this.reportsSubtab === 'executive' || this.visualizationTab === 'committee') {
-      this.renderExecutiveMetrics(filteredAudits);
-    } else this.renderOperationalMetrics(filteredAudits);
+    const executive = this.reportsSubtab === 'executive' || this.visualizationTab === 'committee';
+    const indicatorTarget = document.getElementById(executive ? 'indicators-executive' : 'indicators-operational');
+    const section = executive ? this.indicatorExecutiveSection : this.indicatorOperationalSection;
+    // Classic reports are hidden behind Detail in the integrated dashboard.
+    // Build them when visible, not on every visit to a summary tab.
+    if (!globalThis.PortalIndicators || !indicatorTarget || module === 'smart' || section === 'detail') {
+      this.renderClassicReports(filteredAudits);
+    }
     globalThis.PortalIndicators?.render(this, filteredAudits,
       this.reportsSubtab === 'executive' || this.visualizationTab === 'committee' ? this.getCommitteeHistoryForReports() : null);
     this.ensureBenchmarkCountries(reportAudits);
+  }
+
+  renderClassicReports(audits) {
+    if (this.reportsSubtab === 'executive' || this.visualizationTab === 'committee') this.renderExecutiveMetrics(audits);
+    else this.renderOperationalMetrics(audits);
   }
 
   renderOperationalMetrics(audits) {

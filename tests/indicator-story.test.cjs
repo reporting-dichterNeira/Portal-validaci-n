@@ -113,3 +113,26 @@ test('committee carries history through month and tab callbacks',()=>{
  events[0]();assert.match(target.innerHTML,/<td>99<\/td>/);
  delete global.document;
 });
+
+test('chapter navigation reuses calculations, filters recalculate, and fresh renders see in-place decisions',()=>{
+ const actions={};let computations=0,classic=0;
+ const original=M.compute;M.compute=(...args)=>{computations++;return original(...args);};
+ const target={innerHTML:'',querySelector:()=>null,querySelectorAll:selector=>{
+  if(selector==='[data-story-section]')return ['focus','evolution','detail'].map(id=>({dataset:{storySection:id},addEventListener:(_,fn)=>actions[id]=fn}));
+  if(selector==='[data-indicator-filter]')return [{dataset:{indicatorFilter:'month'},value:'2026-08',addEventListener:(_,fn)=>actions.month=fn}];
+  return [];
+ }};
+ target.parentElement={children:[target]};global.document={getElementById:()=>target};
+ const records=[source(1,'2026-08-01',null),source(2,'2026-09-01',null)];
+ const app={currentView:'visualizations',reportsSubtab:'executive',getVisualizationModuleFilter:()=> 'blocking',getReportCountry:a=>a.pais,renderClassicReports:()=>classic++,indicatorFilters:{region:'all',channel:'all',subchannel:'all',month:'2026-09'},visualizationDateFrom:'2026-08-01',visualizationDateTo:'2026-09-30'};
+ try{
+  U.render(app,records,records);const first=computations;
+  actions.focus();actions.evolution();assert.equal(computations,first);
+  actions.month();assert.ok(computations>first);assert.equal(app.indicatorFilters.month,'2026-08');
+  actions.detail();assert.equal(classic,1);const detailCount=computations;
+  actions.detail();assert.equal(classic,1);assert.equal(computations,detailCount);
+  records[0].validationResults.K={status:'aplica'};
+  app.indicatorExecutiveSection='summary';U.render(app,records,records);
+  assert.ok(computations>detailCount);assert.match(target.innerHTML,/Todas las 1 alertas/);
+ }finally{M.compute=original;delete global.document;}
+});
