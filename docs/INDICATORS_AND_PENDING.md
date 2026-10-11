@@ -8,7 +8,7 @@ Operación muestra cobertura, aplicación, rechazo, antigüedad de pendientes, d
 
 Los filtros existentes de estudio, país y fecha limitan el alcance. Los nuevos filtros de región, canal, subcanal y mes refinan los indicadores. La jornada determina el periodo de la carga; la fecha original de auditoría determina la antigüedad. Auditoría → carga usa una muestra por auditoría, mientras carga → decisión usa una por alerta decidida. Fechas sin hora se miden en días calendario; timestamps completos permiten horas transcurridas. Faltantes, fechas futuras y secuencias negativas se muestran aparte, sin inventar valores.
 
-La base diaria tiene prioridad. El Export general enriquece por ID numérico de auditoría; cruces ambiguos no eligen la primera fila. Databricks envía `region` y `subcanal`, y el receptor guarda `region` y `subchannel`. Las consultas siguen usando únicamente Reporting Cluster, el mes vigente y el cierre pendiente del mes anterior. No se republica el histórico cerrado para rellenar nuevas columnas.
+La base diaria tiene prioridad. El Export general enriquece por ID numérico de auditoría; cruces ambiguos no eligen la primera fila. Databricks lee las columnas reales `region` y `subcanal_modelo` (alias `subcanal`), y el receptor guarda `region` y `subchannel`. Las consultas siguen usando únicamente Reporting Cluster, el mes vigente y el cierre pendiente del mes anterior. No se republica el histórico cerrado para rellenar nuevas columnas.
 
 KO usa el país real desde la jornada de octubre de 2026; antes se agrupa sin país identificado. Chile y Lindley conservan Chile y Perú. El CSV de indicadores contiene las alertas del alcance con fechas, dimensiones, decisiones y tipificación; cada pulsación descarga un archivo.
 

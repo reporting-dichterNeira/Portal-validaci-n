@@ -58,7 +58,8 @@ def sync_month(period_month, close_month=False):
     # The fixed table and a validated year/month prevent arbitrary SQL.
     query = f"""
     SELECT Estado, ID_de_audito, ID_de_PDV, Pais, Fecha_del_audito,
-           Survey, Ola, ciudad, canal, region, subcanal, nombre_usuario AS auditor
+           Survey, Ola, ciudad, canal, region,
+           subcanal_modelo AS subcanal, nombre_usuario AS auditor
     FROM storeview.slv_sv_ceres_ag_export
     WHERE (lower(Survey) LIKE '%ko_trad%'
            OR lower(Survey) LIKE '%ko_moderno%'
