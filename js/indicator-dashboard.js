@@ -67,10 +67,14 @@
       (rows.length ? rows.join('') : '<tr><td colspan="'+headers.length+'">Sin registros para este alcance.</td></tr>')+'</tbody></table></div>';
   }
   function panel(title, description, body) {
-    return '<section class="glass-panel indicator-panel"><h3>'+title+'</h3><p class="panel-desc">'+description+'</p>'+body+'</section>';
+    const symbols = [['Indicadores','📊'],['Pendientes por','⏳'],['Motivos','🔎'],['Auditores','👥'],['Tiempo','⏱️'],['Tendencia','📈'],['Benchmark','🌎'],['Top alertas','🎯'],['Evolución','⏱️'],['Desempeño','🗺️'],['Distribución','🗂️'],['Definiciones','📖'],['Historial','🧾']];
+    const symbol = symbols.find(([prefix])=>title.startsWith(prefix))?.[1];
+    return '<section class="glass-panel indicator-panel"><h3 class="indicator-heading">'+(symbol?'<span class="indicator-heading-icon" aria-hidden="true">'+symbol+'</span>':'')+title+'</h3><p class="panel-desc">'+description+'</p>'+body+'</section>';
   }
-  function cards(items) {
-    return '<div class="indicator-cards">'+items.map(([label,value,hint=''])=>'<div class="stat-card"><div class="stat-details"><span class="stat-label">'+label+'</span><strong class="stat-value">'+value+'</strong><small>'+hint+'</small></div></div>').join('')+'</div>';
+  function cards(items, variant='') {
+    return '<div class="indicator-cards '+(variant?'indicator-cards--'+variant:'')+'">'+items.map(([label,value,hint='',tone='blue',symbol='📊',progress=null],i)=>
+      '<div class="stat-card indicator-card indicator-tone-'+tone+'" style="--indicator-order:'+i+'"><div class="indicator-card-main"><span class="stat-icon-wrapper indicator-card-icon" aria-hidden="true">'+symbol+'</span><div class="stat-details"><span class="stat-label">'+label+'</span><strong class="stat-value">'+value+'</strong>'+(hint?'<small>'+hint+'</small>':'')+'</div></div>'+
+      (Number.isFinite(progress)?'<div class="indicator-meter" aria-hidden="true"><span style="--indicator-fill:'+Math.max(0,Math.min(100,progress*100))+'%"></span></div>':'')+'</div>').join('')+'</div>';
   }
   function csv(headers, rows) {
     const cell = v => {let s=String(v ?? '');if(typeof v==='string' && /^[=+\-@\t\r]/.test(s)) s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
@@ -111,17 +115,17 @@
     const result=M.compute(inputs,{...state,asOf,from,to:app.visualizationDateTo || asOf,month:state.month});
     const c=executive ? result.monthlyCounts : result.counts;
     let html=panel('Indicadores de Alertas Bloqueantes', 'Datos reales · Una auditoría única por estudio y módulo. Comparte los filtros de estudio, país y fecha del portal. No incluye Smart.',
-      '<div class="indicator-controls">'+controls+'<button class="btn btn-success btn-sm" data-indicator-download>Descargar detalle (CSV)</button></div>'+cards([
-        ['Alertas recibidas',num(c.total)],['Cobertura de revisión',pct(c.coverage),num(c.applies+c.rejects)+' decididas'],
-        ['Aplicación',pct(c.application),num(c.applies)+' Aplica'],['Rechazo',pct(c.rejection),num(c.rejects)+' No aplica'],['Alertas pendientes',num(c.pending)]
+      '<div class="indicator-controls">'+controls+'<button class="btn btn-success btn-sm" data-indicator-download><span aria-hidden="true">📥</span> Descargar detalle (CSV)</button></div>'+cards([
+        ['Alertas recibidas',num(c.total),'','blue','📥'],['Cobertura de revisión',pct(c.coverage),num(c.applies+c.rejects)+' decididas','purple','🔎',c.coverage],
+        ['Aplicación',pct(c.application),num(c.applies)+' Aplica','green','✅',c.application],['Rechazo',pct(c.rejection),num(c.rejects)+' No aplica','magenta','✋',c.rejection],['Alertas pendientes',num(c.pending),'Por revisar','orange','⏳']
       ])+'<p class="panel-desc">Aplica + No aplica + pendientes = total de alertas. No aplica no implica una edición. País no desglosado para jornadas anteriores a octubre de 2026.</p>');
     if(!executive) {
-      const labels={recent:'0–6 días',week:'7–14 días',old:'15 días o más',missing:'Sin fecha original',future:'Fecha futura'};
+      const labels={recent:['0–6 días','blue','📅'],week:['7–14 días','orange','⏳'],old:['15 días o más','magenta','🚩'],missing:['Sin fecha original','purple','❔'],future:['Fecha futura','cyan','🗓️']};
       html+=panel('Pendientes por antigüedad','Días calendario desde la fecha original de auditoría, no desde la jornada de carga. Pulsa un grupo para consultar sus IDs.',
-        '<div class="indicator-cards">'+Object.entries(labels).map(([k,label])=>'<button class="stat-card" data-indicator-bucket="'+k+'"><span>'+label+'</span><strong>'+num(result.backlog[k].length)+'</strong></button>').join('')+'</div><div data-indicator-backlog></div>');
+        '<div class="indicator-cards indicator-cards--backlog">'+Object.entries(labels).map(([k,[label,tone,symbol]],i)=>'<button type="button" class="stat-card indicator-card indicator-bucket indicator-tone-'+tone+'" style="--indicator-order:'+i+'" data-indicator-bucket="'+k+'" aria-pressed="false"><span class="indicator-card-main"><span class="stat-icon-wrapper indicator-card-icon" aria-hidden="true">'+symbol+'</span><span class="stat-details"><span class="stat-label">'+label+'</span><strong class="stat-value">'+num(result.backlog[k].length)+'</strong><small>Auditorías pendientes</small></span></span><span class="indicator-bucket-link">Ver detalle <span aria-hidden="true">→</span></span></button>').join('')+'</div><div data-indicator-backlog></div>');
       html+=panel('Motivos de No aplica','Conteo sobre el total de rechazos. Sin tipificación se presenta explícitamente.',table(['Motivo','Rechazos','Participación'],result.reasons.slice(0,15).map(r=>row([esc(r.name),num(r.count),pct(r.share)]))));
       html+=panel('Auditores con alertas recurrentes','Últimas ocho semanas calendario dentro del filtro, desde '+result.startWeek+'. Recurrencia no es productividad ni error confirmado.',table(['Auditor','Estudio','Semanas con alertas','Alertas'],result.recurrence.slice(0,20).map(r=>row([esc(r.auditor),esc(r.study),num(r.weeks)+' / 8',num(r.total)]))));
-      html+=panel('Tiempo entre cada paso','Bases separadas: una muestra por auditoría para auditoría → carga; una por alerta decidida para carga → decisión. Horas solo con timestamps completos.',cards([['Auditoría → carga',time(result.timing.intake)],['Carga → decisión',time(result.timing.validation)]]));
+      html+=panel('Tiempo entre cada paso','Bases separadas: una muestra por auditoría para auditoría → carga; una por alerta decidida para carga → decisión. Horas solo con timestamps completos.',cards([['Auditoría → carga',time(result.timing.intake),'','blue','📤'],['Carga → decisión',time(result.timing.validation),'','purple','⏱️']],'timing'));
     } else {
       html+=panel('Tendencia mensual y falsos positivos','No aplica / total de alertas, junto a cobertura. La variación de volumen solo compara dos meses completos consecutivos.',table(['Mes','Estudio','País','Alertas','Cobertura','Rechazo','Variación de alertas vs. mes anterior'],result.monthly.map(r=>row([r.month,esc(r.study),esc(r.country),num(r.total),pct(r.coverage),pct(r.rejection),r.change==null?'No comparable':pct(r.change)]))));
       html+=panel('Benchmark del mes '+esc(state.month),'Desglose por estudio y país; incluye pendientes para interpretar las tasas.',table(['Estudio','País','Alertas','Aplica','No aplica','Pendientes','Cobertura','Rechazo'],result.benchmark.map(r=>row([esc(r.study),esc(r.country),num(r.total),num(r.applies),num(r.rejects),num(r.pending),pct(r.coverage),pct(r.rejection)]))));
@@ -135,6 +139,7 @@
     target.innerHTML=html;
     target.querySelectorAll('[data-indicator-filter]').forEach(el=>el.addEventListener('change',()=>{state[el.dataset.indicatorFilter]=el.value;render(app,audits);}));
     target.querySelectorAll('[data-indicator-bucket]').forEach(el=>el.addEventListener('click',()=>{
+      target.querySelectorAll('[data-indicator-bucket]').forEach(button=>button.setAttribute('aria-pressed',String(button===el)));
       target.querySelector('[data-indicator-backlog]').innerHTML=table(['ID auditoría','Fecha original','Estudio','País','Días','Alertas pendientes'],result.backlog[el.dataset.indicatorBucket].slice(0,100).map(a=>row([esc(a.id),esc(a.auditDate || 'Sin fecha'),esc(a.study),esc(a.country),a.age==null?'—':num(a.age),num(a.pending)])))+'<p>Hasta 100 filas; descarga el detalle completo en CSV.</p>';
     }));
     const auditIndex = new Map(inputs.map(a=>[JSON.stringify([a.id,a.study]),a]));
