@@ -55,7 +55,9 @@
         auditDate:field(a,['fechaAuditoriaOriginal','auditDate','Fecha_del_audito','FECHA_AUDITORIA','FECHA_AUDITO','FECHA_AU']) || fallback(['audit_date']),
         alertUploadedAt:a._originalUploadedAt || a._batchUploadedAt || a._createdAt,
         country:countryFor ? countryFor(a) : field(a.databricksGeography || {},['country']) || field(a,['pais','country']),
-        auditor:field(a,['usuario','auditor','nombre_usuario']) || fallback(['auditor']),
+        // Databricks exports nombre_usuario AS auditor. Generic usuario may be
+        // a portal operator, so it must never identify the field auditor.
+        auditor:fallback(['nombre_usuario','auditor']) || field(a,['nombre_usuario']),
         pdv:field(a,['idPDV','pdv']) || fallback(['pdv_id']),
         region:field(a.databricksGeography || {},['region']) || field(a,['region']) || fallback(['region']), channel:field(a,['canal','channel']) || fallback(['channel']),
         subchannel:field(a,['subcanal','subchannel']) || fallback(['subchannel']), kpis};
@@ -166,7 +168,7 @@
       html+=panel('Qué confirmó la revisión','Porcentajes sobre todas las alertas recibidas en este alcance; los pendientes no se interpretan como descartados.',decisionBar(c));
       html+=panel('Motivos de No aplica','Participación sobre las alertas descartadas, no sobre el total recibido. Hasta 15 motivos; el CSV conserva el detalle.',table(['Motivo','Alertas descartadas','% de descartadas'],result.reasons.slice(0,15).map(r=>row([esc(r.name),num(r.count),pct(r.share)]))));
       html+=panel('Top alertas con mayor tasa de rechazo','Hasta 20 variables. No aplica / alertas recibidas; leer siempre junto a volumen, cobertura y pendientes.',table(['Variable','Alertas','No aplica','Rechazo','Cobertura','Pendientes'],result.rejectedTypes.slice(0,20).map(r=>row([esc(r.name),num(r.total),num(r.rejects),pct(r.rejection),pct(r.coverage),num(r.pending)]))));
-      html+=panel('Auditores con alertas recurrentes','Últimas ocho semanas calendario dentro del filtro, desde '+result.startWeek+'. Recurrencia no es productividad ni error confirmado.',table(['Auditor','Estudio','Semanas con alertas','Alertas'],result.recurrence.slice(0,20).map(r=>row([esc(r.auditor),esc(r.study),num(r.weeks)+' / 8',num(r.total)]))));
+      html+=panel('Auditores con alertas recurrentes','Auditor de campo: nombre_usuario del Export de Databricks, cruzado por ID de auditoría; no es el validador. Últimas ocho semanas dentro del filtro, desde '+result.startWeek+'. '+num(result.alertsWithoutAuditor)+' alertas sin auditor identificado se excluyen de este ranking. Recurrencia no es productividad ni error confirmado.',table(['Auditor','Estudio','Semanas con alertas','Alertas'],result.recurrence.slice(0,20).map(r=>row([esc(r.auditor),esc(r.study),num(r.weeks)+' / 8',num(r.total)]))));
     }
     if(section==='timing') {
       html+=panel('Tiempo entre cada paso','Bases separadas: una muestra por auditoría para auditoría → carga; una por alerta decidida para carga → decisión. Horas solo con timestamps completos.',cards([['Auditoría → carga',time(result.timing.intake),'','blue','📤'],['Carga → decisión',time(result.timing.validation),'','purple','⏱️']],'timing'));

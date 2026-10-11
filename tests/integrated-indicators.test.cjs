@@ -72,6 +72,16 @@ test('context conflicts remain missing rather than selecting first row',()=>{
  const [a]=U.adapt([{...base,meta:{}}],[{audit_external_id:'123',region:'Norte'},{audit_external_id:'123',region:'Sur'}]);
  assert.equal(a.region,'');
 });
+test('field auditor comes from Databricks nombre_usuario alias, never portal usuario or validator',()=>{
+ const local={...base,usuario:'operador.portal',auditor:'nombre.ambiguo',_validatorName:'Validador',nombre_usuario:'auditor.base'};
+ const [a]=U.adapt([local],[{audit_external_id:'123',auditor:'auditor.databricks'}]);
+ assert.equal(a.auditor,'auditor.databricks');
+ assert.equal(U.adapt([local],[])[0].auditor,'auditor.base');
+ assert.equal(U.adapt([{...base,usuario:'operador.portal',auditor:'nombre.ambiguo',_validatorName:'Validador'}],[])[0].auditor,'');
+ assert.equal(U.adapt([base],[{audit_external_id:'123',nombre_usuario:'auditor.original'}])[0].auditor,'auditor.original');
+ assert.equal(U.adapt([base],[{audit_external_id:'123',auditor:'a'},{audit_external_id:'123',auditor:'b'}])[0].auditor,'');
+ assert.equal(U.adapt([base],[{audit_external_id:'999',auditor:'otra.auditoria'}])[0].auditor,'');
+});
 test('single CSV escapes formula injection and preserves numeric values',()=>{
  assert.match(U.csv(['Dato'],[['=1+1'],[0]]),/"'=1\+1"/);assert.match(U.csv(['Dato'],[[0]]),/"0"/);
 });
