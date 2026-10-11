@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, '..');
 const previewRole = process.env.PREVIEW_ROLE === 'supervisor' ? 'supervisor' : 'visualizer';
 const previewPort = Number(process.env.PREVIEW_PORT || 8772);
 const geographyPreview = process.env.PREVIEW_GEOGRAPHY === '1';
+const storyPreview = process.env.PREVIEW_STORY === '1';
 const backend = `
 const role=${JSON.stringify(previewRole)};
 const scope={id:'fixture-assignment',module:'blocking',study:{id:'fixture-study',name:'Moderno'},country:{id:'fixture-country',name:'CAM'}};
@@ -25,6 +26,13 @@ if (${geographyPreview}) audits.forEach((a,i)=>{
  region:a.estudio==='Chile'?(i%8<4?'ARICA':'VIÑA DEL MAR'):a.estudio==='Lindley'?(i%8<4?'REGION LIMA':'REGION SUR'):''};
 });
 const imports = ['alerts','editions'].map(dataset_type=>({dataset_type,period_month:'2026-10-01',source_filename:'Prueba aislada.csv',row_count:2001,imported_at:'2026-10-08'}));
+if (${storyPreview}) audits.forEach((a,i)=>{
+ a._batchId=1;
+ a.fecha=a._batchOperationDate=i%5===0?'2026-09-15':'2026-10-08';
+ a.estudio=['Chile','Lindley','Tradicional','Moderno'][i%4];
+ a.databricksGeography={country:a.estudio==='Chile'?'Chile':a.estudio==='Lindley'?'Perú':'Panamá',region:a.estudio==='Chile'?'ARICA':a.estudio==='Lindley'?'REGION LIMA':''};
+ if(i%3===0){a.validationStatus='pendiente';a.validationResults={};a.completedAt=null;a.durationSeconds=0;a.fechaAuditoriaOriginal=i%2?'2026-09-01':'';}
+});
 let pending=[3001,3002].map((id,i)=>({id,external_id:String(id),source_filename:'Base anterior de prueba.csv',operation_date:'2026-10-08',
  status:'pendiente',validator_name:'Responsable anterior',payload:{pais:'Panamá',kpis:[{name:'A',needsReview:true},{name:'B',needsReview:true}]},
  validation_results:i?{}:{A:{status:'aplica',decisionAt:'2026-10-08T12:00:00Z'}},pending_resolution:null}));
