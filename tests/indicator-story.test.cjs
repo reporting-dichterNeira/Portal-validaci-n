@@ -47,3 +47,26 @@ test('new story escapes metadata and explains denominators',()=>{
  assert.match(render('findings').html,/no sobre el total recibido/);
  assert.match(render('timing').html,/no son un SLA/);
 });
+test('monthly macro reconciles study totals, counts audit IDs once and ranks received volume',()=>{
+ const r=M.compute(M.normalizeAudits([
+  {id:'1',study:'Moderno',periodDate:'2026-09-01',kpis:[{name:'A',needsReview:true,decision:'aplica'},{name:'B',needsReview:true,decision:'pendiente'}]},
+  {id:'2',study:'Moderno',periodDate:'2026-09-02',kpis:[{name:'A',needsReview:true,decision:'no_aplica'}]},
+  {id:'1',study:'Lindley',periodDate:'2026-09-02',kpis:[{name:'A',needsReview:true,decision:'pendiente'}]}
+ ]),{asOf:'2026-10-10'});
+ const macro=U.macroData(r);
+ assert.equal(macro.studies.reduce((n,s)=>n+s.total,0),r.counts.total);
+ assert.equal(macro.studies.reduce((n,s)=>n+s.pending,0),r.counts.pending);
+ assert.equal(macro.studies[0].audits,2);assert.equal(macro.variables[0].name,'A');assert.equal(macro.variables[0].total,3);
+ const html=U.macroDashboard(r,'2026-09',false);
+ assert.match(html,/Confirmación de alertas/);assert.match(html,/50%/);assert.match(html,/Top 3/);
+ assert.doesNotMatch(html,/NaN|Infinity|Corte parcial/);
+});
+test('committee macro keeps month selector visible and empty data honest',()=>{
+ const html=render('summary',true).html;
+ assert.ok(html.indexOf('data-indicator-filter="month"')<html.indexOf('<details'));
+ assert.match(html,/Dashboard general del comité/);
+ assert.match(html,/Comparativa macro por estudio/);
+ const empty=U.macroDashboard(M.compute([],{asOf:'2026-10-10'}),'2026-10',true);
+ assert.match(empty,/Sin base/);assert.match(empty,/Corte parcial del mes/);assert.match(empty,/Sin datos para establecer/);
+ assert.doesNotMatch(empty,/NaN|Infinity/);
+});

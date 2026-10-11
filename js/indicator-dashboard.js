@@ -122,6 +122,47 @@
     const parts=[['Confirmadas · Aplica',c.applies,'green'],['Descartadas · No aplica',c.rejects,'magenta'],['Sin decisión',c.pending,'orange']];
     return '<div class="story-distribution" aria-hidden="true">'+parts.map(([,n,tone])=>'<span class="indicator-tone-'+tone+'" style="width:'+n/c.total*100+'%;background:var(--indicator-accent)"></span>').join('')+'</div><div class="story-legend">'+parts.map(([label,n,tone])=>'<span class="indicator-tone-'+tone+'"><i aria-hidden="true"></i>'+label+' <strong>'+num(n)+'</strong> · '+pct(n/c.total)+'</span>').join('')+'</div>';
   }
+  function macroData(result) {
+    const studies=new Map(), variables=new Map();
+    for(const a of result.alerts){
+      if(!studies.has(a.study))studies.set(a.study,{study:a.study,ids:new Set(),alerts:[]});
+      const s=studies.get(a.study);s.ids.add(a.id);s.alerts.push(a);
+      if(!variables.has(a.name))variables.set(a.name,[]);
+      variables.get(a.name).push(a);
+    }
+    return {
+      studies:[...studies.values()].map(s=>({study:s.study,audits:s.ids.size,...M.totals(s.alerts)})).sort((a,b)=>b.total-a.total||a.study.localeCompare(b.study)),
+      variables:[...variables].map(([name,alerts])=>({name,...M.totals(alerts)})).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name))
+    };
+  }
+  function macroDashboard(result, month, partial) {
+    const c=result.counts, s=story(result), macro=macroData(result);
+    const focus=macro.studies.filter(r=>r.pending).sort((a,b)=>b.pending-a.pending)[0];
+    const monthLabel=month?new Date(month+'-15T12:00:00Z').toLocaleDateString('es-CO',{month:'long',year:'numeric',timeZone:'America/Bogota'}):'Sin mes disponible';
+    const link=(section,label)=>'<button type="button" class="btn btn-outline btn-sm" data-story-section="'+section+'">'+label+' →</button>';
+    let html='<section class="glass-panel committee-lead"><div><span class="corporate-badge">👔 DASHBOARD MENSUAL · BLOQUEANTES</span><h2>'+esc(monthLabel)+'</h2><p>'+esc(s.headline)+'</p></div><span class="committee-cut">'+(partial?'📅 Corte parcial del mes':'📅 Período mensual seleccionado')+'</span></section>';
+    html+=cards([
+      ['Auditorías del mes',num(result.audits),'IDs únicos por estudio · '+num(macro.studies.length)+' estudios con alertas','blue','🏬'],
+      ['Alertas recibidas',num(c.total),'Sub-KPIs que requieren revisión','purple','📥'],
+      ['Cobertura de revisión',pct(c.coverage),num(s.decided)+' de '+num(c.total)+' alertas decididas','cyan','🔎',c.coverage],
+      ['Confirmación de alertas',pct(s.confirmation),num(c.applies)+' Aplica / '+num(s.decided)+' revisadas','green','✅',s.confirmation],
+      ['Alertas descartadas',num(c.rejects),pct(c.rejection)+' de las recibidas · No aplica','magenta','✋'],
+      ['Alertas pendientes',num(c.pending),num(s.pendingAudits)+' auditorías con alguna pendiente','orange','⏳']
+    ],'macro');
+    html+='<div class="committee-grid">'+panel('Resultado global del mes','Base: todas las alertas recibidas del mes y filtros seleccionados.',decisionBar(c)+'<p class="story-note">Aplica + No aplica + pendientes = recibidas. La confirmación de la tarjeta superior usa solo las revisadas. No aplica no implica editar una auditoría.</p>')+
+      panel('Prioridad para el comité','Focos derivados del mes seleccionado, sin metas ni semáforos arbitrarios.',
+        '<div class="committee-priority"><strong>'+(focus?esc(focus.study)+' concentra '+pct(focus.pending/c.pending)+' de los pendientes':c.total?'Sin alertas pendientes en este alcance':'Sin datos para establecer una prioridad')+'</strong><p>'+(focus?num(focus.pending)+' de '+num(c.pending)+' alertas pendientes del mes.':'')+'</p><p><b>'+num(result.backlog.old.length)+'</b> auditorías pendientes con 15 días o más desde su fecha original.<br><b>'+num(result.backlog.missing.length)+'</b> sin fecha original para medir antigüedad.</p>'+link('pending','Revisar pendientes')+'</div>')+'</div>';
+    html+=panel('Comparativa macro por estudio','Mismo mes y filtros. Las barras muestran la composición de cada estudio; los totales permiten comparar volumen. Auditorías: IDs que tienen al menos una alerta.',
+      '<div class="committee-studies">'+(macro.studies.length?macro.studies.map(r=>'<article><div class="committee-study-title"><h4>'+esc(r.study)+'</h4><span>'+num(r.total)+' alertas · '+num(r.audits)+' auditorías</span></div>'+decisionBar(r)+'<small>Cobertura: <b>'+pct(r.coverage)+'</b> · Participación en las alertas del mes: <b>'+pct(r.total/c.total)+'</b></small></article>').join(''):'<p class="indicator-empty">Sin estudios con alertas en este mes.</p>')+'</div>'+link('comparison','Ver países, regiones y canales'));
+    const top=(items,countKey,total)=>items.slice(0,3).map((r,i)=>'<li><span class="committee-rank">'+(i+1)+'</span><div><strong>'+esc(r.name)+'</strong><small>'+num(r[countKey])+' alertas · '+pct(total?r[countKey]/total:null)+'</small></div></li>').join('') || '<li class="indicator-empty">Sin registros para este mes.</li>';
+    html+='<div class="committee-grid">'+panel('Qué variables concentran las alertas','Top 3 por volumen recibido. Una alerta no equivale a un error confirmado.','<ol class="committee-top">'+top(macro.variables,'total',c.total)+'</ol>'+link('findings','Explorar hallazgos'))+
+      panel('Por qué se descartaron','Top 3 motivos de No aplica; porcentaje sobre las descartadas. Los faltantes se identifican como Sin tipificación.','<ol class="committee-top">'+top(result.reasons,'count',c.rejects)+'</ol>'+link('findings','Ver motivos'))+'</div>';
+    html+=panel('Tiempo de respuesta del mes','Cohorte: auditorías cargadas en el mes seleccionado. Promedios, no plazos comprometidos. Se excluyen intervalos inválidos o sin fechas.',cards([
+      ['Auditoría → carga',time(result.timing.intake),'Una muestra por auditoría','blue','📤'],
+      ['Carga → decisión',time(result.timing.validation),'Una muestra por alerta decidida','purple','⏱️']
+    ],'timing')+link('timing','Ver detalle de tiempos'));
+    return html;
+  }
   function render(app, audits) {
     if (!M || !root.document) return;
     const executive = app.reportsSubtab === 'executive' || app.visualizationTab === 'committee';
@@ -144,7 +185,7 @@
     }).join('');
     const months=[...new Set(inputs.map(a=>a.month).filter(Boolean))].sort();
     if(!months.includes(state.month))state.month=months.at(-1) || '';
-    if(executive)controls+='<label>Mes del resumen<select class="form-control" data-indicator-filter="month">'+months.map(m=>'<option '+(m===state.month?'selected':'')+'>'+m+'</option>').join('')+'</select></label>';
+    const monthControl=executive?'<label>📅 Mes del comité<select class="form-control" data-indicator-filter="month" '+(!months.length?'disabled':'')+'>'+(months.length?months.map(m=>'<option '+(m===state.month?'selected':'')+'>'+m+'</option>').join(''):'<option>Sin meses disponibles</option>')+'</select></label>':'';
     const from=app.visualizationDateFrom || inputs.map(a=>a.periodDate).filter(Boolean).sort()[0] || '';
     const to=app.visualizationDateTo || asOf;
     const rangeResult=M.compute(inputs,{...state,asOf,from,to,month:executive?state.month:''});
@@ -156,10 +197,15 @@
     legacy.forEach(el=>el.classList.toggle('indicator-legacy-hidden',section!=='detail'));
     const scope=executive?'Mes de jornada: '+(state.month || 'Sin datos'):'Jornadas: '+(from || 'Sin fecha')+' a '+to;
     const jump=(id,text)=>'<button type="button" class="btn btn-outline btn-sm" data-story-section="'+id+'">'+text+' →</button>';
-    let html='<section class="glass-panel story-header"><div><span class="corporate-badge">LECTURA DE LA OPERACIÓN · BLOQUEANTES</span><h2>'+ (executive?'Resumen para el comité':'Panorama de la operación')+'</h2><p>De la carga de alertas a la decisión: primero el estado general, después las prioridades y sus causas.</p></div><div class="story-scope">'+esc(scope)+'<small>Estudios, país / región y fechas según los filtros del portal. No incluye Smart.</small></div></section>'+
+    let html='<section class="glass-panel story-header"><div><span class="corporate-badge">LECTURA DE LA OPERACIÓN · BLOQUEANTES</span><h2>'+ (executive?'Dashboard general del comité':'Panorama de la operación')+'</h2><p>'+(executive?'Los indicadores macro del mes en una sola vista. Selecciona el período y profundiza solo donde necesites.':'De la carga de alertas a la decisión: primero el estado general, después las prioridades y sus causas.')+'</p></div><div class="story-scope">'+monthControl+esc(scope)+'<small>Estudios, país / región y fechas según los filtros del portal. No incluye Smart.</small></div></section>'+
       '<nav class="story-nav" aria-label="Apartados de indicadores">'+journey.map(([id,icon,label,question],i)=>'<button type="button" data-story-section="'+id+'" aria-current="'+(id===section?'page':'false')+'"><span aria-hidden="true">'+icon+'</span><strong>'+(i+1)+'. '+label+'</strong><small>'+question+'</small></button>').join('')+'</nav>'+
       '<details class="glass-panel story-filters" '+(state.region!=='all'||state.channel!=='all'||state.subchannel!=='all'?'open':'')+'><summary>🔍 Afinar esta lectura'+(executive?' · Mes '+esc(state.month):'')+' · Región: '+esc(state.region==='all'?'Todas':state.region)+' · Canal: '+esc(state.channel==='all'?'Todos':state.channel)+' · Subcanal: '+esc(state.subchannel==='all'?'Todos':state.subchannel)+'</summary><div class="indicator-controls">'+controls+'</div><p>Estos filtros adicionales aplican a los seis apartados y su CSV; no cambian los reportes clásicos.</p></details>';
-    if(section==='summary') {
+    if(section==='summary' && executive) {
+      const monthStart=state.month+'-01';
+      const monthEnd=state.month?new Date(Date.UTC(Number(state.month.slice(0,4)),Number(state.month.slice(5,7)),0)).toISOString().slice(0,10):'';
+      html+=macroDashboard(result,state.month,!!monthEnd&&((app.visualizationDateFrom && app.visualizationDateFrom>monthStart) || to<monthEnd || asOf<monthEnd));
+    }
+    if(section==='summary' && !executive) {
       html+=panel('La operación en una mirada',esc(narrative.headline),cards([
         ['Auditorías en alcance',num(result.audits),'IDs únicos por estudio','blue','🏬'],
         ['Alertas recibidas',num(c.total),'Sub-KPIs que requieren revisión','purple','📥'],
@@ -210,6 +256,6 @@
       return [a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,a.study,a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,a.decision,a.reason];
     }),'Indicadores-bloqueantes-'+asOf+'.csv'));
   }
-  root.PortalIndicators={adapt,canonical,render,csv,download,esc,table,row,panel,story,decisionBar,journey,databricksAuditor};
+  root.PortalIndicators={adapt,canonical,render,csv,download,esc,table,row,panel,story,decisionBar,journey,databricksAuditor,macroData,macroDashboard};
   if(typeof module!=='undefined')module.exports=root.PortalIndicators;
 })(typeof globalThis!=='undefined'?globalThis:this);
