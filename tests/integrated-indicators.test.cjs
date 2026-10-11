@@ -5,6 +5,23 @@ const U=require('../js/indicator-dashboard.js');
 const M=global.PortalIndicatorMetrics;
 const sample=(id,decisions,extra={})=>({id:String(id),study:'Moderno',country:'Panamá',periodDate:'2026-10-08',auditDate:'2026-10-08',auditor:'campo.a',kpis:decisions.map((decision,i)=>({name:'K'+i,needsReview:true,decision})),...extra});
 const compute=(rows,filters={})=>M.compute(M.normalizeAudits(rows),{from:'2026-08-01',to:'2026-10-08',asOf:'2026-10-08',...filters});
+
+test('historical benchmarks use KO countries and Chile/Lindley regions without changing country fields',()=>{
+ const r=compute([
+   sample(1,['aplica'],{periodDate:'2026-09-01',study:'Chile',region:'ARICA'}),
+   sample(2,['no_aplica'],{periodDate:'2026-09-01',study:'Chile',region:'TALCA'}),
+   sample(3,['pendiente'],{periodDate:'2026-09-01',study:'Lindley',region:'REGION LIMA'}),
+   sample(4,['aplica'],{periodDate:'2026-09-01',country:'Colombia'}),
+   sample(5,['aplica'],{periodDate:'2026-09-01',country:'Ecuador'}),
+ ]);
+ assert.equal(r.counts.total,5);
+ assert.deepEqual(r.benchmark.map(a=>a.geography).sort(),['ARICA','Colombia','Ecuador','REGION LIMA','TALCA']);
+ assert.equal(r.alerts.find(a=>a.id==='3').country,'Perú');
+ assert.equal(r.alerts.find(a=>a.id==='1').country,'Chile');
+ const [adapted]=U.adapt([{id:'9',estudio:'Lindley',fecha:'2026-08-01',databricksGeography:{country:'Peru',region:'REGION SUR'},kpis:[]}]);
+ assert.equal(adapted.region,'REGION SUR');
+ assert.equal(adapted.geography,'REGION SUR');
+});
 test('23 definitions stay explicit: 13 available and 10 not calculated',()=>{
  const catalog=require('../js/indicator-catalog.js');
  assert.equal(catalog.length,23);assert.equal(new Set(catalog.map(c=>c.id)).size,23);

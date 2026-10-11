@@ -54,10 +54,10 @@
       return {id:a.id, study:a.estudio, periodDate,
         auditDate:field(a,['fechaAuditoriaOriginal','auditDate','Fecha_del_audito','FECHA_AUDITORIA','FECHA_AUDITO','FECHA_AU']) || fallback(['audit_date']),
         alertUploadedAt:a._originalUploadedAt || a._batchUploadedAt || a._createdAt,
-        country:countryFor ? countryFor(a) : field(a,['pais','country']),
+        country:countryFor ? countryFor(a) : field(a.databricksGeography || {},['country']) || field(a,['pais','country']),
         auditor:field(a,['usuario','auditor','nombre_usuario']) || fallback(['auditor']),
         pdv:field(a,['idPDV','pdv']) || fallback(['pdv_id']),
-        region:field(a,['region']) || fallback(['region']), channel:field(a,['canal','channel']) || fallback(['channel']),
+        region:field(a.databricksGeography || {},['region']) || field(a,['region']) || fallback(['region']), channel:field(a,['canal','channel']) || fallback(['channel']),
         subchannel:field(a,['subcanal','subchannel']) || fallback(['subchannel']), kpis};
     }));
   }
@@ -98,8 +98,7 @@
     if (module === 'smart') {target.innerHTML=''; return;}
     const state = app.indicatorFilters ||= {region:'all',channel:'all',subchannel:'all',month:''};
     const inputs = adapt(audits, [...(app.adminExternalAnalysis?.alertRecords || []),...(app.benchmarkCountryRows || [])],a=> {
-      if (!app.isCountryReportPeriod(a)) return 'Sin país identificado';
-      return app.getBenchmarkCountry(a);
+      return app.getReportCountry(a);
     });
     const asOf = new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Bogota',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
     const dimensions = [['region','Región','Sin región'],['channel','Canal','Sin canal'],['subchannel','Subcanal','Sin subcanal']];
@@ -118,7 +117,7 @@
       '<div class="indicator-controls">'+controls+'<button class="btn btn-success btn-sm" data-indicator-download><span aria-hidden="true">📥</span> Descargar detalle (CSV)</button></div>'+cards([
         ['Alertas recibidas',num(c.total),'','blue','📥'],['Cobertura de revisión',pct(c.coverage),num(c.applies+c.rejects)+' decididas','purple','🔎',c.coverage],
         ['Aplicación',pct(c.application),num(c.applies)+' Aplica','green','✅',c.application],['Rechazo',pct(c.rejection),num(c.rejects)+' No aplica','magenta','✋',c.rejection],['Alertas pendientes',num(c.pending),'Por revisar','orange','⏳']
-      ])+'<p class="panel-desc">Aplica + No aplica + pendientes = total de alertas. No aplica no implica una edición. País no desglosado para jornadas anteriores a octubre de 2026.</p>');
+      ])+'<p class="panel-desc">Aplica + No aplica + pendientes = total de alertas. No aplica no implica una edición. Todo el histórico: país en KO y región en Chile / Lindley.</p>');
     if(!executive) {
       const labels={recent:['0–6 días','blue','📅'],week:['7–14 días','orange','⏳'],old:['15 días o más','magenta','🚩'],missing:['Sin fecha original','purple','❔'],future:['Fecha futura','cyan','🗓️']};
       html+=panel('Pendientes por antigüedad','Días calendario desde la fecha original de auditoría, no desde la jornada de carga. Pulsa un grupo para consultar sus IDs.',
@@ -127,8 +126,8 @@
       html+=panel('Auditores con alertas recurrentes','Últimas ocho semanas calendario dentro del filtro, desde '+result.startWeek+'. Recurrencia no es productividad ni error confirmado.',table(['Auditor','Estudio','Semanas con alertas','Alertas'],result.recurrence.slice(0,20).map(r=>row([esc(r.auditor),esc(r.study),num(r.weeks)+' / 8',num(r.total)]))));
       html+=panel('Tiempo entre cada paso','Bases separadas: una muestra por auditoría para auditoría → carga; una por alerta decidida para carga → decisión. Horas solo con timestamps completos.',cards([['Auditoría → carga',time(result.timing.intake),'','blue','📤'],['Carga → decisión',time(result.timing.validation),'','purple','⏱️']],'timing'));
     } else {
-      html+=panel('Tendencia mensual y falsos positivos','No aplica / total de alertas, junto a cobertura. La variación de volumen solo compara dos meses completos consecutivos.',table(['Mes','Estudio','País','Alertas','Cobertura','Rechazo','Variación de alertas vs. mes anterior'],result.monthly.map(r=>row([r.month,esc(r.study),esc(r.country),num(r.total),pct(r.coverage),pct(r.rejection),r.change==null?'No comparable':pct(r.change)]))));
-      html+=panel('Benchmark del mes '+esc(state.month),'Desglose por estudio y país; incluye pendientes para interpretar las tasas.',table(['Estudio','País','Alertas','Aplica','No aplica','Pendientes','Cobertura','Rechazo'],result.benchmark.map(r=>row([esc(r.study),esc(r.country),num(r.total),num(r.applies),num(r.rejects),num(r.pending),pct(r.coverage),pct(r.rejection)]))));
+      html+=panel('Tendencia mensual y falsos positivos','No aplica / total de alertas, junto a cobertura. La variación de volumen solo compara dos meses completos consecutivos.',table(['Mes','Estudio','País / región','Alertas','Cobertura','Rechazo','Variación de alertas vs. mes anterior'],result.monthly.map(r=>row([r.month,esc(r.study),esc(r.geography),num(r.total),pct(r.coverage),pct(r.rejection),r.change==null?'No comparable':pct(r.change)]))));
+      html+=panel('Benchmark del mes '+esc(state.month),'País para KO; región para Chile y Lindley. Incluye pendientes para interpretar las tasas.',table(['Estudio','País / región','Alertas','Aplica','No aplica','Pendientes','Cobertura','Rechazo'],result.benchmark.map(r=>row([esc(r.study),esc(r.geography),num(r.total),num(r.applies),num(r.rejects),num(r.pending),pct(r.coverage),pct(r.rejection)]))));
       html+=panel('Top alertas con mayor tasa de rechazo','Volumen y cobertura acompañan cada tasa.',table(['Variable','Alertas','No aplica','Rechazo','Cobertura','Pendientes'],result.rejectedTypes.slice(0,20).map(r=>row([esc(r.name),num(r.total),num(r.rejects),pct(r.rejection),pct(r.coverage),num(r.pending)]))));
       html+=panel('Evolución de tiempos por mes de carga','Fechas sin hora se miden en días calendario; no se estima una hora inexistente.',table(['Mes de carga','Auditoría → carga','Carga → decisión'],result.timing.monthly.map(r=>row([r.month,time(r.intake),time(r.validation)]))));
     }

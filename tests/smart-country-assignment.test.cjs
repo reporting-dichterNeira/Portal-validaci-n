@@ -68,11 +68,11 @@ test('Perú para Lindley y Chile para Chile sobreviven guardado y lectura; KO pr
   }
 });
 
-test('métricas toman país real desde octubre y mantienen oculto el histórico anterior', () => {
+test('métricas conservan el país real en todo el histórico', () => {
   const app=Object.create(App.prototype);
   for (const [estudio,pais] of [['Lindley','Perú'],['Chile','Chile'],['Moderno','Panamá']]) {
     assert.equal(app.getReportCountry({...audit(1,'Panamá'),estudio,_batchOperationDate:'2026-10-05'}),pais);
-    assert.equal(app.getReportCountry({...audit(1,'Panamá'),estudio,_batchOperationDate:'2026-09-30'}),'');
+    assert.equal(app.getReportCountry({...audit(1,'Panamá'),estudio,_batchOperationDate:'2026-09-30'}),pais);
   }
   app.currentModule='blocking'; app.currentProject='Moderno';
   assert.equal(app.getDistributionOptions().restrictByCountry,false);

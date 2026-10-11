@@ -63,6 +63,15 @@ function loadAppClass(document = { getElementById: () => null }) {
   return context.ValidaFlowApp;
 }
 
+test('CSV y Excel incluyen país recuperado y región sin sobreescribir la base diaria', () => {
+  const {ExcelParser}=loadExcelParser();
+  const audit={id:'1',pais:'Perú',kpis:[],databricksGeography:{country:'Peru',region:'REGION LIMA'}};
+  const [row]=ExcelParser.buildConsolidatedExportRows([audit],[]);
+  assert.equal(row['País'],'Perú');
+  assert.equal(row['Región'],'REGION LIMA');
+  assert.equal(audit.region,undefined);
+});
+
 test('el consolidado grande se genera como un único CSV con las columnas de auditoría', () => {
   const { ExcelParser, downloads, blobs } = loadExcelParser();
   const result = ExcelParser.exportResultsToCsv([
@@ -158,7 +167,7 @@ test('el rango de fecha filtra el histórico operativo y conserva los meses que 
   assert.equal(app.isVisualizationMonthInRange('2026-08-01'), false);
 });
 
-test('el filtro de país solo incluye jornadas desde octubre y se aplica al consolidado', () => {
+test('el filtro de país incluye todo el histórico y se aplica al consolidado', () => {
   const ValidaFlowApp = loadAppClass();
   const app = Object.create(ValidaFlowApp.prototype);
   Object.assign(app, {
@@ -173,10 +182,10 @@ test('el filtro de país solo incluye jornadas desde octubre y se aplica al cons
       { id: '6', estudio: 'Tradicional', pais: 'Perú', fecha: '2026-09-30', _batchOperationDate: '2026-10-02' }
     ], getAuditOperationDate: audit => audit.fecha
   });
-  assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['1', '6']);
+  assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['1', '3', '6']);
   app.selectedReportCountry = '__missing__';
   assert.deepEqual(app.getFilteredAuditsForReports().map(audit => audit.id), ['5']);
-  assert.equal(app.getReportCountry({ pais: 'Perú', fecha: '2026-09-30' }), '');
+  assert.equal(app.getReportCountry({ pais: 'Perú', fecha: '2026-09-30' }), 'Perú');
   assert.equal(app.getReportCountry({ pais: 'Perú', fecha: '2026-09-30', _batchOperationDate: '2026-10-01' }), 'Perú');
 });
 
@@ -304,7 +313,7 @@ test('el benchmark KO despliega países con métricas que suman el total del est
   assert.match(tbody.innerHTML, /data-benchmark-parent="Tradicional"[^>]*hidden/);
 });
 
-test('el benchmark histórico muestra país recuperable sin cambiar el corte de otras vistas', () => {
+test('el benchmark y las otras vistas muestran el país recuperable histórico', () => {
   const tbody = { innerHTML: '' };
   const ValidaFlowApp = loadAppClass({ getElementById: id => id === 'exec-benchmark-tbody' ? tbody : null });
   const app = Object.create(ValidaFlowApp.prototype);
@@ -312,10 +321,10 @@ test('el benchmark histórico muestra país recuperable sin cambiar el corte de 
   app.renderExecutiveMetrics([{ estudio: 'Tradicional', pais: 'Costa Rica', fecha: '2026-09-30', kpis: [] }]);
   assert.match(tbody.innerHTML, /KO Tradicional CAM|Tradicional/);
   assert.match(tbody.innerHTML, /benchmark-country-row[\s\S]*?Costa Rica/);
-  assert.equal(app.getReportCountry({ estudio: 'Tradicional', pais: 'Costa Rica', fecha: '2026-09-30' }), '');
+  assert.equal(app.getReportCountry({ estudio: 'Tradicional', pais: 'Costa Rica', fecha: '2026-09-30' }), 'Costa Rica');
 });
 
-test('el filtro de país se oculta para septiembre y aparece al incluir octubre', () => {
+test('el filtro de ubicación incluye septiembre y octubre', () => {
   const row = { hidden: false };
   const select = { replaceChildren(...options) { this.options = options; }, value: 'all' };
   const context = { textContent: '' };
@@ -328,8 +337,8 @@ test('el filtro de país se oculta para septiembre y aparece al incluir octubre'
   app.selectedReportCountry = 'all';
   app.getStudyAndDateFilteredAuditsForReports = () => [{ pais: 'Costa Rica', fecha: '2026-09-30' }];
   app.populateReportCountryFilter();
-  assert.equal(row.hidden, true);
-  assert.equal(select.options.length, 1);
+  assert.equal(row.hidden, false);
+  assert.equal(select.options.length, 2);
   app.getStudyAndDateFilteredAuditsForReports = () => [{ pais: 'Costa Rica', fecha: '2026-10-01' }];
   app.populateReportCountryFilter();
   assert.equal(row.hidden, false);

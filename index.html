@@ -1460,11 +1460,11 @@
             <!-- Chips de filtro generados dinámicamente -->
           </div>
           <div class="report-country-filter-row" id="report-country-filter-row" hidden>
-            <label for="report-country-filter">País (desde octubre de 2026)</label>
-            <select id="report-country-filter" aria-label="Filtrar métricas y descargas por país">
-              <option value="all">Todos los países</option>
+            <label for="report-country-filter">🌎 País / región · Todo el histórico</label>
+            <select id="report-country-filter" aria-label="Filtrar métricas y descargas por país o región">
+              <option value="all">Todos los países / regiones</option>
             </select>
-            <span id="report-country-context" class="text-muted">El desglose por país comienza con las jornadas de octubre de 2026.</span>
+            <span id="report-country-context" class="text-muted">País para KO Tradicional y KO Moderno; región para Chile y Lindley.</span>
           </div>
         </div>
 
@@ -1850,15 +1850,15 @@
           <div class="glass-panel" style="margin-top:1.5rem;">
             <div class="panel-header">
               <div>
-                <h3><span class="header-icon">🌐</span> Benchmark Comercial por Estudio y País</h3>
-                <p class="panel-desc">KO Tradicional y KO Moderno desglosados por país real. Primero se usa la base diaria; si falta el país, se cruza el ID de auditoría con el Export general de Databricks. Los históricos recuperables también se incluyen aquí.</p>
+                <h3><span class="header-icon">🌐</span> Benchmark Comercial por Estudio, País y Región</h3>
+                <p class="panel-desc">Todo el histórico: KO Tradicional y KO Moderno por país; Chile y Lindley por región. Datos recuperados de Databricks por ID de auditoría y estudio, sin modificar las validaciones.</p>
               </div>
             </div>
             <div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Comparativa por estudio; desplaza horizontalmente para ver todas las columnas">
               <table class="data-table benchmark-table">
                 <thead>
                   <tr>
-                    <th>Estudio / País</th>
+                    <th>Estudio / País / Región</th>
                     <th>Auditorías</th>
                     <th>Total Alertas</th>
                     <th>Confirmadas<span class="benchmark-heading-detail">Aplica</span></th>
@@ -2028,7 +2028,7 @@
   <!-- MODAL: DETALLE HISTÓRICO DE KPIS BLOQUEANTES              -->
   <div class="modal-overlay hidden" id="modal-blocking-kpis" role="dialog" aria-modal="true" aria-labelledby="blocking-kpi-title">
     <div class="modal-card blocking-kpi-modal-card">
-      <div class="modal-header"><div><h3 id="blocking-kpi-title">Auditorías y notas por KPI · Bloqueantes</h3><p class="form-help">Respeta los filtros de estudio, país y fecha seleccionados en Métricas.</p></div><button class="btn-close-modal" id="btn-close-blocking-kpis" type="button" aria-label="Cerrar detalle de KPIs">×</button></div>
+      <div class="modal-header"><div><h3 id="blocking-kpi-title">Auditorías y notas por KPI · Bloqueantes</h3><p class="form-help">Respeta los filtros de estudio, país / región y fecha seleccionados en Métricas.</p></div><button class="btn-close-modal" id="btn-close-blocking-kpis" type="button" aria-label="Cerrar detalle de KPIs">×</button></div>
       <div class="modal-body">
         <p class="modal-desc">Una fila por alerta de KPI y auditoría del histórico. Las notas corresponden a las olas anterior y actual del export de Bloqueantes. Diferencia en puntos = actual − anterior; la variación porcentual se muestra tal como viene en el export. Una nota ausente se muestra como —.</p>
         <div class="blocking-kpi-filters">
@@ -2925,10 +2925,10 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script src="js/indicator-metrics.js?v=1.0"></script>
+  <script src="js/indicator-metrics.js?v=1.1"></script>
   <script src="js/indicator-catalog.js?v=1.0"></script>
-  <script src="js/indicator-dashboard.js?v=1.1"></script>
+  <script src="js/indicator-dashboard.js?v=1.2"></script>
   <script src="js/pending-workspace.js?v=1.0"></script>
-  <script type="module" src="js/app.js?v=125.0"></script>
+  <script type="module" src="js/app.js?v=126.0"></script>
 </body>
 </html>

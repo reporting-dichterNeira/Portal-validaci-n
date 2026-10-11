@@ -49,6 +49,7 @@ function mapAudit(row) {
   const operationDate = row.original_operation_date || row.batch_operation_date || batch.operation_date || null;
   return {
     ...payload,
+    databricksGeography: row.report_geography || payload.databricksGeography || null,
     pais: row.study === 'Lindley' ? 'Perú' : row.study === 'Chile' ? 'Chile' : (payload.pais || payload.country || ''),
     id: row.external_id,
     estudio: row.study,
@@ -96,6 +97,7 @@ function auditToRow(audit, module, scope, batchId = null) {
   delete payload._rowId;
   delete payload._batchId;
   delete payload._updatedAt;
+  delete payload.databricksGeography;
 
   return {
     module,
@@ -717,7 +719,7 @@ export class SupabaseBackend {
         .from('audits')
         .select(`
           id, batch_id, module, external_id, study, study_id, country_id,
-          assigned_validator_id, status, audit_date, validation_date, payload,
+          assigned_validator_id, status, audit_date, validation_date, payload, report_geography,
           validation_results, started_at, completed_at, duration_seconds,
           created_at, updated_at,
           pending_resolution, original_operation_date, original_source_filename, original_uploaded_at,

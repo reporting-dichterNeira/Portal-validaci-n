@@ -19,6 +19,35 @@ const app = () => Object.assign(Object.create(context.App.prototype), {
 });
 const audit = (id, pais = '', estudio = 'Tradicional') => ({ id, pais, estudio, kpis: [], fecha: '2026-09-01' });
 
+test('metadatos verificados de Databricks recuperan el histórico sin cambiar el país operativo', () => {
+  const a=app(), historical={...audit('3','Nicaragua'),databricksGeography:{country:'Guatemala ABVO',region:''}};
+  assert.equal(a.getReportCountry(historical),'Guatemala');
+  assert.equal(historical.pais,'Nicaragua');
+  const chile={...audit('4','Chile','Chile'),databricksGeography:{country:'Chile',region:'VIÑA DEL MAR'}};
+  assert.equal(a.getReportGeography(chile),'VIÑA DEL MAR');
+  assert.equal(a.getReportCountry(chile),'Chile');
+  assert.equal(a.getReportGeography({...audit('5','Perú','Lindley'),databricksGeography:{region:'REGION SUR'}}),'REGION SUR');
+});
+
+test('backend conserva el enriquecimiento de reportes separado del país usado para repartir Smart', () => {
+  const a=context.mapAudit({external_id:'3',study:'Tradicional',module:'smart',payload:{pais:'Nicaragua'},
+    report_geography:{country:'Panamá',region:''},updated_at:'2026-09-01'});
+  assert.equal(a.databricksGeography.country,'Panamá');
+  assert.equal(a.pais,'Nicaragua');
+  assert.equal(a._updatedAt,'2026-09-01');
+});
+
+test('regiones se recuperan por ID y estudio, con cruces ambiguos explícitamente vacíos', () => {
+  const a=app();
+  a.benchmarkCountryRows=[{audit_external_id:'1',country:'Chile',study:'ko_trad_ch_202609',region:'ARICA'},
+    {audit_external_id:'2',country:'Peru',study:'lindley_202609',region:'REGION NORTE'}];
+  assert.equal(a.getReportGeography(audit('1','','Chile')),'ARICA');
+  assert.equal(a.getReportGeography(audit('1','','Lindley')),'');
+  assert.equal(a.getReportGeography(audit('2','','Lindley')),'REGION NORTE');
+  a.benchmarkCountryRows=[...a.benchmarkCountryRows,{audit_external_id:'1',country:'Chile',study:'ko_trad_ch_202609',region:'TALCA'}];
+  assert.equal(a.getReportGeography(audit('1','','Chile')),'');
+});
+
 test('país diario real tiene prioridad y normaliza Guatemala ABVO/Embocen a Guatemala', () => {
   const a = app();
   a.adminExternalAnalysis.alertRecords = [{ audit_external_id: '123', country: 'Panamá' }];
@@ -52,7 +81,7 @@ test('duplicados iguales son un país; cruce ambiguo no adivina ni usa un histó
   assert.equal(a.getBenchmarkCountry({ ...audit('2'), benchmark_country: 'Panamá' }), 'Panamá');
 });
 
-test('históricos recuperados suman todos los totales KO y Chile/Lindley no se desglosan', () => {
+test('históricos recuperados suman todos los totales KO y Chile/Lindley se desglosan por región', () => {
   const a = app();
   const tbody = { innerHTML: '' };
   context.document.getElementById = id => id === 'exec-benchmark-tbody' ? tbody : null;
@@ -67,7 +96,9 @@ test('históricos recuperados suman todos los totales KO y Chile/Lindley no se d
   const numbers = rows.map(row => [...row[1].matchAll(/<strong[^>]*>(\d+)<\/strong>/g)].map(match => +match[1]));
   assert.deepEqual(numbers.reduce((sum, row) => sum.map((n, i) => n + row[i]), [0, 0, 0]), [3, 1, 1]);
   assert.match(tbody.innerHTML, /data-study="Tradicional" aria-expanded="true"/);
-  assert.doesNotMatch(tbody.innerHTML, /data-benchmark-parent="(?:Chile|Lindley)"/);
+  assert.match(tbody.innerHTML, /data-benchmark-parent="Chile"/);
+  assert.match(tbody.innerHTML, /data-benchmark-parent="Lindley"/);
+  assert.match(tbody.innerHTML, /Sin región identificada/);
   context.document.getElementById = () => null;
 });
 
@@ -107,18 +138,19 @@ test('consulta contexto del export, pagina sin perder duplicados y rechaza IDs n
   assert.deepEqual(calls[0].ids, ['1']);
 });
 
-test('vista previa e informe PDF incluyen el mismo país recuperado para KO, no desglosan Lindley', () => {
+test('vista previa y PDF incluyen país KO y región Lindley sin confundir país con región', () => {
   const a = app();
   const dossier = { innerHTML: '' }, print = { innerHTML: '' };
   context.document.getElementById = id => ({ 'modal-commercial-report-preview': {},
     'dossier-benchmark-tbody': dossier, 'print-benchmark-tbody': print })[id] || null;
   Object.assign(a, { selectedStudies: ['ALL'], selectedReportCountry: 'all',
     renderUniverseDecisionBreakdown() {}, getFilteredAuditsForReports: () => [
-      { ...audit('1', '1097'), benchmark_country: 'Costa Rica' }, audit('2', 'Perú', 'Lindley')
+      { ...audit('1', '1097'), benchmark_country: 'Costa Rica' }, {...audit('2', 'Perú', 'Lindley'), region:'REGION LIMA'}
     ] });
   a.openCommercialReportPreview(false);
   assert.equal(dossier.innerHTML, print.innerHTML);
   assert.match(print.innerHTML, /↳ Costa Rica/);
   assert.doesNotMatch(print.innerHTML, /↳ Perú/);
+  assert.match(print.innerHTML, /↳ REGION LIMA/);
   context.document.getElementById = () => null;
 });

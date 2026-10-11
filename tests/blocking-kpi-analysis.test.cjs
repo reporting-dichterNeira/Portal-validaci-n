@@ -71,8 +71,7 @@ test('usa el histórico Bloqueantes completo y respeta filtros de estudio, país
   instance.getStudyForAudit = audit => audit.estudio;
   instance.getAuditOperationDate = audit => audit.fecha;
   instance.isWithinVisualizationDateRange = date => date === '2026-10-01';
-  instance.isCountryReportPeriod = () => true;
-  instance.getReportCountry = audit => audit.pais;
+  instance.getReportGeography = audit => audit.estudio === 'Chile' ? audit.region || '' : audit.pais;
   instance.refreshBlockingKpiAnalysisRows();
   assert.equal(instance.blockingKpiRows.length, 3);
   assert.ok(instance.blockingKpiRows.every(row => row.auditId === '101'));

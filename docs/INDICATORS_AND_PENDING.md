@@ -10,7 +10,17 @@ Los filtros existentes de estudio, país y fecha limitan el alcance. Los nuevos 
 
 La base diaria tiene prioridad. El Export general enriquece por ID numérico de auditoría; cruces ambiguos no eligen la primera fila. Databricks lee las columnas reales `region` y `subcanal_modelo` (alias `subcanal`), y el receptor guarda `region` y `subchannel`. Las consultas siguen usando únicamente Reporting Cluster, el mes vigente y el cierre pendiente del mes anterior. No se republica el histórico cerrado para rellenar nuevas columnas.
 
-KO usa el país real desde la jornada de octubre de 2026; antes se agrupa sin país identificado. Chile y Lindley conservan Chile y Perú. El CSV de indicadores contiene las alertas del alcance con fechas, dimensiones, decisiones y tipificación; cada pulsación descarga un archivo.
+Todo el histórico admite geografía, sin corte de octubre: KO Tradicional y KO Moderno se filtran y desglosan por país; Chile y Lindley por la columna real `region` de Databricks. El país sigue siendo Chile y Perú en las columnas de país, no se sustituye por una región. Los benchmarks mensuales, tendencias y PDF usan la misma dimensión geográfica por estudio. Faltantes o cruces ambiguos permanecen explícitos. El CSV contiene país y región en columnas separadas.
+
+### Recuperación histórica de geografía
+
+Se cruzaron los 10.239 IDs únicos existentes con `ID_de_audito` en `storeview.slv_sv_ceres_ag_export`, exclusivamente en Reporting Cluster. Todos coincidieron y se verificó también el estudio: 3.005 registros Tradicional, 355 Moderno, 2.649 Chile y 5.234 Lindley (11.243 filas, incluidas versiones históricas). KO quedó con país y Chile/Lindley con región en todos esos registros.
+
+La metadata verificada queda en `audits.report_geography`, separada del país operativo de Smart, para no reasignar auditorías ni alterar restricciones de validadores retroactivamente. Tiene prioridad solo en reportes y exportaciones. La lectura conserva el RLS existente de auditorías; no se añadieron permisos públicos. Las nuevas cargas continúan usando su base diaria y el contexto del Export general diario de Databricks.
+
+El SQL `supabase/sql/historical-report-geography.sql` conserva un respaldo privado de la metadata anterior y un hash de todos los demás campos. La comprobación confirmó que las 11.243 filas no cambiaron fuera de esa metadata. No se reabrieron exportaciones mensuales cerradas, ni se modificaron decisiones, asignaciones o fechas. La preparación por ID está en `private.report_geography_source_20261011` y el respaldo en `private.report_geography_backup_20261011`, ambos con RLS y sin acceso de clientes.
+
+Para restaurar solo el enriquecimiento, un administrador puede devolver `report_geography` a `previous_geography` por `audit_id` desde ese respaldo, preservando el sello de modificación durante la transacción como en el SQL de aplicación. No restaurar filas completas sobre validaciones nuevas. El SQL de aplicación es de una sola recuperación y rechaza diferencias en los demás campos; no debe repetirse después de nuevos avances operativos.
 
 ## Pendientes de jornadas anteriores
 

@@ -47,7 +47,7 @@
   function normalizeCountry(value, study) {
     if (study === 'Lindley') return 'Perú';
     if (study === 'Chile') return 'Chile';
-    const countries = { 'costa rica':'Costa Rica', 'el salvador':'El Salvador', guatemala:'Guatemala', honduras:'Honduras', nicaragua:'Nicaragua', panama:'Panamá', 'republica dominicana':'República Dominicana', peru:'Perú', chile:'Chile' };
+    const countries = { 'costa rica':'Costa Rica', 'el salvador':'El Salvador', guatemala:'Guatemala', honduras:'Honduras', nicaragua:'Nicaragua', panama:'Panamá', 'republica dominicana':'República Dominicana', peru:'Perú', chile:'Chile', colombia:'Colombia', ecuador:'Ecuador', mexico:'México', argentina:'Argentina', bolivia:'Bolivia', brasil:'Brasil', brazil:'Brasil', uruguay:'Uruguay', paraguay:'Paraguay', venezuela:'Venezuela', belice:'Belice', belize:'Belice', 'estados unidos':'Estados Unidos', canada:'Canadá', haiti:'Haití', jamaica:'Jamaica' };
     const s = norm(value);
     if (/guatemala/.test(s)) return 'Guatemala';
     return countries[s] || 'Sin país identificado';
@@ -121,7 +121,9 @@
         validatedAt:text(k.validatedAt || row.validationResults?.[k.name]?.supervisorResolvedAt || row.validationResults?.[k.name]?.decisionAt),
         validatedEvent:eventStamp(k.validatedAt || row.validationResults?.[k.name]?.supervisorResolvedAt || row.validationResults?.[k.name]?.decisionAt)
       }));
-      records.set(key, { id: text(row.id), study, country, pdv: text(row.pdv || row.idPDV),
+      records.set(key, { id: text(row.id), study, country,
+        geography: ['Chile','Lindley'].includes(study) ? text(row.region) || 'Sin región identificada' : country,
+        pdv: text(row.pdv || row.idPDV),
         auditor: text(row.auditor || row.usuario), region:text(row.region), channel:text(row.channel || row.canal),
         subchannel:text(row.subchannel || row.subcanal), periodDate, auditDate, auditEvent,
         alertUploadedAt:text(row.alertUploadedAt || row.alertUploadedDate || row._batchUploadedAt), alertUploadedEvent, month, kpis });
@@ -212,7 +214,7 @@
       && (subchannel==='all' || dimension(a.subchannel,'subcanal')===subchannel));
     const undated = scoped.filter(a => !a.periodDate).length;
     const selected = scoped.filter(a => a.periodDate && (!from || a.periodDate >= from) && (!to || a.periodDate <= to) && a.periodDate <= asOf);
-    const alerts = selected.flatMap(a => a.kpis.map(k => ({ ...k, id: a.id, study: a.study, country: a.country, auditor: a.auditor,
+    const alerts = selected.flatMap(a => a.kpis.map(k => ({ ...k, id: a.id, study: a.study, country: a.country, geography:a.geography, auditor: a.auditor,
       region:dimension(a.region,'región'),channel:dimension(a.channel,'canal'),subchannel:dimension(a.subchannel,'subcanal'), periodDate: a.periodDate, month: a.month })));
     const counts = totals(alerts);
     const backlog = { recent: [], week: [], old: [], missing: [], future: [] };
@@ -234,14 +236,14 @@
     alerts.filter(a => a.decision === 'no_aplica').forEach(a => { const name = a.reason || 'Sin tipificación'; reasonCounts.set(name, (reasonCounts.get(name) || 0) + 1); });
     const reasons = [...reasonCounts].map(([name, count]) => ({ name, count, share: ratio(count, counts.rejects) })).sort((a,b) => b.count - a.count);
     const monthIsComplete = m => { const bounds = monthBounds(m); return !!from && from <= bounds.start && !!to && to >= bounds.end && asOf >= bounds.end; };
-    const monthly = groups(alerts, ['month','study','country']).sort((a,b) => a.month.localeCompare(b.month) || a.study.localeCompare(b.study) || a.country.localeCompare(b.country));
+    const monthly = groups(alerts, ['month','study','geography']).sort((a,b) => a.month.localeCompare(b.month) || a.study.localeCompare(b.study) || a.geography.localeCompare(b.geography));
     for (const row of monthly) {
-      const prev = monthly.find(p => p.month === previousMonth(row.month) && p.study === row.study && p.country === row.country);
+      const prev = monthly.find(p => p.month === previousMonth(row.month) && p.study === row.study && p.geography === row.geography);
       row.partial = !monthIsComplete(row.month);
       row.change = prev && !row.partial && !prev.partial && monthIsComplete(prev.month) ? ratio(row.total - prev.total, prev.total) : null;
     }
     const monthlyAlerts = alerts.filter(a => !month || a.month === month);
-    const benchmark = groups(monthlyAlerts, ['study','country']).sort((a,b) => a.study.localeCompare(b.study) || a.country.localeCompare(b.country));
+    const benchmark = groups(monthlyAlerts, ['study','geography']).sort((a,b) => a.study.localeCompare(b.study) || a.geography.localeCompare(b.geography));
     const rejectedTypes = groups(monthlyAlerts, ['name']).sort((a,b) => (b.rejection || 0) - (a.rejection || 0) || b.total - a.total);
     const dimensionKeys=['study','country','region','channel','subchannel'];
     const workload=groups(alerts,dimensionKeys).sort((a,b)=>b.pending-a.pending || b.total-a.total);

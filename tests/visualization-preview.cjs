@@ -5,6 +5,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const previewRole = process.env.PREVIEW_ROLE === 'supervisor' ? 'supervisor' : 'visualizer';
 const previewPort = Number(process.env.PREVIEW_PORT || 8772);
+const geographyPreview = process.env.PREVIEW_GEOGRAPHY === '1';
 const backend = `
 const role=${JSON.stringify(previewRole)};
 const scope={id:'fixture-assignment',module:'blocking',study:{id:'fixture-study',name:'Moderno'},country:{id:'fixture-country',name:'CAM'}};
@@ -16,6 +17,13 @@ const audits = Array.from({length:2001}, (_, i) => ({ id:String(i+1), _rowId:i+1
  validationStatus:'completada', durationSeconds:10, completedAt:'2026-10-08T10:00:00Z',
  fechaAuditoriaOriginal:'2026-10-07',_batchUploadedAt:'2026-10-08T09:00:00Z',region:i%2?'Centro':'Norte',subcanal:'Supermercado',canal:'MODERNO',usuario:'Auditor de prueba',
  kpis:[{name:'KPI de prueba',needsReview:true}], validationResults:{'KPI de prueba':{status:i%2?'aplica':'no_aplica',tipificacion:'Prueba',decisionAt:'2026-10-08T10:00:00Z'}} }));
+if (${geographyPreview}) audits.forEach((a,i)=>{
+ a.estudio=['Chile','Lindley','Tradicional','Moderno'][i%4];
+ a.fecha=a._batchOperationDate='2026-09-15';
+ a.region=''; a.pais='';
+ a.databricksGeography={country:a.estudio==='Chile'?'Chile':a.estudio==='Lindley'?'Peru':i%8<4?'Costa Rica':'Panamá',
+ region:a.estudio==='Chile'?(i%8<4?'ARICA':'VIÑA DEL MAR'):a.estudio==='Lindley'?(i%8<4?'REGION LIMA':'REGION SUR'):''};
+});
 const imports = ['alerts','editions'].map(dataset_type=>({dataset_type,period_month:'2026-10-01',source_filename:'Prueba aislada.csv',row_count:2001,imported_at:'2026-10-08'}));
 let pending=[3001,3002].map((id,i)=>({id,external_id:String(id),source_filename:'Base anterior de prueba.csv',operation_date:'2026-10-08',
  status:'pendiente',validator_name:'Responsable anterior',payload:{pais:'Panamá',kpis:[{name:'A',needsReview:true},{name:'B',needsReview:true}]},

@@ -78,6 +78,12 @@ export class ExcelParser {
     return { 'Comentario general Smart': audit.validationResults?.__audit__?.comentarioGeneral || '' };
   }
 
+  static getGeographyExportFields(audit) {
+    const raw = audit.databricksGeography?.country || audit.pais || audit.country || '';
+    const country = /guatemala/i.test(raw) ? 'Guatemala' : this.normalizeCountry(raw);
+    return { 'País': country, 'Región': audit.databricksGeography?.region || audit.region || audit.meta?.region || '' };
+  }
+
   static buildConsolidatedExportRows(audits, validators) {
     const uniqueAudits = this.deduplicateById(audits);
     const valMap = new Map((validators || []).map(v => [v.id, v]));
@@ -88,7 +94,7 @@ export class ExcelParser {
       const row = {
         'ID Auditoría': audit.id,
         'ID PDV': audit.idPDV,
-        'País': audit.pais,
+        ...this.getGeographyExportFields(audit),
         'Ciudad': audit.ciudad,
         'Canal': audit.canal,
         'Fecha Auditoría': audit.fecha,
@@ -653,7 +659,7 @@ export class ExcelParser {
         const row = {
           'ID Auditoría': audit.id,
           'ID PDV': audit.idPDV,
-          'País': audit.pais,
+          ...this.getGeographyExportFields(audit),
           'Ciudad': audit.ciudad,
           'Canal': audit.canal,
           'Fecha Captura': audit.fecha,
@@ -777,7 +783,7 @@ export class ExcelParser {
       const row = {
         'ID Auditoría': audit.id,
         'ID PDV': audit.idPDV,
-        'País': audit.pais,
+        ...this.getGeographyExportFields(audit),
         'Ciudad': audit.ciudad,
         'Canal': audit.canal,
         'Fecha Captura': audit.fecha,
