@@ -88,7 +88,7 @@ test('Ediciones pagina 100 filas, permite llegar al final y enlaza botones una s
   elements.clear();
 });
 
-test('el histórico de validadores conserva estados, tiempos y filtros sin RPC ni pendientes vencidos', () => {
+test('el histórico conserva pendientes y excluye solo las retiradas', () => {
   const { a } = app();
   a.validators = [];
   const audit = (id, status, extra = {}) => ({ id, assignedValidatorId: 'v1', _module: 'smart', _validatorName: 'Ana',
@@ -96,7 +96,7 @@ test('el histórico de validadores conserva estados, tiempos y filtros sin RPC n
   const rows = a.summarizeValidatorHistory([
     audit('1', 'completada', { durationSeconds: 0 }), audit('2', 'completada', { durationSeconds: 10 }),
     audit('3', 'en_progreso'), audit('4', 'pendiente'),
-    audit('5', 'pendiente', { _batchOperationDate: '2026-10-07' }),
+    audit('5', 'pendiente', { _batchOperationDate: '2026-10-07', _pendingResolution:'removed' }),
     audit('6', 'completada', { assignedValidatorId: 'v2' })
   ], { dateFrom: '2026-10-01', dateTo: '2026-10-08', validatorId: 'v1' });
   assert.equal(rows.length, 1);
@@ -106,6 +106,19 @@ test('el histórico de validadores conserva estados, tiempos y filtros sin RPC n
   assert.equal(rows[0].inProgressAudits, 1);
   assert.equal(rows[0].timedAudits, 2);
   assert.equal(rows[0].averageDurationSeconds, 5);
+});
+
+test('productividad diaria cuenta solo la última base, pagina y excluye retiradas',async()=>{
+ const b=Object.create(ctx.Backend.prototype);b.ensureConfigured=()=>{};
+ const cursors=[],batches=[];
+ b.client={from(table){let cursor=0;return {
+  select(){return this;},order(){return this;},eq(){return this;},in(col,ids){if(table==='audits')batches.push([...ids]);return this;},
+  gt(col,v){cursor=v;return this;},limit(){cursors.push(cursor);return Promise.resolve({data:Array.from({length:cursor===0?1000:25},(_,i)=>({id:cursor+i+1,batch_id:2,pending_resolution:cursor+i+1===1001?'removed':null})),error:null});},
+  then(resolve){return Promise.resolve({data:table==='upload_batches'?[{id:2,study_id:'s',country_id:'c',module:'blocking'},{id:1,study_id:'s',country_id:'c',module:'blocking'}]:[],error:null}).then(resolve);}
+ };},rpc(name,params){assert.deepEqual([...params.p_batch_ids],[2]);return Promise.resolve({data:[],error:null});}};
+ const result=await b.loadAdministration({operationDate:'2026-10-08'});
+ assert.equal(result.batches.length,1);assert.equal(result.batches[0].id,2);assert.equal(result.audits.length,1024);
+ assert.deepEqual(cursors,[0,1000]);assert.deepEqual(batches,[[2],[2]]);
 });
 
 test('loadState pagina auditorías activas y conserva la jornada en más de 1000 registros', async () => {

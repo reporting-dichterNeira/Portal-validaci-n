@@ -17,7 +17,8 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
-  <link rel="stylesheet" href="css/styles.css?v=64.0" />
+  <link rel="stylesheet" href="css/styles.css?v=65.0" />
+  <link rel="stylesheet" href="css/indicators.css?v=1.0" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -955,7 +956,7 @@
           <div class="visualization-header-actions">
             <a class="btn btn-navy btn-glow visualization-powerbi-link" id="visualization-powerbi-link" href="https://app.powerbi.com/links/ZRtorqXOu3?ctid=05e4f087-3719-4046-8fa3-286b1f5110f2&amp;pbi_source=linkShare&amp;bookmarkGuid=df97ad57-04d6-4fe5-94b9-8fd0d764a36d" target="_blank" rel="noopener noreferrer">
               <span>📊 Abrir Power BI ↗</span>
-              <small>Descargar los 3 exports mensuales</small>
+              <small>Descargar notas y ediciones mensuales</small>
             </a>
             <div class="hub-user-pill">
               <span class="hub-user-avatar">📈</span>
@@ -1069,6 +1070,7 @@
           </div>
         </div>
 
+        <div id="supervisor-pending-management"></div>
         <!-- Métricas Resumen -->
         <div class="stats-grid stats-grid-5">
           <div class="stat-card">
@@ -1470,6 +1472,7 @@
         <!-- SUB-VISTA 1: MÉTRICAS OPERACIONALES (SUPERVISOR / DÍA A DÍA) -->
         <!-- ======================================================== -->
         <div id="metrics-view-operational" class="metrics-subview active-subview">
+          <div id="indicators-operational"></div>
           <div class="operational-actions-bar">
             <div class="op-label-wrap">
               <span class="badge badge-info">Vista Operativa de Supervisión</span>
@@ -1689,11 +1692,12 @@
           </div>
 
           <!-- Banner de Impacto Comercial y ROI de Validación -->
+          <div id="indicators-executive"></div>
           <div class="commercial-roi-banner glass-panel">
             <div class="commercial-roi-header">
               <div class="roi-icon-box">🛡️✨</div>
               <div>
-                <h3 class="roi-title">Valor Comercial & Eficiencia de Alertas Smart</h3>
+                <h3 class="roi-title">Valor Comercial y Eficiencia de Alertas</h3>
                 <p class="roi-subtitle">Métricas de confiabilidad, prevención de falsos positivos y garantía de calidad de auditoría para comités y clientes.</p>
               </div>
               <div class="quality-assurance-badge">
@@ -2921,6 +2925,10 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script type="module" src="js/app.js?v=124.0"></script>
+  <script src="js/indicator-metrics.js?v=1.0"></script>
+  <script src="js/indicator-catalog.js?v=1.0"></script>
+  <script src="js/indicator-dashboard.js?v=1.0"></script>
+  <script src="js/pending-workspace.js?v=1.0"></script>
+  <script type="module" src="js/app.js?v=125.0"></script>
 </body>
 </html>

@@ -1,0 +1,31 @@
+(function (root) {
+  const ready = (id, name, section, formula, row) => ({ id, name, section, formula, row, status: 'Disponible' });
+  const pending = (id, name, section, reason, row) => ({ id, name, section, reason, row, status: 'Pendiente' });
+  const catalog = [
+    pending('O1', '% Avance de cuota de auditoría (a la fecha)', 'Operación', 'Faltan Dim Visitas aprobadas y la cuota mensual por proyecto. “On-track” requiere además una programación de la cuota.', 4),
+    ready('O2', '% Cobertura de revisión', 'Operación', '(Aplica + No aplica) / total de alertas, incluyendo las pendientes en el denominador.', 5),
+    ready('O3', '% Aplicación / % Rechazo', 'Operación', 'Aplica / total de alertas y No aplica / total de alertas. El saldo corresponde a pendientes.', 6),
+    ready('O4', 'Antigüedad del backlog', 'Operación', 'Auditorías con al menos una alerta pendiente. Días calendario desde la fecha original de auditoría hasta el corte: 0–6, 7–14 y 15 o más. Sin fecha original se presenta aparte.', 7),
+    ready('O5', 'Lead time de validación', 'Operación', 'Definición ajustada: auditoría → carga de alertas (una muestra por auditoría) y carga → decisión (una muestra por alerta decidida). Se muestran promedios y bases separadas. Horas solo con dos timestamps válidos y zona horaria; fechas sin hora se miden en días calendario. No equivale a generación → validación ni a tiempo activo de revisión.', 8),
+    ready('O6', 'Distribución de carga operativa', 'Operación', 'Alertas y pendientes por proyecto, país, región, canal y subcanal. Región/subcanal del Export general de Databricks, cruzado por ID de auditoría; la base diaria tiene prioridad. Sin dato se muestra explícitamente. No mide el universo de visitas realizadas.', 9),
+    pending('O7', 'Cobertura de tiendas alertadas (sobre auditadas)', 'Operación', 'Falta el universo de PDV únicos efectivamente auditados de Dim Visitas. No se sustituye por auditorías del portal ni por registros del Export general.', 10),
+    ready('O8', 'Ranking de auditores recurrentes', 'Operación', 'Semanas con al menos una alerta por identificador de auditor, en las últimas ocho semanas calendario (lunes a domingo, incluida la del corte), intersectadas con el filtro de fecha. Desempate por volumen de alertas.', 11),
+    ready('O9', 'Top motivos de “No aplica”', 'Operación', 'Conteo de rechazos por tipificación / total de alertas No aplica. Las que no tienen tipificación aparecen como Sin tipificación.', 12),
+    pending('O10', 'Magnitud de variación por tipo de alerta (semanal)', 'Operación', 'Hay valores actual/anterior en las bases, pero falta confirmar la unidad de VARIACION_POST y qué evento significa ajuste. Falta vínculo de la edición al sub-KPI; no se usa una edición de auditoría como ajuste de todas sus alertas.', 13),
+    pending('E1', '% Cumplimiento de cuota de auditoría', 'Resumen mensual', 'Faltan Dim Visitas aprobadas y la cuota mensual objetivo por proyecto.', 4),
+    ready('E2', 'Tendencia mensual de alertas', 'Resumen mensual', 'Conteo de alertas por mes, proyecto y país. Variación vs. mes anterior únicamente cuando ambos meses completos están dentro del filtro; cortes parciales se identifican.', 5),
+    ready('E3', '% Falsos positivos (No aplica)', 'Resumen mensual', 'No aplica / total de alertas por mes. Se muestra cobertura junto a la tasa porque un mes sin revisar no equivale a cero falsos positivos.', 6),
+    pending('E4', '% Cumplimiento de SLA', 'Resumen mensual', 'Los dos tramos de tiempo ya se muestran en O5/E5. Falta acordar qué tramo tiene un plazo objetivo y si son horas corridas, días calendario o hábiles. No se declara cumplimiento sin esa regla.', 7),
+    ready('E5', 'Evolución del lead time promedio', 'Resumen mensual', 'Por mes de carga de alertas, dentro del alcance de jornada seleccionado: promedios auditoría → carga y carga → decisión, con denominadores propios. Días calendario en America/Bogota y horas transcurridas solo con timestamps completos. Pendientes, faltantes, secuencias negativas y eventos posteriores al corte no se mezclan con tiempos válidos.', 8),
+    ready('E6', 'Benchmark entre proyectos', 'Resumen mensual', 'Por proyecto y país en el mes: total alertas, cobertura (Aplica + No aplica)/total, aplicación Aplica/total y rechazo No aplica/total.', 9),
+    ready('E7', 'Desempeño por país/canal/subcanal', 'Resumen mensual', 'Total de alertas, Aplica, No aplica, pendientes, cobertura y rechazo por país/región/canal/subcanal del mes seleccionado. Se usa contexto de Databricks por ID de auditoría. Las tasas se calculan desde conteos, no promediando porcentajes.', 10),
+    pending('E8', 'Scorecard de auditores (agregado)', 'Resumen mensual', 'Región y subcanal ya se obtienen del Export general. Aún faltan visitas efectivamente realizadas y padrón de auditores/equipos para el denominador per cápita; la recurrencia de alertas no sustituye productividad.', 11),
+    pending('E9', '% Tiendas alertadas sobre cuota', 'Resumen mensual', 'Falta la cuota mensual por proyecto. Se necesitan PDV únicos con alerta del mismo periodo y alcance que la meta.', 12),
+    pending('E10', '% Cobertura de tiendas alertadas (sobre auditadas, mensual)', 'Resumen mensual', 'Falta Dim Visitas con PDV únicos efectivamente auditados por mes. Un export con canceladas u otros estados no demuestra ese universo.', 13),
+    pending('E11', 'Matriz de priorización de alertas (Volumen x % Ajuste)', 'Resumen mensual', 'Falta definir ajuste y disponer del evento de edición por variable/sub-KPI. Aplica, No aplica y modificaciones a nivel auditoría no prueban que ese sub-KPI se editó. Tampoco hay umbrales aprobados para priorizar.', 14),
+    ready('E12', 'Top alertas con mayor tasa de rechazo', 'Resumen mensual', 'Por variable/tipo: No aplica / total de alertas. Se muestran volumen, cobertura y pendientes para evitar interpretar una tasa sin su base.', 15),
+    pending('E13', 'Relación entre magnitud de variación y tasa de ajuste', 'Resumen mensual', 'Faltan definición de ajuste, evento por sub-KPI, unidad de variación y rangos aprobados. El ejemplo mezcla tasa de aplicación con tasa de ajuste; no se asumen iguales.', 16)
+  ];
+  root.PortalIndicatorCatalog = catalog;
+  if (typeof module !== 'undefined') module.exports = catalog;
+})(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -87,7 +87,7 @@ test('carga faltantes una vez, reutiliza países disponibles y nunca consulta ex
   assert.equal(calls.length, 1);
 });
 
-test('consulta solo tres columnas, pagina sin perder duplicados y rechaza IDs no numéricos', async () => {
+test('consulta contexto del export, pagina sin perder duplicados y rechaza IDs no numéricos', async () => {
   const backend = Object.create(context.SupabaseBackend.prototype);
   const calls = [];
   backend.ensureConfigured = () => {};
@@ -103,7 +103,7 @@ test('consulta solo tres columnas, pagina sin perder duplicados y rechaza IDs no
   const result = await backend.loadAuditCountryContext(['1', '1', 'Filtros aplicados']);
   assert.equal(result.length, 1001);
   assert.deepEqual(calls.map(call => call.from), [0, 1000]);
-  assert.equal(calls[0].columns, 'audit_external_id, country, study');
+  assert.equal(calls[0].columns, 'audit_external_id, country, study, region, subchannel, channel, auditor, audit_date, pdv_id');
   assert.deepEqual(calls[0].ids, ['1']);
 });
 

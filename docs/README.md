@@ -8,6 +8,7 @@ Esta carpeta reúne la documentación vigente del Portal de Validación y Contro
 | [Diccionario de datos](DATA_DICTIONARY.md) | Preparar correctamente los exports e identificar las tablas y reglas de cruce. |
 | [Guía operativa](OPERATIONS_GUIDE.md) | Usar el portal según el rol de administrador, supervisor, validador o visualizador. |
 | [Despliegue y mantenimiento](DEPLOYMENT_AND_MAINTENANCE.md) | Publicar cambios, aplicar migraciones, depurar y operar de forma segura. |
+| [Indicadores y pendientes](INDICATORS_AND_PENDING.md) | Consultar indicadores, gestionar pendientes y restaurar la versión anterior sin perder trabajo posterior. |
 | [Configuración inicial de Supabase](../SUPABASE_SETUP.md) | Crear el primer administrador y configurar el proyecto Supabase. |
 
 La documentación describe el estado del código almacenado en este repositorio. Las migraciones de `supabase/migrations/` son la fuente técnica de referencia para el esquema y las políticas de la base de datos.

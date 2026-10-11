@@ -46,7 +46,7 @@ function mapAudit(row) {
   const validator = Array.isArray(row.validators)
     ? (row.validators[0] || {})
     : (row.validators || {});
-  const operationDate = row.batch_operation_date || batch.operation_date || null;
+  const operationDate = row.original_operation_date || row.batch_operation_date || batch.operation_date || null;
   return {
     ...payload,
     pais: row.study === 'Lindley' ? 'Perú' : row.study === 'Chile' ? 'Chile' : (payload.pais || payload.country || ''),
@@ -67,9 +67,14 @@ function mapAudit(row) {
     _countryId: row.country_id || null,
     _updatedAt: row.updated_at,
     _createdAt: row.created_at,
+    _batchUploadedAt: row.original_uploaded_at || batch.created_at || row.created_at,
+    _originalUploadedAt: row.original_uploaded_at || null,
+    _originalOperationDate: row.original_operation_date || null,
+    _pendingResolution: row.pending_resolution || null,
     _batchOperationDate: operationDate,
+    _physicalBatchOperationDate: row.batch_operation_date || batch.operation_date || operationDate,
     _batchStatus: row.batch_status || batch.status || null,
-    _batchSourceFilename: row.batch_source_filename || batch.source_filename || '',
+    _batchSourceFilename: row.original_source_filename || row.batch_source_filename || batch.source_filename || '',
     _validatorCode: row.validator_code || validator.code || '',
     _validatorName: row.validator_name || validator.name || ''
   };
@@ -294,12 +299,13 @@ export class SupabaseBackend {
     let cursor = 0;
     while (activeBatchIds.length) {
       const { data, error } = await this.client.from('audits')
-        .select('*, upload_batches(operation_date, status, source_filename)')
+        .select('*, upload_batches(operation_date, status, source_filename, created_at)')
         .in('batch_id', activeBatchIds).gt('id', cursor)
         .order('id', { ascending: true }).limit(1000);
       if (error) throw error;
       const page = data || [];
       for (const row of page) {
+        if(['removed','replaced'].includes(row.pending_resolution)) continue;
         const audit = mapAudit(row);
         if (row.module === 'blocking') blockingAudits.push(audit);
         else smartAudits.push(audit);
@@ -417,6 +423,24 @@ export class SupabaseBackend {
       pendingCount: Number(row.pending_count || 0),
       pendingSummary: Array.isArray(row.pending_summary) ? row.pending_summary : []
     };
+  }
+
+  async loadPendingManagement(module) {
+    this.ensureConfigured();
+    const { data, error } = await this.client.rpc('get_pending_management', {
+      p_study_id:this.currentScope?.study?.id, p_module:module
+    });
+    if(error) throw error;
+    return data || { audits:[], history:[] };
+  }
+
+  async resolvePreviousPending(ids, action, reason, target = null) {
+    this.ensureConfigured();
+    const { data, error } = await this.client.rpc('resolve_previous_pending', {
+      p_ids:ids, p_action:action, p_reason:reason, p_target:target
+    });
+    if(error) throw error;
+    return data;
   }
 
   async importDailyBatch({ audits, module, operationDate, fileName, validators, carryoverAction = 'discard' }) {
@@ -696,7 +720,8 @@ export class SupabaseBackend {
           assigned_validator_id, status, audit_date, validation_date, payload,
           validation_results, started_at, completed_at, duration_seconds,
           created_at, updated_at,
-          upload_batches!inner(operation_date, status, source_filename),
+          pending_resolution, original_operation_date, original_source_filename, original_uploaded_at,
+          upload_batches!inner(operation_date, status, source_filename, created_at),
           validators(code, name)
         `)
         .in('upload_batches.status', ['active', 'archived'])
@@ -771,21 +796,37 @@ export class SupabaseBackend {
       this.client.from('validators').select('id, code, name, study, study_id, is_active').order('is_active', { ascending: false }).order('name'),
       this.client
         .from('upload_batches')
-        .select('id, study_id, module, operation_date, source_filename, row_count, status, created_by, created_at, activated_at')
+        .select('id, study_id, country_id, module, operation_date, source_filename, row_count, status, created_by, created_at, activated_at')
         .eq('operation_date', selectedDate)
         .in('status', ['active', 'archived'])
         .order('created_at', { ascending: false })
     ]);
     const failed = [studies, profiles, assignments, validators, batches].find(result => result.error);
     if (failed?.error) throw failed.error;
-    const batchIds = (batches.data || []).map(batch => batch.id);
+    // Only the last accepted file version of this day's scope counts.
+    const latest = new Map();
+    for (const batch of batches.data || []) {
+      const key = JSON.stringify([batch.study_id,batch.country_id,batch.module]);
+      if (!latest.has(key) || Number(batch.id)>Number(latest.get(key).id)) latest.set(key,batch);
+    }
+    const acceptedBatches = [...latest.values()];
+    const batchIds = acceptedBatches.map(batch => batch.id);
+    const loadDailyAudits = async () => {
+      const rows=[];let cursor=0;
+      while(batchIds.length) {
+        const {data,error}=await this.client.from('audits')
+          .select('id, batch_id, study_id, module, status, assigned_validator_id, pending_resolution, started_at, completed_at, validation_date, updated_at')
+          .in('batch_id',batchIds).gt('id',cursor).order('id',{ascending:true}).limit(1000);
+        if(error)throw error;
+        const page=data||[];
+        rows.push(...page.filter(a=>!['removed','replaced'].includes(a.pending_resolution)));
+        if(page.length<1000)break;
+        cursor=Number(page.at(-1).id);
+      }
+      return {data:rows,error:null};
+    };
     const [audits, batchUploaders] = await Promise.all([
-      batchIds.length
-        ? this.client
-            .from('audits')
-            .select('id, batch_id, study_id, module, status, assigned_validator_id, started_at, completed_at, validation_date, updated_at')
-            .in('batch_id', batchIds)
-        : Promise.resolve({ data: [], error: null }),
+      loadDailyAudits(),
       batchIds.length
         ? this.client.rpc('get_visible_batch_uploaders', { p_batch_ids: batchIds })
         : Promise.resolve({ data: [], error: null })
@@ -806,7 +847,7 @@ export class SupabaseBackend {
       })),
       assignments: assignments.data || [],
       validators: validators.data || [],
-      batches: batches.data || [],
+      batches: acceptedBatches,
       audits: audits.data || [],
       operationDate: selectedDate
     };
@@ -1005,8 +1046,8 @@ export class SupabaseBackend {
 
   async loadAdminExternalAnalysis({ includeAlerts = true, includeEdits = true } = {}) {
     this.ensureConfigured();
-    const alertColumns = 'audit_external_id, period_month, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, pdv_note, country, channel, city, auditor, audit_date, wave, study';
-    const legacyAlertColumns = alertColumns.replace(', pdv_note', '');
+    const alertColumns = 'audit_external_id, period_month, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, pdv_note, country, channel, city, auditor, audit_date, wave, study, region, subchannel';
+    const legacyAlertColumns = alertColumns.replace(', pdv_note', '').replace(', region, subchannel', '');
     const editColumns = 'audit_external_id, period_month, study, country, audit_status, wave, modifications_count, question_detail, status_changes_count, first_validation_started_at, first_validation_completed_at, first_validator, last_validation_started_at, last_validation_completed_at, last_validator';
     const legacyEditColumns = editColumns.replace(', question_detail', '');
     let imports;
@@ -1022,7 +1063,7 @@ export class SupabaseBackend {
       // The presentation remains usable while the one-time database migration
       // is being applied. New detail values become available automatically
       // after the column exists and the monthly file is uploaded again.
-      if (!/question_detail|pdv_note|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
+      if (!/question_detail|pdv_note|region|subchannel|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
       [imports, alertRecords, editRecords] = await Promise.all([
         this.loadAdminAnalysisImports(),
         includeAlerts ? this.loadAllAdminAnalysisRows('admin_alert_export_records', legacyAlertColumns) : Promise.resolve([]),
@@ -1045,7 +1086,7 @@ export class SupabaseBackend {
       const rows = [];
       for (let from = 0; ; from += 1000) {
         const { data, error } = await this.client.from('admin_alert_export_records')
-          .select('audit_external_id, country, study').in('audit_external_id', chunk)
+          .select('audit_external_id, country, study, region, subchannel, channel, auditor, audit_date, pdv_id').in('audit_external_id', chunk)
           .order('id', { ascending: true }).range(from, from + 999);
         if (error) throw error;
         rows.push(...(data || []));

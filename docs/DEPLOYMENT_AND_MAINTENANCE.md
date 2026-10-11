@@ -50,7 +50,7 @@ El proyecto usa parámetros de versión (`?v=...`) para los módulos y CSS. Cuan
 - La página abre sin errores de consola.
 - Inicio de sesión de un rol administrativo o de pruebas funciona.
 - El validador solo ve casos que le fueron asignados.
-- La decisión Aplica/No aplica exige una tipología válida.
+- Bloqueantes exige tipología cuando corresponde; Smart permite detalle por KPI y comentario general opcionales.
 - Una carga de cada tipo de export muestra el mes, el nombre del archivo y el conteo de registros.
 - Los filtros cambian las tarjetas y la tabla, y la descarga respeta el filtro.
 - Cambio de nota muestra `No alertó` cuando no existe alerta bloqueante asociada.

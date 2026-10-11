@@ -224,7 +224,7 @@ test('la carga KO de octubre exige y guarda el país del archivo sin sustituirlo
   assert.match(messages.at(-1).message, /país distinto del alcance Perú/);
 });
 
-test('los pendientes de jornadas anteriores no cuentan en el histórico ni en las asignaciones', () => {
+test('las pendientes se conservan hasta que el supervisor las retire; no expiran por fecha', () => {
   const ValidaFlowApp = loadAppClass();
   const app = Object.create(ValidaFlowApp.prototype);
   const oldPending = { id: 'old-pending', estudio: 'Moderno', fecha: '2026-09-19', validationStatus: 'pendiente', assignedValidatorId: 'v1' };
@@ -237,11 +237,13 @@ test('los pendientes de jornadas anteriores no cuentan en el histórico ni en la
     blockingAudits: [oldPending, oldInProgress, oldCompleted, currentPending],
     audits: [oldPending, oldInProgress, oldCompleted, currentPending]
   });
-  assert.equal(app.isExpiredPendingAudit(oldPending, '2026-09-20'), true);
-  assert.equal(app.isExpiredPendingAudit(oldInProgress, '2026-09-20'), true);
+  assert.equal(app.isExpiredPendingAudit(oldPending, '2026-09-20'), false);
+  assert.equal(app.isExpiredPendingAudit(oldInProgress, '2026-09-20'), false);
   assert.equal(app.isExpiredPendingAudit(oldCompleted, '2026-09-20'), false);
   assert.equal(app.isExpiredPendingAudit(currentPending, '2026-09-20'), false);
   app.isExpiredPendingAudit = audit => ValidaFlowApp.prototype.isExpiredPendingAudit.call(app, audit, '2026-09-20');
+  oldPending._pendingResolution='removed';
+  oldInProgress._pendingResolution='replaced';
   assert.deepEqual(app.getReportAuditSource().map(audit => audit.id), ['old-completed', 'today-pending']);
   assert.deepEqual(app.getAuditsForCurrentProject().map(audit => audit.id), ['old-completed', 'today-pending']);
 

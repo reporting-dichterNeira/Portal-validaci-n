@@ -3,19 +3,35 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
+const previewRole = process.env.PREVIEW_ROLE === 'supervisor' ? 'supervisor' : 'visualizer';
+const previewPort = Number(process.env.PREVIEW_PORT || 8772);
 const backend = `
+const role=${JSON.stringify(previewRole)};
+const scope={id:'fixture-assignment',module:'blocking',study:{id:'fixture-study',name:'Moderno'},country:{id:'fixture-country',name:'CAM'}};
 const counts = {};
 function count(key) { counts[key] = (counts[key] || 0) + 1; console.info('Fixture calls: ' + JSON.stringify(counts)); }
 const audits = Array.from({length:2001}, (_, i) => ({ id:String(i+1), _rowId:i+1, _batchId:'fixture',
  _module:'blocking', estudio:'Moderno', pais:'Panamá', idPDV:String(90000+i), fecha:'2026-10-08', _batchOperationDate:'2026-10-08',
  assignedValidatorId:'fixture-validator', _validatorName:'Validador de prueba', _validatorCode:'VAL-FIXTURE',
  validationStatus:'completada', durationSeconds:10, completedAt:'2026-10-08T10:00:00Z',
- kpis:[{name:'KPI de prueba',needsReview:true}], validationResults:{'KPI de prueba':{status:i%2?'aplica':'no_aplica',tipificacion:'Prueba'}} }));
+ fechaAuditoriaOriginal:'2026-10-07',_batchUploadedAt:'2026-10-08T09:00:00Z',region:i%2?'Centro':'Norte',subcanal:'Supermercado',canal:'MODERNO',usuario:'Auditor de prueba',
+ kpis:[{name:'KPI de prueba',needsReview:true}], validationResults:{'KPI de prueba':{status:i%2?'aplica':'no_aplica',tipificacion:'Prueba',decisionAt:'2026-10-08T10:00:00Z'}} }));
 const imports = ['alerts','editions'].map(dataset_type=>({dataset_type,period_month:'2026-10-01',source_filename:'Prueba aislada.csv',row_count:2001,imported_at:'2026-10-08'}));
+let pending=[3001,3002].map((id,i)=>({id,external_id:String(id),source_filename:'Base anterior de prueba.csv',operation_date:'2026-10-08',
+ status:'pendiente',validator_name:'Responsable anterior',payload:{pais:'Panamá',kpis:[{name:'A',needsReview:true},{name:'B',needsReview:true}]},
+ validation_results:i?{}:{A:{status:'aplica',decisionAt:'2026-10-08T12:00:00Z'}},pending_resolution:null}));
+const decisions=[];
 export class SupabaseBackend {
  configured=true;
- async getSessionContext(){return {role:'visualizer',profile:{id:'fixture',display_name:'Prueba aislada'},assignments:[],scope:null};}
- async loadState(){count('active');return {validators:[{id:'fixture-validator',name:'Validador de prueba',code:'VAL-FIXTURE',estudio:'Moderno'}],smartAudits:[],blockingAudits:audits.slice(0,1)};}
+ selectAssignment(id){this.scope=id===scope.id?scope:null;return this.scope;}
+ async getSessionContext(){return {role,profile:{id:'fixture',display_name:'Prueba aislada'},assignments:role==='supervisor'?[scope]:[],scope:null};}
+ async loadState(){count('active');return {validators:[{id:'fixture-validator',name:'Validador de prueba',code:'VAL-FIXTURE',estudio:'Moderno',isActive:true}],smartAudits:[],blockingAudits:[...audits.slice(0,1),...pending.filter(a=>a.pending_resolution==='reassigned').map(a=>({...a.payload,id:a.external_id,_rowId:a.id,_module:'blocking',estudio:'Moderno',fecha:a.operation_date,assignedValidatorId:'fixture-validator',validationStatus:a.status,validationResults:a.validation_results}))]};}
+ async loadPendingManagement(){count('pending');return {audits:pending.filter(a=>a.pending_resolution!=='removed'),history:decisions};}
+ async resolvePreviousPending(ids,action,reason,target){
+  if(ids.length===0||reason.length<3)throw new Error('Falta confirmar la decisión');
+  pending=pending.map(a=>{if(!ids.includes(a.id))return a;decisions.unshift({audit_id:a.id,action,reason,target_validator_id:target,decided_at:new Date().toISOString()});return {...a,pending_resolution:action==='remove'?'removed':'reassigned',validator_name:action==='assign'?'Validador de prueba':a.validator_name};});
+  count(action);return {changed:ids.length};
+ }
  subscribe(){} unsubscribe(){}
  async loadAdministration(){count('daily');return {studies:[],supervisors:[],assignments:[],validators:[],batches:[],audits:[],batchCreators:[],batchUploaders:[],operationDate:'2026-10-08'};}
  async loadAdminAnalysisImports(){count('imports');return imports;}
@@ -42,4 +58,4 @@ http.createServer((req, res) => {
   res.setHeader('Content-Type', type + (type.startsWith('text/')?'; charset=utf-8':''));
   res.setHeader('Cache-Control','no-store');
   res.end(fs.readFileSync(file));
-}).listen(8772,'127.0.0.1',()=>console.log('Isolated visualization fixture: http://127.0.0.1:8772'));
+}).listen(previewPort,'127.0.0.1',()=>console.log('Isolated '+previewRole+' fixture: http://127.0.0.1:'+previewPort));

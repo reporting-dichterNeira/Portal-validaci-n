@@ -9,7 +9,7 @@ import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
 import { ValidatorUI } from './validator-ui.js?v=36.0';
-import { SupabaseBackend } from './supabase-backend.js?v=60.0';
+import { SupabaseBackend } from './supabase-backend.js?v=61.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
 
@@ -398,7 +398,7 @@ class ValidaFlowApp {
     if (roleEl) roleEl.textContent = roleLabel;
     if (subtitle) subtitle.textContent = isCommercial
       ? 'Consulta el Informe Ejecutivo de Calidad y KPIs preparado para Comité y Comercial.'
-      : 'Indicadores, cruces, ediciones y reportes en un solo espacio. Descarga en Power BI los tres exports mensuales para actualizarlos aquí.';
+      : 'Indicadores, cruces, ediciones y reportes en un solo espacio. El Export general se sincroniza desde Databricks; actualiza notas y ediciones con sus archivos mensuales.';
     document.getElementById('visualization-powerbi-link')?.classList.toggle('hidden', isCommercial);
 
     document.querySelectorAll('.visualization-tab').forEach(button => {
@@ -901,9 +901,8 @@ class ValidaFlowApp {
   }
 
   isExpiredPendingAudit(audit, today = getNicaraguaDateKey(new Date())) {
-    if (!audit || audit.validationStatus === 'completada') return false;
-    const operationDate = this.getAuditOperationDate(audit);
-    return /^\d{4}-\d{2}-\d{2}$/.test(operationDate) && operationDate < today;
+    // Old pending audits now require a supervisor decision, not silent expiry.
+    return ['removed','replaced'].includes(audit?._pendingResolution);
   }
 
   loadState() {
@@ -3414,7 +3413,10 @@ class ValidaFlowApp {
 
   getReportAuditSource(module = this.currentModule) {
     const today = getNicaraguaDateKey(new Date());
-    const withoutExpiredPending = audits => (audits || []).filter(audit => !this.isExpiredPendingAudit(audit, today));
+    const withoutExpiredPending = audits => {
+      const visible = (audits || []).filter(audit => !this.isExpiredPendingAudit(audit, today));
+      return globalThis.PortalIndicators ? globalThis.PortalIndicators.canonical(visible) : visible;
+    };
     const visualizationModule = this.getVisualizationModuleFilter();
     if (visualizationModule === 'all' && this.currentView === 'visualizations') {
       return withoutExpiredPending(['smart', 'blocking'].flatMap(item => {
@@ -4412,7 +4414,7 @@ class ValidaFlowApp {
       })[char]);
       this.pendingCarryoverPreview = pending;
       if (description) {
-        description.textContent = `Quedaron ${pending.pendingCount} auditoría${pending.pendingCount === 1 ? '' : 's'} pendiente${pending.pendingCount === 1 ? '' : 's'} de la jornada ${pending.previousOperationDate}. No se trasladarán a la nueva jornada.`;
+        description.textContent = `Hay ${pending.pendingCount} pendientes de la jornada ${pending.previousOperationDate}. Se conservarán para que decidas qué hacer en “Pendientes de jornadas anteriores”. Los IDs repetidos serán reemplazados por esta base.`;
       }
       if (list) {
         list.innerHTML = pending.pendingSummary.map(item => `
@@ -4492,6 +4494,7 @@ class ValidaFlowApp {
     // Etiquetar todas las auditorías del archivo con el estudio seleccionado y la fecha de jornada
     result.audits.forEach(audit => {
       audit.estudio = studyName;
+      audit.fechaAuditoriaOriginal ||= audit.fecha || '';
       audit.fecha = opDate;
       audit._studyId = this.currentScope?.study?.id || audit._studyId || null;
       audit._countryId = this.currentScope?.country?.id || audit._countryId || null;
@@ -4532,11 +4535,12 @@ class ValidaFlowApp {
         });
         this.auditHistoryByModule[this.currentModule] = null;
         this.validatorHistoryLoaded = false;
+        this.pendingWorkspace = null;
         this.pendingUpload = null;
         await this.refreshFromBackend();
         const finalCount = Number(activatedBatch?.row_count || result.audits.length);
         this.showToast(`¡Nueva jornada guardada con ${finalCount} auditorías para ${studyName} (${opDate})!`, 'success');
-        if (pendingCarryover) this.showToast(`${pendingCarryover.pendingCount} pendientes anteriores no se trasladaron a la nueva jornada.`, 'info');
+        if (pendingCarryover) this.showToast('Las pendientes anteriores siguen disponibles en «Pendientes de jornadas anteriores» para decidir sobre ellas.', 'info');
         this.pendingCarryoverPreview = null;
       } catch (error) {
         console.error('Error importando la jornada en Supabase:', error);
@@ -4995,6 +4999,7 @@ class ValidaFlowApp {
   // RENDERIZADO DE LA VISTA ADMIN
   // ==========================================
   renderAdminView() {
+    globalThis.PortalPending?.render(this);
     const distributionHelp = document.getElementById('admin-distribution-description');
     if (distributionHelp) {
       distributionHelp.textContent = this.getDistributionOptions().balanceByPrPhotos
@@ -5949,8 +5954,11 @@ class ValidaFlowApp {
     if (this.benchmarkCountryLoadPromise) return this.benchmarkCountryLoadPromise;
     if (Date.now() < (this.benchmarkCountryRetryAfter || 0)) return;
     this.benchmarkCountryCheckedIds ||= new Set();
-    const ids = [...new Set(audits.filter(audit => ['Tradicional', 'Moderno'].includes(this.getStudyForAudit(audit))
-      && !this.getBenchmarkCountry(audit)).map(audit => this.normalizeAuditId(audit.id)))]
+    const needsIndicatorContext = ['metrics','committee'].includes(this.visualizationTab);
+    const ids = [...new Set(audits.filter(audit =>
+      (needsIndicatorContext && (audit._module || this.currentModule) === 'blocking') ||
+      (['Tradicional', 'Moderno'].includes(this.getStudyForAudit(audit)) && !this.getBenchmarkCountry(audit))
+    ).map(audit => this.normalizeAuditId(audit.id)))]
       .filter(id => /^\d+$/.test(id) && !this.benchmarkCountryCheckedIds.has(id));
     if (!ids.length) return;
     const profile = this.currentProfile;
@@ -6170,6 +6178,8 @@ class ValidaFlowApp {
       this.renderExecutiveMetrics(filteredAudits);
       this.ensureBenchmarkCountries(reportAudits);
     } else this.renderOperationalMetrics(filteredAudits);
+    globalThis.PortalIndicators?.render(this, filteredAudits);
+    if(this.visualizationTab === 'metrics' && this.getVisualizationModuleFilter() !== 'smart') this.ensureBenchmarkCountries(reportAudits);
   }
 
   renderOperationalMetrics(audits) {
