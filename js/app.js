@@ -3564,7 +3564,9 @@ class ValidaFlowApp {
         btn.classList.add('active');
         document.getElementById(`tab-${targetTab}`)?.classList.add('active');
 
-        if (targetTab === 'reports') {
+        if (targetTab === 'tracking') {
+          globalThis.PortalPending?.render(this);
+        } else if (targetTab === 'reports') {
           this.renderReportsView();
         } else if (targetTab === 'admin') {
           this.renderAdminView();
@@ -4999,7 +5001,7 @@ class ValidaFlowApp {
   // RENDERIZADO DE LA VISTA ADMIN
   // ==========================================
   renderAdminView() {
-    globalThis.PortalPending?.render(this);
+    if (this.currentTab === 'tracking') globalThis.PortalPending?.render(this);
     const distributionHelp = document.getElementById('admin-distribution-description');
     if (distributionHelp) {
       distributionHelp.textContent = this.getDistributionOptions().balanceByPrPhotos
@@ -7276,6 +7278,7 @@ class ValidaFlowApp {
   // NAVEGACIÓN DE PESTAÑAS DE SUPERVISIÓN
   // ==========================================
   switchSupervisorTab(targetTab) {
+    if (targetTab === 'reports' && this.currentRole === 'supervisor') targetTab = 'tracking';
     this.currentTab = targetTab;
     if (targetTab === 'reports') {
       this.moveReportsContent('private-supervisor-view');
@@ -7302,7 +7305,9 @@ class ValidaFlowApp {
       }
     });
 
-    if (targetTab === 'reports') {
+    if (targetTab === 'tracking') {
+      globalThis.PortalPending?.render(this);
+    } else if (targetTab === 'reports') {
       this.renderReportsView();
       this.renderDailyReportsView();
       this.ensureHistoricalReportsLoaded().catch(error => console.error('No fue posible cargar el histórico:', error?.message));

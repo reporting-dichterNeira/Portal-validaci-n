@@ -285,9 +285,9 @@
           <span class="tab-label">Calidad & Tiempos</span>
           <span class="badge-alert-count hidden" id="nav-alerts-badge">0</span>
         </button>
-        <button class="nav-tab-btn" data-tab="reports" role="tab" onclick="window.switchSupervisorTab('reports')">
-          <span class="tab-icon">📈</span>
-          <span class="tab-label">Métricas Operacionales</span>
+        <button class="nav-tab-btn" data-tab="tracking" role="tab" onclick="window.switchSupervisorTab('tracking')">
+          <span class="tab-icon">📋</span>
+          <span class="tab-label">Seguimiento de pendientes</span>
         </button>
       </nav>
 
@@ -1070,7 +1070,6 @@
           </div>
         </div>
 
-        <div id="supervisor-pending-management"></div>
         <!-- Métricas Resumen -->
         <div class="stats-grid stats-grid-5">
           <div class="stat-card">
@@ -1419,6 +1418,9 @@
       </section>
 
       <!-- PESTAÑA D: MÉTRICAS, REPORTES Y ANALÍTICA EJECUTIVA -->
+      <section class="tab-content-pane" id="tab-tracking" role="tabpanel">
+        <div id="supervisor-pending-management"></div>
+      </section>
       <section class="tab-content-pane" id="tab-reports" role="tabpanel">
         <!-- Hero con selector de vistas: Operacionales vs Ejecutivas -->
         <div class="reports-hero">
@@ -2928,7 +2930,7 @@
   <script src="js/indicator-metrics.js?v=1.1"></script>
   <script src="js/indicator-catalog.js?v=1.0"></script>
   <script src="js/indicator-dashboard.js?v=2.5"></script>
-  <script src="js/pending-workspace.js?v=1.0"></script>
-  <script type="module" src="js/app.js?v=129.0"></script>
+  <script src="js/pending-workspace.js?v=2.0"></script>
+  <script type="module" src="js/app.js?v=130.0"></script>
 </body>
 </html>
