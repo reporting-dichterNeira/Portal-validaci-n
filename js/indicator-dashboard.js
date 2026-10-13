@@ -53,7 +53,7 @@
     }
     return [...map.values()];
   }
-  function adapt(audits, context = [], countryFor = null) {
+  function adapt(audits, context = [], countryFor = null, sourceModule = 'blocking') {
     const readField=indexedFieldReader();
     const byId = new Map();
     for (const c of context) {
@@ -61,7 +61,7 @@
       if (!byId.has(id)) byId.set(id, []);
       byId.get(id).push(c);
     }
-    return M.normalizeAudits(canonical(audits).filter(a=> (a._module || 'blocking') === 'blocking' && /^\d+$/.test(String(a.id))).map(a=> {
+    return M.normalizeAudits(canonical(audits).filter(a=> (a._module || 'blocking') === sourceModule && /^\d+$/.test(String(a.id))).map(a=> {
       const candidates = byId.get(String(a.id)) || [];
       const fallback = names => {
         const values = [...new Set(candidates.map(c=>readField(c,names)).filter(Boolean))];
@@ -143,17 +143,18 @@
     const total=entry.data&&snapshots.some(s=>/^Databricks/i.test(s.source))&&names.some(n=>supported.has(n))?rows.reduce((n,r)=>n+Number(r.databricks_total||0),0):null;
     return {entry,rows,names,verified,partial,total,snapshots};
   }
-  function universePanel(u,result) {
+  function universePanel(u,result,smart) {
     const unavailable=u.entry.error?'Error al consultar':'Sin corte conectado';
     const value=u.total===null?(u.entry.loading?'Consultando…':unavailable):num(u.total)+(u.partial?' *':'');
-    return panel('🌐 Universo de auditorías y casos en el portal','Son bases distintas: Databricks cuenta todas las auditorías del export, en cualquier estado; el sistema cuenta las auditorías con alertas cargadas al módulo Bloqueantes.',cards([
-      ['Auditorías totales · Databricks',value,'Cortes sincronizados de Databricks · IDs únicos por estudio','cyan','🌐'],
-      ['Auditorías recibidas · sistema',num(result.audits),'Casos cargados al portal, no el universo de campo','blue','🏬']
-    ])+table(['Estudio','Total Databricks','Recibidas en alertas'],u.names.map(name=>{
+    return panel('🌐 Universo de auditorías y casos en el portal','Export cuenta todas las auditorías, en cualquier estado. Bloqueantes y Smart cuentan las auditorías recibidas en cada módulo; una auditoría puede aparecer en ambos.',cards([
+      ['Auditorías totales · Export',value,'Cortes sincronizados · IDs únicos por estudio','cyan','🌐'],
+      ['Auditorías recibidas · Bloqueantes',num(result.audits),'Auditorías únicas recibidas en Bloqueantes','blue','🚨'],
+      ['Auditorías recibidas · Smart',num(smart.audits),'Auditorías únicas recibidas en Smart','purple','💡']
+    ])+table(['Estudio','Total Export','Recibidas · Bloqueantes','Recibidas · Smart'],u.names.map(name=>{
       const r=u.rows.find(r=>r.study_name===name);
       const known=u.snapshots.some(s=>/^Databricks/i.test(s.source))&&['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'].includes(name);
-      return row([esc(name),u.entry.loading?'Consultando…':u.entry.error?unavailable:known&&r?num(r.databricks_total):known?'0':unavailable,num(result.auditCountsByStudy?.[name]||0)]);
-    }))+'<p class="story-note">Databricks usa el mes de Ola y, si se filtran días, la fecha original de auditoría. El portal usa la jornada de carga. No se calcula una cobertura entre cohortes distintas. '+(u.snapshots.length?'Cortes: '+u.snapshots.map(s=>esc(String(s.month).slice(0,7))+' · '+esc(s.refreshed_at)).join('; '):'La ausencia de un corte o un error de consulta no se interpreta como cero.')+'</p>'+(u.entry.error?'<p role="alert">No fue posible consultar Databricks: '+esc(u.entry.error)+'</p>':'')+'<button type="button" class="btn btn-outline btn-sm" data-universe-refresh>↻ Actualizar totales</button>');
+      return row([esc(name),u.entry.loading?'Consultando…':u.entry.error?unavailable:known&&r?num(r.databricks_total):known?'0':unavailable,num(result.auditCountsByStudy?.[name]||0),num(smart.auditCountsByStudy?.[name]||0)]);
+    }))+'<p class="story-note">Export usa el mes de Ola y, si se filtran días, la fecha original de auditoría. El portal usa la jornada de carga. Los recibidos son auditorías, no el número de KPIs alertados. No se calcula una cobertura entre cohortes distintas. '+(u.snapshots.length?'Cortes: '+u.snapshots.map(s=>esc(String(s.month).slice(0,7))+' · '+esc(s.refreshed_at)).join('; '):'La ausencia de un corte o un error de consulta no se interpreta como cero.')+'</p>'+(u.entry.error?'<p role="alert">No fue posible consultar Export: '+esc(u.entry.error)+'</p>':'')+'<button type="button" class="btn btn-outline btn-sm" data-universe-refresh>↻ Actualizar totales</button>');
   }
   const journey = [
     ['summary','📊','Resumen','¿Cómo va la operación?'],
@@ -287,7 +288,7 @@
     ],'timing')+link('timing','Ver detalle de tiempos'));
     return html;
   }
-  function render(app, audits, historyAudits = null, prepared = null) {
+  function render(app, audits, historyAudits = null, prepared = null, receiptAudits = audits) {
     if (!M || !root.document) return;
     const executive = app.reportsSubtab === 'executive' || app.visualizationTab === 'committee';
     const target = document.getElementById(executive ? 'indicators-executive' : 'indicators-operational');
@@ -300,7 +301,7 @@
     // Navigation shares this snapshot. A fresh application render after a
     // load/live update always prepares a new one, including in-place edits.
     const context=prepared?null:[...(app.adminExternalAnalysis?.alertRecords || []),...(app.benchmarkCountryRows || [])];
-    const snapshot=prepared || {inputs:adapt(audits,context,a=>app.getReportCountry(a)),calculations:new Map()};
+    const snapshot=prepared || {inputs:adapt(audits,context,a=>app.getReportCountry(a)),receiptInputs:adapt(receiptAudits,context,a=>app.getReportCountry(a)),smartInputs:adapt(receiptAudits,context,a=>app.getReportCountry(a),'smart'),calculations:new Map()};
     const inputs=snapshot.inputs;
     if(executive && historyAudits && !snapshot.historyInputs)snapshot.historyInputs=historyAudits===audits ? inputs : adapt(historyAudits,context,a=>app.getReportCountry(a));
     const historyInputs=snapshot.historyInputs || inputs;
@@ -322,7 +323,11 @@
     if(!calculated) {
       const rangeResult=M.compute(inputs,{...state,asOf,from,to,month:executive?state.month:''});
       const result=executive ? M.compute(inputs.filter(a=>a.month===state.month),{...state,asOf,from,to,month:state.month}) : rangeResult;
-      calculated={rangeResult,result,committee:executive?committeeData(result,rangeResult,historyInputs,state.month,{...state,asOf}):null};
+      const smartInputs=snapshot.smartInputs || [];
+      const smart=M.compute(executive?smartInputs.filter(a=>a.month===state.month):smartInputs,{...state,asOf,from:app.visualizationDateFrom || '',to,month:executive?state.month:''});
+      const receiptInputs=snapshot.receiptInputs || inputs;
+      const blocking=M.compute(executive?receiptInputs.filter(a=>a.month===state.month):receiptInputs,{...state,asOf,from:app.visualizationDateFrom || '',to,month:executive?state.month:''});
+      calculated={rangeResult,result,smart,blocking,committee:executive?committeeData(result,rangeResult,historyInputs,state.month,{...state,asOf}):null};
       // Bound retained cohorts while allowing fast back-and-forth navigation.
       if(snapshot.calculations.size>=2)snapshot.calculations.delete(snapshot.calculations.keys().next().value);
       snapshot.calculations.set(calculationKey,calculated);
@@ -339,7 +344,7 @@
       '<nav class="story-nav'+(executive?' story-nav--committee':'')+'" aria-label="Apartados de indicadores">'+navigation.map(([id,icon,label,question],i)=>'<button type="button" data-story-section="'+id+'" aria-current="'+(id===section?'page':'false')+'"><span aria-hidden="true">'+icon+'</span><strong>'+(i+1)+'. '+label+'</strong><small>'+question+'</small></button>').join('')+'</nav>'+
       '<details class="glass-panel story-filters" '+(state.region!=='all'||state.channel!=='all'||state.subchannel!=='all'?'open':'')+'><summary>🔍 Afinar esta lectura'+(executive?' · Mes '+esc(state.month):'')+' · Región: '+esc(state.region==='all'?'Todas':state.region)+' · Canal: '+esc(state.channel==='all'?'Todos':state.channel)+' · Subcanal: '+esc(state.subchannel==='all'?'Todos':state.subchannel)+'</summary><div class="indicator-controls">'+controls+'</div><p>Estos filtros adicionales aplican a los '+(executive?'cinco':'seis')+' apartados y su CSV; no cambian los reportes clásicos.</p></details>';
     let committee;
-    if(section==='summary')html+=universePanel(universe(app,state,executive),result);
+    if(section==='summary')html+=universePanel(universe(app,state,executive),calculated.blocking,calculated.smart);
     if(executive) {
       const monthStart=state.month+'-01';
       const monthEnd=state.month?new Date(Date.UTC(Number(state.month.slice(0,4)),Number(state.month.slice(5,7)),0)).toISOString().slice(0,10):'';

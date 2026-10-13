@@ -77,7 +77,7 @@ test('committee has separate chapters without changing the operation journey',()
  assert.deepEqual(U.committeeJourney.map(r=>r[0]),['summary','focus','evolution','decisions','detail']);
  for(const [section] of U.committeeJourney){const {html,hidden}=render(section,true);assert.match(html,/aria-current="page"/);assert.equal(hidden.has('indicator-legacy-hidden'),section!=='detail');assert.match(html,/PENDIENTES HEREDADOS/);assert.doesNotMatch(html,/NaN|Infinity/);}
  assert.doesNotMatch(render('summary').html,/PENDIENTES HEREDADOS|Decisiones propuestas/);
- assert.match(render('summary',true).html,/Total Databricks/);
+ assert.match(render('summary',true).html,/Total Export/);
  assert.doesNotMatch(render('summary',true).html,/Reportes clásicos y exportaciones/);
 });
 

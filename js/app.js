@@ -3411,13 +3411,12 @@ class ValidaFlowApp {
     this.auditHistoryByModule[module] = [...merged.values()];
   }
 
-  getReportAuditSource(module = this.currentModule) {
+  getReportAuditSource(module = this.currentModule, visualizationModule = this.getVisualizationModuleFilter()) {
     const today = getNicaraguaDateKey(new Date());
     const withoutExpiredPending = audits => {
       const visible = (audits || []).filter(audit => !this.isExpiredPendingAudit(audit, today));
       return globalThis.PortalIndicators ? globalThis.PortalIndicators.canonical(visible) : visible;
     };
-    const visualizationModule = this.getVisualizationModuleFilter();
     if (visualizationModule === 'all' && this.currentView === 'visualizations') {
       return withoutExpiredPending(['smart', 'blocking'].flatMap(item => {
         const cached = this.auditHistoryByModule[item];
@@ -6131,8 +6130,7 @@ class ValidaFlowApp {
     return 'Tradicional';
   }
 
-  getStudyAndDateFilteredAuditsForReports() {
-    const reportAudits = this.getReportAuditSource();
+  getStudyAndDateFilteredAuditsForReports(reportAudits = this.getReportAuditSource()) {
     const studyFiltered = this.selectedStudies.includes('ALL') || this.selectedStudies.length === 0
       ? reportAudits
       : reportAudits.filter(a => {
@@ -6142,8 +6140,8 @@ class ValidaFlowApp {
     return studyFiltered.filter(audit => this.isWithinVisualizationDateRange(this.getAuditOperationDate(audit)));
   }
 
-  getFilteredAuditsForReports() {
-    const audits = this.getStudyAndDateFilteredAuditsForReports();
+  getFilteredAuditsForReports(reportAudits = this.getReportAuditSource()) {
+    const audits = this.getStudyAndDateFilteredAuditsForReports(reportAudits);
     if (this.selectedReportCountry === 'all' || !this.selectedReportCountry) return audits;
     const selectedCountry = this.selectedReportCountry === '__missing__' ? '' : this.selectedReportCountry;
     return audits.filter(audit => this.getReportGeography(audit) === selectedCountry);
@@ -6213,7 +6211,8 @@ class ValidaFlowApp {
       this.renderClassicReports(filteredAudits);
     }
     globalThis.PortalIndicators?.render(this, filteredAudits,
-      this.reportsSubtab === 'executive' || this.visualizationTab === 'committee' ? this.getCommitteeHistoryForReports() : null);
+      this.reportsSubtab === 'executive' || this.visualizationTab === 'committee' ? this.getCommitteeHistoryForReports() : null,
+      null, this.getFilteredAuditsForReports(this.getReportAuditSource(this.currentModule, 'all')));
     this.ensureBenchmarkCountries(reportAudits);
   }
 

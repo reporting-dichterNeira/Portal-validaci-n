@@ -12,9 +12,11 @@ test('universo usa una consulta agregada reutilizable y mantiene independientes 
  global.document={getElementById:()=>target};
  const app={currentProfile:{id:'test'},currentView:'visualizations',reportsSubtab:'executive',getVisualizationModuleFilter:()=> 'blocking',getReportCountry:()=> 'Chile',selectedStudies:['Chile'],selectedReportCountry:'all',indicatorExecutiveSection:'summary',renderReportsView(){},backend:{async loadDatabricksAuditTotals(f){calls++;filters=f;return {studies:[{study_name:'Chile',databricks_total:2702,export_total:2702,verified:true}],snapshots:[{month:'2026-10-01',source:'Databricks · Reporting Cluster',refreshed_at:'2026-10-12'}]};}}};
  const rows=[{id:'10',_module:'blocking',estudio:'Chile',fecha:'2026-10-01',kpis:[{name:'A',needsReview:true}]}];
- try {U.render(app,rows);await new Promise(resolve=>setImmediate(resolve));U.render(app,rows);U.render(app,rows);
+ const receipts=[...rows,{id:'10',_module:'smart',estudio:'Chile',fecha:'2026-10-01',kpis:[]},{id:'11',_module:'smart',estudio:'Chile',fecha:'2026-10-01',kpis:[]},{id:'11',_module:'smart',estudio:'Chile',fecha:'2026-10-01',kpis:[]},{id:'12',_module:'smart',estudio:'Chile',fecha:'2026-09-01',kpis:[]}];
+ try {U.render(app,rows,null,null,receipts);await new Promise(resolve=>setImmediate(resolve));U.render(app,rows,null,null,receipts);U.render(app,rows,null,null,receipts);
  assert.equal(calls,1);assert.equal(filters.month,'2026-10');assert.deepEqual(filters.studies,['Chile']);
- assert.match(target.innerHTML,/2\.702/);assert.match(target.innerHTML,/Auditorías recibidas · sistema/);assert.doesNotMatch(target.innerHTML,/Chile aún no|Histórico Excel|histórico Excel/);
+ assert.match(target.innerHTML,/2\.702/);assert.match(target.innerHTML,/Auditorías recibidas · Bloqueantes/);assert.match(target.innerHTML,/Recibidas · Smart/);assert.doesNotMatch(target.innerHTML,/Chile aún no|Histórico Excel|histórico Excel|Total Databricks/);
+ assert.match(target.innerHTML,/<td>Chile<\/td><td>2\.702<\/td><td>1<\/td><td>2<\/td>/);
  }finally{delete global.document;}
 });
 test('un fallo de acceso no se presenta como ausencia de datos y se puede reintentar',async()=>{
