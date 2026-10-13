@@ -61,7 +61,7 @@
       if (!byId.has(id)) byId.set(id, []);
       byId.get(id).push(c);
     }
-    return M.normalizeAudits(canonical(audits).filter(a=> (a._module || 'blocking') === sourceModule && /^\d+$/.test(String(a.id))).map(a=> {
+    return M.normalizeAudits(canonical(audits).filter(a=> (sourceModule==='all' || (a._module || 'blocking') === sourceModule) && /^\d+$/.test(String(a.id))).map(a=> {
       const candidates = byId.get(String(a.id)) || [];
       const fallback = names => {
         const values = [...new Set(candidates.map(c=>readField(c,names)).filter(Boolean))];
@@ -73,7 +73,7 @@
           validatedAt:r.supervisorResolvedAt || r.decisionAt || ''};
       });
       const periodDate = a._originalOperationDate || a._batchOperationDate || a.fecha || '';
-      return {id:a.id, study:a.estudio, periodDate,
+      return {id:a.id, _module:a._module || 'blocking', study:a.estudio, periodDate,
         auditDate:readField(a,['fechaAuditoriaOriginal','auditDate','Fecha_del_audito','FECHA_AUDITORIA','FECHA_AUDITO','FECHA_AU']) || fallback(['audit_date']),
         alertUploadedAt:a._originalUploadedAt || a._batchUploadedAt || a._createdAt,
         country:countryFor ? countryFor(a) : readField(a.databricksGeography || {},['country']) || readField(a,['pais','country']),
@@ -296,14 +296,13 @@
     if (app.currentView !== 'visualizations' && app.currentTab !== 'reports') return;
     const module = app.currentView === 'visualizations' ? app.getVisualizationModuleFilter() : app.currentModule;
     const legacy=Array.from(target.parentElement.children).filter(el=>el!==target);
-    if (module === 'smart') {target.innerHTML=''; legacy.forEach(el=>el.classList.remove('indicator-legacy-hidden')); return;}
     const state = app.indicatorFilters ||= {region:'all',channel:'all',subchannel:'all',month:''};
     // Navigation shares this snapshot. A fresh application render after a
     // load/live update always prepares a new one, including in-place edits.
     const context=prepared?null:[...(app.adminExternalAnalysis?.alertRecords || []),...(app.benchmarkCountryRows || [])];
-    const snapshot=prepared || {inputs:adapt(audits,context,a=>app.getReportCountry(a)),receiptInputs:adapt(receiptAudits,context,a=>app.getReportCountry(a)),smartInputs:adapt(receiptAudits,context,a=>app.getReportCountry(a),'smart'),calculations:new Map()};
+    const snapshot=prepared || {inputs:adapt(audits,context,a=>app.getReportCountry(a),module || 'blocking'),receiptInputs:adapt(receiptAudits,context,a=>app.getReportCountry(a)),smartInputs:adapt(receiptAudits,context,a=>app.getReportCountry(a),'smart'),calculations:new Map()};
     const inputs=snapshot.inputs;
-    if(executive && historyAudits && !snapshot.historyInputs)snapshot.historyInputs=historyAudits===audits ? inputs : adapt(historyAudits,context,a=>app.getReportCountry(a));
+    if(executive && historyAudits && !snapshot.historyInputs)snapshot.historyInputs=historyAudits===audits ? inputs : adapt(historyAudits,context,a=>app.getReportCountry(a),module || 'blocking');
     const historyInputs=snapshot.historyInputs || inputs;
     const asOf = new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Bogota',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
     const dimensions = [['region','Región','Sin región'],['channel','Canal','Sin canal'],['subchannel','Subcanal','Sin subcanal']];
@@ -390,6 +389,8 @@
     html+=panel('Detalle de esta lectura','El CSV corresponde al alcance, mes y filtros adicionales de estos indicadores. Una fila por alerta.', '<button type="button" class="btn btn-success" data-indicator-download '+(!c.total?'disabled':'')+'>📥 Descargar alertas de esta lectura (CSV)</button>');
     html+=panel('Reportes clásicos y exportaciones','Se conservan a continuación el histórico, las tablas y descargas anteriores. Usan los filtros generales de estudio, país / región, módulo y fecha del portal; no el mes ni los filtros adicionales de esta lectura.', '<p class="story-note">Pueden tener una base distinta: incluyen el módulo seleccionado (también Smart en Consolidado). Por eso sus totales no necesariamente coinciden con el resumen de Bloqueantes.</p>');
     }
+    const moduleLabel=module==='smart'?'SMART':module==='all'?'BLOQUEANTES + SMART':'BLOQUEANTES';
+    html=html.replace(/· BLOQUEANTES/g,'· '+moduleLabel).replace('No incluye Smart.','Módulo: '+moduleLabel+'. En Consolidado, cada caso y alerta se cuenta por módulo.').replace('resumen de Bloqueantes','resumen de esta lectura');
     target.innerHTML=html;
     target.querySelector('[data-universe-refresh]')?.addEventListener('click',()=>{app.databricksTotalsCache?.clear();app.renderReportsView();});
     target.querySelectorAll('[data-story-section]').forEach(el=>el.addEventListener('click',()=>{if(el.dataset.storySection===section)return;app[sectionKey]=el.dataset.storySection;if(el.dataset.storySection==='detail')app.renderClassicReports?.(audits);render(app,audits,historyAudits,snapshot);target.querySelector('[aria-current="page"]')?.focus({preventScroll:true});}));
@@ -399,11 +400,11 @@
       target.querySelectorAll('[data-indicator-bucket]').forEach(button=>button.setAttribute('aria-pressed',String(button===el)));
       target.querySelector('[data-indicator-backlog]').innerHTML=table(['ID auditoría','Fecha original','Estudio','País','Días','Alertas pendientes'],result.backlog[el.dataset.indicatorBucket].slice(0,100).map(a=>row([esc(a.id),esc(a.auditDate || 'Sin fecha'),esc(a.study),esc(a.country),a.age==null?'—':num(a.age),num(a.pending)])))+'<p>Hasta 100 filas; descarga el detalle completo en CSV.</p>';
     }));
-    const auditIndex = new Map(inputs.map(a=>[JSON.stringify([a.id,a.study]),a]));
-    target.querySelector('[data-indicator-download]')?.addEventListener('click',()=>download(['ID auditoría','Jornada','Fecha auditoría original','Fecha de carga','Fecha de decisión','Estudio','País','Región','Canal','Subcanal','Auditor','Sub-KPI','Decisión','Tipificación'],result.alerts.filter(a=>!executive || a.month===state.month).map(a=>{
-      const source=auditIndex.get(JSON.stringify([a.id,a.study]));
-      return [a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,a.study,a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,a.decision,a.reason];
-    }),'Indicadores-bloqueantes-'+asOf+'.csv'));
+    const auditIndex = new Map(inputs.map(a=>[JSON.stringify([a.module,a.id,a.study]),a]));
+    target.querySelector('[data-indicator-download]')?.addEventListener('click',()=>download(['Módulo','ID auditoría','Jornada','Fecha auditoría original','Fecha de carga','Fecha de decisión','Estudio','País','Región','Canal','Subcanal','Auditor','Sub-KPI','Decisión','Tipificación'],result.alerts.filter(a=>!executive || a.month===state.month).map(a=>{
+      const source=auditIndex.get(JSON.stringify([a.module,a.id,a.study]));
+      return [a.module==='smart'?'Smart':'Bloqueantes',a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,a.study,a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,a.decision,a.reason];
+    }),'Indicadores-'+(module || 'blocking')+'-'+asOf+'.csv'));
   }
   root.PortalIndicators={adapt,canonical,render,csv,download,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard};
   if(typeof module!=='undefined')module.exports=root.PortalIndicators;

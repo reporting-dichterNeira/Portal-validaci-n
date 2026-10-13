@@ -104,12 +104,13 @@
     const records = new Map();
     for (const row of input) {
       if (!row || !/^\d+$/.test(text(row.id))) throw new Error('Cada auditoría debe tener un ID numérico.');
-      if (row._module && row._module !== 'blocking') throw new Error('Estos indicadores solo aceptan auditorías de Alertas Bloqueantes, no Smart.');
+      const sourceModule=row._module || 'blocking';
+      if (!['blocking','smart'].includes(sourceModule)) throw new Error('Módulo de alertas no válido.');
       const study = normalizeStudy(row.study || row.estudio || row.modelo);
       const periodDate = dateKey(row.periodDate || row._batchOperationDate || row.fecha || row.auditDate);
       const auditDate = eventStamp(row.auditAt || row.auditDate)?.day || null; // nunca sustituir por fecha de carga/jornada
       const month = periodDate?.slice(0, 7) || null;
-      const key = JSON.stringify([study, text(row.id)]);
+      const key = JSON.stringify([sourceModule, study, text(row.id)]);
       if (records.has(key)) throw new Error(`ID ${row.id} duplicado en el mismo estudio. Carga una sola versión de cada auditoría, incluso entre meses.`);
       if (!Array.isArray(row.kpis)) throw new Error(`La auditoría ${row.id} no contiene una lista de KPIs.`);
       const country = normalizeCountry(row.country || row.pais, study);
@@ -122,7 +123,7 @@
         validatedAt:text(k.validatedAt || row.validationResults?.[k.name]?.supervisorResolvedAt || row.validationResults?.[k.name]?.decisionAt),
         validatedEvent:eventStamp(k.validatedAt || row.validationResults?.[k.name]?.supervisorResolvedAt || row.validationResults?.[k.name]?.decisionAt)
       }));
-      records.set(key, { id: text(row.id), study, country,
+      records.set(key, { id: text(row.id), module:sourceModule, study, country,
         geography: ['Chile','Lindley'].includes(study) ? text(row.region) || 'Sin región identificada' : country,
         pdv: text(row.pdv || row.idPDV),
         auditor: text(row.auditor || row.usuario), region:text(row.region), channel:text(row.channel || row.canal),
@@ -215,7 +216,7 @@
       && (subchannel==='all' || dimension(a.subchannel,'subcanal')===subchannel));
     const undated = scoped.filter(a => !a.periodDate).length;
     const selected = scoped.filter(a => a.periodDate && (!from || a.periodDate >= from) && (!to || a.periodDate <= to) && a.periodDate <= asOf);
-    const alerts = selected.flatMap(a => a.kpis.map(k => ({ ...k, id: a.id, study: a.study, country: a.country, geography:a.geography, auditor: a.auditor,
+    const alerts = selected.flatMap(a => a.kpis.map(k => ({ ...k, id: a.id, module:a.module, study: a.study, country: a.country, geography:a.geography, auditor: a.auditor,
       region:dimension(a.region,'región'),channel:dimension(a.channel,'canal'),subchannel:dimension(a.subchannel,'subcanal'), periodDate: a.periodDate, month: a.month })));
     const counts = totals(alerts);
     const backlog = { recent: [], week: [], old: [], missing: [], future: [] };

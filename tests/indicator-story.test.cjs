@@ -39,8 +39,22 @@ test('operational benchmark includes the whole range while committee chapters us
  assert.match(render('evolution',true).html,/2026-08/);
  assert.match(render('detail',true).html,/Rechazo/);
 });
-test('Smart retains the existing dashboard without blocking-only navigation',()=>{
- const result=render('summary',false,'smart');assert.equal(result.html,'');assert.equal(result.hidden.size,0);
+test('Smart has integrated indicators and module-specific scope',()=>{
+ const result=render('summary',false,'smart');assert.match(result.html,/LECTURA DE LA OPERACIÓN · SMART/);assert.doesNotMatch(result.html,/No incluye Smart/);assert.equal(result.hidden.has('indicator-legacy-hidden'),true);
+});
+
+test('Smart and Blocking retain independent decisions for the same audit ID',()=>{
+ const mixed=[source(50,'2026-10-01','aplica'),{...source(50,'2026-10-01','no_aplica'),_module:'smart'}, {...source(51,'2026-10-01',null),_module:'smart'}];
+ const all=M.compute(U.adapt(mixed,[],null,'all'),{asOf:'2026-10-13'});
+ assert.equal(all.audits,3);assert.equal(all.counts.total,3);assert.equal(all.counts.applies,1);assert.equal(all.counts.rejects,1);assert.equal(all.counts.pending,1);
+ assert.deepEqual(all.alerts.map(a=>a.module),['blocking','smart','smart']);
+ const smart=M.compute(U.adapt(mixed,[],null,'smart'),{asOf:'2026-10-13'});
+ assert.equal(smart.audits,2);assert.equal(smart.counts.total,2);assert.equal(smart.counts.applies,0);assert.equal(smart.counts.rejects,1);
+ const target={innerHTML:'',parentElement:{children:[]},querySelectorAll:()=>[],querySelector:()=>null};target.parentElement.children=[target];global.document={getElementById:()=>target};
+ try {for(const module of ['smart','all'])for(const executive of [false,true]){
+  const app={currentView:'visualizations',reportsSubtab:executive?'executive':'operational',getVisualizationModuleFilter:()=>module,getReportCountry:a=>a.pais};
+  U.render(app,mixed);assert.match(target.innerHTML,module==='all'?/BLOQUEANTES \+ SMART/:/LECTURA.*SMART/);assert.doesNotMatch(target.innerHTML,/No incluye Smart|No fue posible calcular/);
+ }}finally{delete global.document;}
 });
 test('new story escapes metadata and explains denominators',()=>{
  assert.equal(U.esc('<script>'), '&lt;script&gt;');
