@@ -350,8 +350,6 @@
     }
     if(section==='detail') {
     html+=panel('Detalle de esta lectura','El CSV corresponde al alcance, mes y filtros adicionales de estos indicadores. Una fila por alerta.', '<button type="button" class="btn btn-success" data-indicator-download '+(!c.total?'disabled':'')+'>📥 Descargar alertas de esta lectura (CSV)</button>');
-    const catalog=(root.PortalIndicatorCatalog || []).filter(r=>r.section===(executive?'Resumen mensual':'Operación'));
-    html+=panel('Definiciones y datos que aún faltan','Los indicadores sin una definición o fuente suficiente no se calculan.',catalog.map(r=>'<details><summary>'+esc(r.id+' · '+r.name)+(r.reason?' · Pendiente':'')+'</summary><p>'+esc(r.formula || r.reason)+'</p></details>').join(''));
     html+=panel('Reportes clásicos y exportaciones','Se conservan a continuación el histórico, las tablas y descargas anteriores. Usan los filtros generales de estudio, país / región, módulo y fecha del portal; no el mes ni los filtros adicionales de esta lectura.', '<p class="story-note">Pueden tener una base distinta: incluyen el módulo seleccionado (también Smart en Consolidado). Por eso sus totales no necesariamente coinciden con el resumen de Bloqueantes.</p>');
     }
     target.innerHTML=html;
