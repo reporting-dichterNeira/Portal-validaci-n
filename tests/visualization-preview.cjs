@@ -51,6 +51,7 @@ export class SupabaseBackend {
  subscribe(){} unsubscribe(){}
  async loadAdministration(){count('daily');return {studies:[],supervisors:[],assignments:[],validators:[],batches:[],audits:[],batchCreators:[],batchUploaders:[],operationDate:'2026-10-08'};}
  async loadAdminAnalysisImports(){count('imports');return imports;}
+ async loadDatabricksAuditTotals(){count('universe');return {studies:[{study_name:'KO Moderno CAM',databricks_total:8000,export_total:8000,verified:true}],snapshots:[{month:'2026-10-01',source:'Databricks · Reporting Cluster (datos ficticios)',refreshed_at:'2026-10-12T10:00:00Z'}]};}
  async loadAdminExternalAnalysis({includeAlerts=true,includeEdits=true}={}){
   if(includeAlerts)count('alerts');if(includeEdits)count('editions');
   return {imports,alertRecords:includeAlerts?audits.map(a=>({audit_external_id:a.id,period_month:'2026-10-01',country:a.pais,study:'ko_moderno_pa_202610',auditor:'Auditor de prueba',audit_date:'2026-10-08'})):[],

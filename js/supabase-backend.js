@@ -436,6 +436,13 @@ export class SupabaseBackend {
     return data || { audits:[], history:[] };
   }
 
+  async loadDatabricksAuditTotals(filters) {
+    this.ensureConfigured();
+    const { data, error } = await this.client.rpc('get_databricks_audit_totals', { p_filters: filters });
+    if (error) throw error;
+    return data;
+  }
+
   async resolvePreviousPending(ids, action, reason, target = null) {
     this.ensureConfigured();
     const { data, error } = await this.client.rpc('resolve_previous_pending', {

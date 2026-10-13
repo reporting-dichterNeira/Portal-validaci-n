@@ -38,6 +38,7 @@
   }
   function normalizeStudy(value) {
     const s = norm(value);
+    if (/ko[ _]trad[ _]ch([ _]|$)|chile|embonor/.test(s)) return 'Chile';
     if (/lindley/.test(s)) return 'Lindley';
     if (/moderno/.test(s)) return 'KO Moderno CAM';
     if (/trad/.test(s)) return 'KO Tradicional CAM';
@@ -248,7 +249,8 @@
     const dimensionKeys=['study','country','region','channel','subchannel'];
     const workload=groups(alerts,dimensionKeys).sort((a,b)=>b.pending-a.pending || b.total-a.total);
     const performance=groups(monthlyAlerts,dimensionKeys).sort((a,b)=>b.total-a.total);
-    return { counts, audits: selected.length, alerts, backlog, recurrence, startWeek, alertsWithoutAuditor, reasons, monthly, benchmark, rejectedTypes,
+    const auditCountsByStudy={};for(const a of selected)auditCountsByStudy[a.study]=(auditCountsByStudy[a.study]||0)+1;
+    return { counts, audits: selected.length, auditCountsByStudy, alerts, backlog, recurrence, startWeek, alertsWithoutAuditor, reasons, monthly, benchmark, rejectedTypes,
       workload, performance, timing:timing(selected,asOf),
       missingRegions:selected.filter(a=>!a.region).length, missingSubchannels:selected.filter(a=>!a.subchannel).length,
       missingPeriodDates: undated, missingCountries: selected.filter(a => a.country === 'Sin país identificado').length,

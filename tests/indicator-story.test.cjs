@@ -26,7 +26,8 @@ test('manager story distinguishes alerts from audits and empty data from complet
 test('all six chapters render and legacy tables appear only under detail',()=>{
  assert.equal(U.journey.length,6);
  for(const [section] of U.journey){const {html,hidden}=render(section);assert.match(html,/aria-current="page"/);assert.equal(hidden.has('indicator-legacy-hidden'),section!=='detail');}
- assert.doesNotMatch(render('summary').html,/<table/);
+ assert.match(render('summary').html,/Universo de auditorías y casos en el portal/);
+ assert.doesNotMatch(render('summary').html,/Reportes clásicos y exportaciones/);
  assert.match(render('detail').html,/data-indicator-download/);
  assert.match(render('pending').html,/data-indicator-bucket/);
 });
@@ -76,7 +77,8 @@ test('committee has separate chapters without changing the operation journey',()
  assert.deepEqual(U.committeeJourney.map(r=>r[0]),['summary','focus','evolution','decisions','detail']);
  for(const [section] of U.committeeJourney){const {html,hidden}=render(section,true);assert.match(html,/aria-current="page"/);assert.equal(hidden.has('indicator-legacy-hidden'),section!=='detail');assert.match(html,/PENDIENTES HEREDADOS/);assert.doesNotMatch(html,/NaN|Infinity/);}
  assert.doesNotMatch(render('summary').html,/PENDIENTES HEREDADOS|Decisiones propuestas/);
- assert.doesNotMatch(render('summary',true).html,/<table/);
+ assert.match(render('summary',true).html,/Total Databricks/);
+ assert.doesNotMatch(render('summary',true).html,/Reportes clásicos y exportaciones/);
 });
 
 test('carryover ignores date bounds, respects dimensions and never inflates month counts',()=>{

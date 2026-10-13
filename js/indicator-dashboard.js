@@ -123,6 +123,37 @@
   function time(t) { return (t.meanDays == null ? 'Sin muestras' : decimal(t.meanDays)+' días')+' · '+num(t.measured)+' muestras'+
     (t.exact ? '<br>'+decimal(t.meanHours)+' horas · '+num(t.exact)+' con hora exacta' : '')+
     '<br><small>Sin fecha: '+num(t.missing)+' · Inválidas: '+num(t.invalid)+' · Futuras: '+num(t.future)+'</small>'; }
+  function universe(app,state,executive) {
+    const studyName=s=>M.normalizeAudits([{id:'1',study:s,kpis:[]}])[0]?.study;
+    const studies=(app.selectedStudies||['ALL']).includes('ALL')?[]:(app.selectedStudies||[]).map(studyName);
+    const filters={studies,month:executive?state.month:'',from:app.visualizationDateFrom||'',to:app.visualizationDateTo||'',geography:app.selectedReportCountry||'all',region:state.region,channel:state.channel,subchannel:state.subchannel};
+    const key=JSON.stringify([app.currentProfile?.id,filters]);
+    app.databricksTotalsCache ||= new Map();
+    let entry=app.databricksTotalsCache.get(key);
+    if(!entry||Date.now()-entry.loadedAt>5*60*1000) {
+      entry={loading:true,data:null,error:'',loadedAt:Date.now()};app.databricksTotalsCache.set(key,entry);
+      if(app.databricksTotalsCache.size>12)app.databricksTotalsCache.delete(app.databricksTotalsCache.keys().next().value);
+      if(app.backend?.loadDatabricksAuditTotals)app.backend.loadDatabricksAuditTotals(filters).then(data=>entry.data=data).catch(error=>entry.error=error.message).finally(()=>{entry.loading=false;if(app.currentView==='visualizations')app.renderReportsView();});
+      else {entry.loading=false;entry.error='Fuente no disponible';}
+    }
+    const rows=entry.data?.studies||[],names=studies.length?studies:['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'];
+    const supported=new Set(['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley']);
+    const snapshots=entry.data?.snapshots||[],verified=snapshots.length>0&&snapshots.every(s=>/^Databricks/i.test(s.source));
+    const partial=names.some(n=>!supported.has(n)&&!rows.some(r=>r.study_name===n));
+    const total=entry.data&&snapshots.some(s=>/^Databricks/i.test(s.source))&&names.some(n=>supported.has(n))?rows.reduce((n,r)=>n+Number(r.databricks_total||0),0):null;
+    return {entry,rows,names,verified,partial,total,snapshots};
+  }
+  function universePanel(u,result) {
+    const value=u.total===null?(u.entry.loading?'Consultando…':'Sin datos'):num(u.total)+(u.partial||!u.verified?' *':'');
+    return panel('🌐 Universo de auditorías y casos en el portal','Son bases distintas: Databricks cuenta todas las auditorías del export, en cualquier estado; el sistema cuenta las auditorías con alertas cargadas al módulo Bloqueantes.',cards([
+      ['Auditorías totales · Databricks',value,u.verified?'Último corte sincronizado · IDs únicos por estudio':'* Solo cortes verificados de Databricks; el histórico Excel no se suma','cyan','🌐'],
+      ['Auditorías recibidas · sistema',num(result.audits),'Casos cargados al portal, no el universo de campo','blue','🏬']
+    ])+table(['Estudio','Total Databricks','Histórico Excel (aparte)','Recibidas en sistema'],u.names.map(name=>{
+      const r=u.rows.find(r=>r.study_name===name);
+      const known=u.snapshots.some(s=>/^Databricks/i.test(s.source))&&['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'].includes(name);
+      return row([esc(name),u.entry.loading?'Consultando…':known&&r?num(r.databricks_total)+(r.verified?'':' *'):known?'0':'Sin corte disponible',r&&!r.verified?num(Number(r.export_total)-Number(r.databricks_total)):'—',num(result.auditCountsByStudy?.[name]||0)]);
+    }))+'<p class="story-note">Databricks usa el mes de Ola y, si se filtran días, la fecha original de auditoría. El portal usa la jornada de carga. No se calcula una cobertura entre cohortes distintas. '+(u.partial?'Chile aún no está incluido en la sincronización de Databricks. ':'')+(u.snapshots.length?'Cortes: '+u.snapshots.map(s=>esc(String(s.month).slice(0,7))+' · '+esc(s.source)+' · '+esc(s.refreshed_at)).join('; '):'Sin un corte disponible no se interpreta el total como cero.')+'</p>'+(u.entry.error?'<p role="alert">No fue posible consultar el universo. Usa Actualizar o recarga la página.</p>':''));
+  }
   const journey = [
     ['summary','📊','Resumen','¿Cómo va la operación?'],
     ['pending','⏳','Pendientes','¿Qué falta por revisar?'],
@@ -167,7 +198,7 @@
     if(section==='summary') {
       const label=month?new Date(month+'-15T12:00:00Z').toLocaleDateString('es-CO',{month:'long',year:'numeric',timeZone:'America/Bogota'}):'Sin mes disponible';
       return '<section class="glass-panel committee-lead"><div><span class="corporate-badge">👔 LECTURA PARA DIRECCIÓN · BLOQUEANTES</span><h2>'+esc(label)+'</h2><p>'+esc(s.headline)+'</p></div><span class="committee-cut">'+(partial?'📅 Corte parcial del mes':'📅 Período mensual seleccionado')+'</span></section>'+cards([
-        ['Auditorías del mes',num(result.audits),'IDs únicos por estudio','blue','🏬'],
+        ['Auditorías recibidas · sistema',num(result.audits),'IDs únicos cargados al portal en el mes','blue','🏬'],
         ['Alertas recibidas',num(c.total),'Alertas de la cohorte mensual','purple','📥'],
         ['Cobertura de revisión',pct(c.coverage),num(s.decided)+' revisadas / '+num(c.total)+' recibidas','cyan','🔎',c.coverage],
         ['Confirmadas · Aplica',num(c.applies),pct(s.confirmation)+' de las revisadas','green','✅'],
@@ -307,6 +338,7 @@
       '<nav class="story-nav'+(executive?' story-nav--committee':'')+'" aria-label="Apartados de indicadores">'+navigation.map(([id,icon,label,question],i)=>'<button type="button" data-story-section="'+id+'" aria-current="'+(id===section?'page':'false')+'"><span aria-hidden="true">'+icon+'</span><strong>'+(i+1)+'. '+label+'</strong><small>'+question+'</small></button>').join('')+'</nav>'+
       '<details class="glass-panel story-filters" '+(state.region!=='all'||state.channel!=='all'||state.subchannel!=='all'?'open':'')+'><summary>🔍 Afinar esta lectura'+(executive?' · Mes '+esc(state.month):'')+' · Región: '+esc(state.region==='all'?'Todas':state.region)+' · Canal: '+esc(state.channel==='all'?'Todos':state.channel)+' · Subcanal: '+esc(state.subchannel==='all'?'Todos':state.subchannel)+'</summary><div class="indicator-controls">'+controls+'</div><p>Estos filtros adicionales aplican a los '+(executive?'cinco':'seis')+' apartados y su CSV; no cambian los reportes clásicos.</p></details>';
     let committee;
+    if(section==='summary')html+=universePanel(universe(app,state,executive),result);
     if(executive) {
       const monthStart=state.month+'-01';
       const monthEnd=state.month?new Date(Date.UTC(Number(state.month.slice(0,4)),Number(state.month.slice(5,7)),0)).toISOString().slice(0,10):'';
@@ -318,7 +350,7 @@
     }
     if(section==='summary' && !executive) {
       html+=panel('La operación en una mirada',esc(narrative.headline),cards([
-        ['Auditorías en alcance',num(result.audits),'IDs únicos por estudio','blue','🏬'],
+        ['Auditorías recibidas · sistema',num(result.audits),'IDs únicos cargados al portal','blue','🏬'],
         ['Alertas recibidas',num(c.total),'Sub-KPIs que requieren revisión','purple','📥'],
         ['Alertas revisadas',num(narrative.decided),pct(c.coverage)+' del total recibido','green','✅',c.coverage],
         ['Alertas pendientes',num(c.pending),num(narrative.pendingAudits)+' auditorías con alguna alerta pendiente','orange','⏳']

@@ -9,7 +9,7 @@ import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
 import { ValidatorUI } from './validator-ui.js?v=36.0';
-import { SupabaseBackend } from './supabase-backend.js?v=62.0';
+import { SupabaseBackend } from './supabase-backend.js?v=63.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
 
