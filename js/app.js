@@ -8,8 +8,8 @@ import { ExcelParser } from './excel-parser.js?v=33.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.0';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
-import { ValidatorUI } from './validator-ui.js?v=36.0';
-import { SupabaseBackend } from './supabase-backend.js?v=63.0';
+import { ValidatorUI } from './validator-ui.js?v=37.0';
+import { SupabaseBackend } from './supabase-backend.js?v=64.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
 
@@ -4854,7 +4854,10 @@ class ValidaFlowApp {
   getValidatorsForCurrentProject({ includeInactive = false } = {}) {
     const cur = (this.currentProject || 'Chile').toUpperCase();
     const filtered = this.validators.filter(v => v.estudio && v.estudio.toUpperCase() === cur);
-    const projectValidators = filtered.length > 0 ? filtered : (this.isSupervisor ? [] : this.validators);
+    const roster = filtered.length > 0 ? filtered : (this.isSupervisor ? [] : this.validators);
+    const smart=this.currentModule==='smart';
+    const projectValidators=roster.filter(v=>smart?v.smartEnabled===true:v.blockingEnabled!==false)
+      .map(v=>({...v,isActive:(smart?v.smartActive:v.blockingActive) ?? v.isActive}));
     return includeInactive
       ? projectValidators
       : projectValidators.filter(validator => validator.isActive !== false);
@@ -5449,14 +5452,19 @@ class ValidaFlowApp {
         estudio,
         studyId: this.currentScope?.study?.id || null,
         countryId: this.currentScope?.country?.id || null,
-        isActive: true
+        isActive: true,smartEnabled:this.currentModule==='smart',blockingEnabled:this.currentModule!=='smart',smartActive:true,blockingActive:true
       };
 
       saveBtn.disabled = true;
       const mode = document.getElementById('modal-val-mode');
       mode.disabled = true;
       try {
-        if (this.backend.configured) await this.backend.upsertValidators([newValidator]);
+        if (this.backend.configured) {
+          await this.backend.upsertValidators([newValidator]);
+          // A new Smart identity must not enter the Blocking roster implicitly.
+          if(this.currentModule==='smart')await this.backend.client.rpc('set_validator_module',{p_id:newValidator.id,p_study:this.currentScope.study.id,p_country:this.currentScope.country.id,p_module:'blocking',p_enabled:false,p_active:false}).then(({error})=>{if(error)throw error;});
+          Object.assign(newValidator,await this.backend.addExistingStudyValidator(newValidator.id,this.currentModule));
+        }
       } catch (error) {
         this.showToast(error.message || 'No fue posible guardar el validador.', 'error');
         return;
@@ -5513,18 +5521,18 @@ class ValidaFlowApp {
     const status = document.getElementById('modal-existing-validator-status');
     select.replaceChildren(new Option('Cargando validadores...', ''));
     select.disabled = true;
-    status.textContent = 'Buscando validadores activos de otros estudios...';
+    status.textContent = 'Buscando validadores disponibles para este módulo...';
     try {
       if (!this.backend.configured || !this.currentScope) throw new Error('Inicia sesión como supervisor y selecciona un estudio para consultar los validadores.');
-      const validators = await this.backend.getAvailableStudyValidators();
+      const validators = await this.backend.getAvailableStudyValidators(this.currentModule);
       if (request !== this.validatorDirectoryRequest) return;
       select.replaceChildren(new Option('Selecciona un validador', ''));
       validators.forEach(validator => select.add(new Option(`${validator.name} — ${getStudyDisplayName(validator.study)}`, validator.id)));
       select.disabled = !validators.length;
       save.disabled = !validators.length;
       status.textContent = validators.length
-        ? `${validators.length} disponibles. Los que ya pertenecen a este estudio no se repiten.`
-        : 'No hay otros validadores activos disponibles. Los de este estudio ya aparecen en el listado principal.';
+        ? `${validators.length} disponibles. Puedes compartir uno de otro módulo o estudio; solo se añadirá al módulo actual.`
+        : 'No hay otros validadores activos disponibles para añadir a este módulo.';
     } catch (error) {
       if (request !== this.validatorDirectoryRequest) return;
       select.replaceChildren(new Option('No se pudo cargar la lista', ''));
@@ -5541,7 +5549,7 @@ class ValidaFlowApp {
     mode.disabled = true;
     save.textContent = 'Añadiendo...';
     try {
-      const validator = await this.backend.addExistingStudyValidator(id);
+      const validator = await this.backend.addExistingStudyValidator(id,this.currentModule);
       if (!validator) throw new Error('No se pudo confirmar la asignación. Actualiza el listado antes de reintentar.');
       this.validators = [...this.validators.filter(item => item.id !== id), validator];
       this.saveState();
@@ -5630,9 +5638,8 @@ class ValidaFlowApp {
       if (this.backend.configured && this.isSupervisor) {
         const countries = willBeActive && this.getDistributionOptions().restrictByCountry
           ? this.readValidatorSmartCountries(button?.closest('.validator-admin-card'), validator) : [];
-        const updated = willBeActive && this.getDistributionOptions().restrictByCountry
-          ? await this.backend.setValidatorSmartCountries(id, countries, true)
-          : await this.backend.setValidatorActive(id, willBeActive);
+        if(willBeActive && this.getDistributionOptions().restrictByCountry)await this.backend.setValidatorSmartCountries(id,countries);
+        const updated = await this.backend.setValidatorActive(id, willBeActive,this.currentModule);
         Object.assign(validator, updated);
       } else {
         if (willBeActive && this.getDistributionOptions().restrictByCountry) {
@@ -5640,6 +5647,7 @@ class ValidaFlowApp {
           validator.smartCountry = validator.smartCountries[0] || '';
         }
         validator.isActive = willBeActive;
+        validator[this.currentModule==='smart'?'smartActive':'blockingActive']=willBeActive;
       }
 
       // Reactivating keeps the agreed equitable redistribution. When a

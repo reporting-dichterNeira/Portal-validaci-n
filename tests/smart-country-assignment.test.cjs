@@ -15,6 +15,16 @@ const { ExcelParser, Distributor, SupabaseBackend, App } = context;
 const audit = (id,pais) => ({id:String(id),pais,kpis:[{needsReview:true}],validationStatus:'pendiente'});
 const options = {restrictByCountry:true};
 
+test('equipos independientes permiten Smart propio y compartido, sin activar el otro módulo',()=>{
+ const app=Object.assign(Object.create(App.prototype),{currentProject:'Moderno',currentModule:'smart',isSupervisor:true,validators:[
+ {id:'blocking',estudio:'Moderno',blockingEnabled:true,blockingActive:true},
+ {id:'smart',estudio:'Moderno',smartEnabled:true,smartActive:true,blockingEnabled:false},
+ {id:'shared',estudio:'Moderno',smartEnabled:true,smartActive:false,blockingEnabled:true,blockingActive:true}]});
+ assert.deepEqual(Array.from(app.getValidatorsForCurrentProject(),v=>v.id),['smart']);
+ assert.deepEqual(Array.from(app.getValidatorsForCurrentProject({includeInactive:true}),v=>v.id),['smart','shared']);
+ app.currentModule='blocking';assert.deepEqual(Array.from(app.getValidatorsForCurrentProject(),v=>v.id),['blocking','shared']);
+});
+
 test('Smart reparte Panamá solo a validadores habilitados, sin cuota global que bloquee países', () => {
   const validators=[{id:'panama',smartCountry:'Panamá'},{id:'cr',smartCountry:'Costa Rica'}];
   const input=[...Array.from({length:10},(_,i)=>audit(i,'Panamá')),audit(11,'Costa Rica')];
@@ -105,8 +115,8 @@ test('tarjeta muestra países pequeños debajo del nombre, sin desplegable, y co
   const grid={innerHTML:'',querySelectorAll:()=>[]};
   context.document.getElementById=id=>id==='admin-validators-grid'?grid:null;
   const app=Object.assign(Object.create(App.prototype),{currentProject:'Moderno',currentModule:'smart',isSupervisor:true,
-    validators:[{id:'v1',code:'VAL-1',name:'Ejemplo',estudio:'Moderno',smartCountry:'Panamá',isActive:true},
-      {id:'v2',code:'VAL-2',name:'Sin casos',estudio:'Moderno',smartCountry:'Honduras',isActive:false}],
+    validators:[{id:'v1',code:'VAL-1',name:'Ejemplo',estudio:'Moderno',smartCountry:'Panamá',smartEnabled:true,isActive:true},
+      {id:'v2',code:'VAL-2',name:'Sin casos',estudio:'Moderno',smartCountry:'Honduras',smartEnabled:true,isActive:false}],
     getAuditsForCurrentProject:()=>[
       {...audit(1,'Panamá'),assignedValidatorId:'v1'},
       {...audit(2,'Panamá'),assignedValidatorId:'v1',validationStatus:'completada'},

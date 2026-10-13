@@ -46,8 +46,8 @@ test('adding sends only identity and destination; no audit or code mutation', as
   b.loadScopeValidators=async()=>[{id:'shared',code:'VAL-EXAMPLE1'}];
   const result=await b.addExistingStudyValidator('shared');
   assert.equal(result.code,'VAL-EXAMPLE1');
-  assert.equal(calls[0].name,'add_existing_study_validator');
-  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].args)),{p_validator_id:'shared',p_study_id:'study-2',p_country_id:'country-2'});
+  assert.equal(calls[0].name,'set_validator_module');
+  assert.deepEqual(JSON.parse(JSON.stringify(calls[0].args)),{p_id:'shared',p_study:'study-2',p_country:'country-2',p_module:'blocking',p_enabled:true,p_active:true});
 });
 test('membership errors propagate and do not report a false success', async () => {
   const b=backend({rpc:async()=>({error:new Error('SUPERVISOR_SCOPE_REQUIRED')})});

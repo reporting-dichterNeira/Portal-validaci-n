@@ -14,6 +14,16 @@ for(const [file,name] of [['validator-ui.js','ValidatorUI'],['supabase-backend.j
   vm.runInContext(code+`\nthis.${name}=${name};`,context);
 }
 const {ValidatorUI,ExcelParser,SupabaseBackend}=context;
+
+test('filtro país y navegación solo usan las auditorías propias del país seleccionado',()=>{
+ const ui=Object.assign(Object.create(ValidatorUI.prototype),{filterCountry:'Panamá',getMyAudits:()=>[
+ {id:'1',estudio:'Moderno',pais:'Panamá'},{id:'2',estudio:'Moderno',pais:'Costa Rica'},{id:'3',estudio:'Moderno',pais:'Panamá'}]});
+ assert.deepEqual(Array.from(ui.getCountryAudits(),a=>a.id),['1','3']);
+ let selected;ui.currentAuditId='1';ui.selectAudit=id=>selected=id;ui.navigateRelativeAudit(1);assert.equal(selected,'3');
+ ui.filterCountry='all';assert.equal(ui.getCountryAudits().length,3);
+ assert.equal(ui.getAuditCountry({estudio:'Lindley'}),'Perú');assert.equal(ui.getAuditCountry({estudio:'Chile'}),'Chile');
+ assert.equal(ui.getAuditCountry({estudio:'Moderno'}),'Sin país identificado');
+});
 const audit=()=>({id:'999001',_rowId:999001,_module:'smart',estudio:'Moderno',assignedValidatorId:'fixture',
   fecha:'2026-10-09',validationStatus:'en_progreso',kpis:[{name:'Alerta precio',needsReview:true}],validationResults:{}});
 function instance(module='smart'){

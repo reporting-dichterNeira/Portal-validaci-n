@@ -349,32 +349,34 @@ export class SupabaseBackend {
     const scope = this.currentScope;
     if (!scope?.study?.id || !scope?.country?.id) throw new Error('Selecciona primero un estudio.');
     const { data, error } = await this.client.from('validator_study_memberships')
-      .select('is_active, smart_country, smart_countries, validators(id, code, name, email, study, study_id, country_id, is_active)')
+      .select('is_active, blocking_enabled, smart_enabled, blocking_active, smart_active, smart_country, smart_countries, validators(id, code, name, email, study, study_id, country_id, is_active)')
       .eq('study_id', scope.study.id).eq('country_id', scope.country.id).is('removed_at', null);
     if (error) throw error;
     return (data || []).flatMap(membership => {
       const row = Array.isArray(membership.validators) ? membership.validators[0] : membership.validators;
       return row ? [{ ...mapValidator(row), estudio: scope.study.name, studyId: scope.study.id,
         countryId: scope.country.id, isActive: membership.is_active !== false,
+        blockingEnabled:membership.blocking_enabled,smartEnabled:membership.smart_enabled,
+        blockingActive:membership.blocking_active,smartActive:membership.smart_active,
         smartCountry: membership.smart_country || '',
         smartCountries: Array.isArray(membership.smart_countries) ? membership.smart_countries
           : membership.smart_country ? [membership.smart_country] : [] }] : [];
     }).sort((a, b) => Number(b.isActive) - Number(a.isActive) || a.name.localeCompare(b.name, 'es'));
   }
 
-  async getAvailableStudyValidators() {
+  async getAvailableStudyValidators(module = 'blocking') {
     this.ensureConfigured();
-    const { data, error } = await this.client.rpc('available_study_validators', {
-      p_study_id: this.currentScope?.study?.id, p_country_id: this.currentScope?.country?.id
+    const { data, error } = await this.client.rpc('available_module_validators', {
+      p_study: this.currentScope?.study?.id, p_country: this.currentScope?.country?.id,p_module:module
     });
     if (error) throw error;
     return data || [];
   }
 
-  async addExistingStudyValidator(id) {
+  async addExistingStudyValidator(id,module='blocking') {
     this.ensureConfigured();
-    const { error } = await this.client.rpc('add_existing_study_validator', {
-      p_validator_id: id, p_study_id: this.currentScope?.study?.id, p_country_id: this.currentScope?.country?.id
+    const { error } = await this.client.rpc('set_validator_module', {
+      p_id:id,p_study:this.currentScope?.study?.id,p_country:this.currentScope?.country?.id,p_module:module,p_enabled:true,p_active:true
     });
     if (error) throw error;
     return (await this.loadScopeValidators()).find(validator => validator.id === id);
@@ -587,11 +589,10 @@ export class SupabaseBackend {
     if (error) throw error;
   }
 
-  async setValidatorActive(id, isActive) {
+  async setValidatorActive(id, isActive,module='blocking') {
     this.ensureConfigured();
-    const { error } = await this.client.rpc('set_study_validator_active', {
-      p_validator_id: id, p_study_id: this.currentScope?.study?.id,
-      p_country_id: this.currentScope?.country?.id, p_active: Boolean(isActive)
+    const { error } = await this.client.rpc('set_validator_module', {
+      p_id:id,p_study:this.currentScope?.study?.id,p_country:this.currentScope?.country?.id,p_module:module,p_enabled:true,p_active:Boolean(isActive)
     });
     if (error) throw error;
     return (await this.loadScopeValidators()).find(validator => validator.id === id);

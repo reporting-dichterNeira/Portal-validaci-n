@@ -18,6 +18,7 @@ export class ValidatorUI {
     this.currentModule = 'smart'; // 'smart' | 'blocking'
     this.filterStatus = 'all'; // 'all' | 'pending' | 'completed'
     this.searchQuery = '';
+    this.filterCountry = 'all';
     this.productivityRows = [];
     this.currentAuditNeedsSave = false;
 
@@ -44,6 +45,7 @@ export class ValidatorUI {
     // Lista de auditorías (Master)
     this.auditListContainer = document.getElementById('val-audit-list');
     this.valAuditSearch = document.getElementById('val-audit-search');
+    this.countryFilter = document.getElementById('val-country-filter');
     this.filterButtons = document.querySelectorAll('.val-filter-btn');
 
     // Detalle de auditoría (Detail)
@@ -93,6 +95,10 @@ export class ValidatorUI {
     });
 
     // Búsqueda en auditorías
+    this.countryFilter?.addEventListener('change', e => {
+      this.filterCountry=e.target.value;
+      this.renderAuditList();
+    });
     this.valAuditSearch?.addEventListener('input', (e) => {
       this.searchQuery = e.target.value.toLowerCase().trim();
       this.renderAuditList();
@@ -389,6 +395,15 @@ export class ValidatorUI {
     if (!this.auditListContainer) return;
 
     let audits = this.getMyAudits();
+    const countryFor=a=>this.getAuditCountry(a);
+    const countries=[...new Set(audits.map(countryFor))].sort((a,b)=>a.localeCompare(b,'es'));
+    if(this.filterCountry!=='all'&&!countries.includes(this.filterCountry))this.filterCountry='all';
+    if(this.countryFilter){
+      this.countryFilter.innerHTML='<option value="all">Todos los países</option>'+countries.map(c=>'<option value="'+escapeValidatorText(c)+'">'+escapeValidatorText(c)+'</option>').join('');
+      this.countryFilter.value=this.filterCountry;
+    }
+    const countryAudits=audits.filter(a=>this.filterCountry==='all'||countryFor(a)===this.filterCountry);
+    audits=countryAudits;
 
     // Aplicar filtros
     if (this.filterStatus === 'pending') {
@@ -411,7 +426,7 @@ export class ValidatorUI {
     }
 
     // Actualizar contadores en los botones de filtro
-    const myAll = this.getMyAudits();
+    const myAll = countryAudits;
     const pendingCount = myAll.filter(a => a.validationStatus !== 'completada').length;
     const completedCount = myAll.filter(a => a.validationStatus === 'completada').length;
 
@@ -1133,7 +1148,7 @@ export class ValidatorUI {
 
     // Avanzar a la siguiente auditoría pendiente
     const myAudits = this.getMyAudits();
-    const nextPending = myAudits.find(a => a.validationStatus !== 'completada' && a.id !== audit.id);
+    const nextPending = myAudits.find(a => a.validationStatus !== 'completada' && a.id !== audit.id && (!this.filterCountry || this.filterCountry==='all' || this.getAuditCountry(a)===this.filterCountry));
 
     if (nextPending) {
       setTimeout(() => {
@@ -1141,14 +1156,25 @@ export class ValidatorUI {
       }, 250);
     } else {
       this.renderAuditDetail(audit);
-      if (!hasDoubts) {
+      if (!hasDoubts && !this.getMyAudits().some(a=>a.validationStatus!=='completada')) {
         this.showCelebrationModal();
       }
     }
   }
 
+  getAuditCountry(a) {
+    const study=String(a.estudio || a.modelo || '').toLowerCase();
+    if(study.includes('lindley'))return 'Perú';
+    if(study.includes('chile'))return 'Chile';
+    return String(a.pais || a.country || '').trim() || 'Sin país identificado';
+  }
+
+  getCountryAudits() {
+    return this.getMyAudits().filter(a=>!this.filterCountry || this.filterCountry==='all' || this.getAuditCountry(a)===this.filterCountry);
+  }
+
   navigateRelativeAudit(direction) {
-    const myAudits = this.getMyAudits();
+    const myAudits = this.getCountryAudits();
     const currentIndex = myAudits.findIndex(a => a.id === this.currentAuditId);
     if (currentIndex === -1) return;
 
@@ -1171,7 +1197,7 @@ export class ValidatorUI {
     const groups = { 'Chile': [], 'Tradicional': [], 'Moderno': [], 'Lindley': [] };
     const others = [];
 
-    (validators || []).forEach(v => {
+    (validators || []).filter(v=>this.app.currentModule==='smart'?v.smartEnabled===true:v.blockingEnabled!==false).forEach(v => {
       const st = v.estudio || 'Tradicional';
       if (groups[st]) {
         groups[st].push(v);
