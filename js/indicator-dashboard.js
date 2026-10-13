@@ -168,7 +168,6 @@
     ['summary','👔','Resumen para dirección','Volumen, revisión y resultado'],
     ['focus','🌎','Focos de atención','Dónde enfocar la gestión'],
     ['evolution','📈','Evolución','Qué cambia entre meses'],
-    ['decisions','🎯','Decisiones propuestas','Qué llevar a la mesa'],
     ['detail','📥','Detalle operativo','Fuentes, pendientes y descargas']
   ];
   function committeeData(result, range, history, month, filters) {
@@ -223,14 +222,6 @@
           ['Carga → decisión',time(result.timing.validation),'Una muestra por alerta decidida','purple','⏱️']
         ],'timing')+'<p class="story-note">No es un SLA. La cohorte usa jornada; los intervalos usan las fechas reales de auditoría, carga y decisión.</p>')+
         panel('⏱️ Evolución de los tiempos de respuesta','Auditorías dentro del rango general, agrupadas aquí por el mes real de carga. Por eso no equivale necesariamente a la cohorte de jornada.',table(['Mes real de carga','Auditoría → carga','Carga → decisión'],data.timing.map(r=>row([esc(r.month),time(r.intake),time(r.validation)]))));
-    }
-    if(section==='decisions') {
-      const proposals=[];
-      if(c.pending)proposals.push(['Priorizar la revisión del mes',num(c.pending)+' alertas sin decisión; '+num(result.backlog.old.length)+' auditorías pendientes con 15 días o más.','Acordar capacidad y orden de revisión con supervisión.']);
-      if(data.inherited.counts.pending)proposals.push(['Resolver el rezago heredado',num(data.inherited.counts.pending)+' alertas anteriores al mes siguen pendientes hoy.','Pedir al supervisor revisar la base y decidir descarga, reasignación o retiro justificado.']);
-      if(c.rejects)proposals.push(['Revisar las causas de descarte',num(c.rejects)+' No aplica; '+(result.reasons[0]?esc(result.reasons[0].name)+' es el motivo de mayor volumen.':''),'Revisar reglas y evidencias con calidad antes de proponer cambios en las alertas.']);
-      if(result.missingCountries||result.backlog.missing.length)proposals.push(['Completar el contexto faltante',num(result.missingCountries)+' auditorías sin país; '+num(result.backlog.missing.length)+' pendientes sin fecha original.','Verificar los cruces y las fechas en las fuentes; no inferir información ausente.']);
-      return panel('🎯 Decisiones para discutir','Sugerencias a partir de los datos, no acciones ejecutadas ni compromisos ya acordados.',proposals.length?'<div class="committee-proposals">'+proposals.map(([title,evidence,action],i)=>'<article><span class="corporate-badge">PROPUESTA '+(i+1)+'</span><h4>'+title+'</h4><p><b>Hecho observado:</b> '+evidence+'</p><p><b>Acción sugerida:</b> '+action+'</p><small>Responsable y fecha objetivo: por acordar en comité.</small></article>').join('')+'</div>':'<p class="indicator-empty">'+(c.total?'No se identificaron pendientes o descartes que generen propuestas automáticas. Esto no sustituye la revisión gerencial.':'Sin datos suficientes para proponer acciones.')+'</p>')+panel('📌 Qué no debe concluirse aún','Límites de esta lectura ejecutiva.','<p class="story-note">No hay metas aprobadas para calificar cumplimiento, ni datos suficientes para atribuir ahorro, ventas o impacto financiero. Mayor volumen o mayor descarte no demuestra por sí solo peor desempeño.</p>');
     }
     return '';
   }
@@ -360,8 +351,6 @@
         ['Alertas revisadas',num(narrative.decided),pct(c.coverage)+' del total recibido','green','✅',c.coverage],
         ['Alertas pendientes',num(c.pending),num(narrative.pendingAudits)+' auditorías con alguna alerta pendiente','orange','⏳']
       ])+decisionBar(c)+'<p class="story-note">Una auditoría puede contener varias alertas. Revisadas = Aplica + No aplica. Recibidas = revisadas + pendientes.</p>');
-      html+=panel('Qué significa y dónde actuar','Lectura basada en los datos seleccionados; no se presume una meta ni un plazo aprobado.',
-        '<div class="story-actions"><article><span>⏳ PRIORIDAD DE REVISIÓN</span><h4>'+ (c.pending?num(c.pending)+' alertas esperan decisión':'Sin alertas pendientes en esta selección')+'</h4><p>'+num(result.backlog.old.length)+' auditorías pendientes tienen 15 días o más desde la auditoría original. '+num(result.backlog.missing.length)+' no tienen fecha original para calcular su antigüedad.</p>'+jump('pending','Ver pendientes')+'</article><article><span>🔎 RESULTADO DE LA REVISIÓN</span><h4>'+num(c.applies)+' confirmadas · '+num(c.rejects)+' descartadas</h4><p>'+ (narrative.decided?pct(narrative.confirmation)+' de las alertas revisadas fueron confirmadas.':'Aún no hay decisiones para evaluar la confirmación.')+' No aplica significa descartar la alerta; no implica editar la auditoría.</p>'+jump('findings','Entender los hallazgos')+'</article><article><span>🌎 FOCO DE GESTIÓN</span><h4>Comparar con contexto</h4><p>Consulta el volumen y los pendientes por estudio, país o región. Una tasa aislada no indica mejor desempeño si la revisión está incompleta.</p>'+jump('comparison','Comparar territorios')+'</article></div>');
     }
     if(section==='pending' || executive && section==='detail') {
       html+=panel('Qué falta por revisar',num(c.pending)+' alertas pendientes en '+num(narrative.pendingAudits)+' auditorías. Los grupos siguientes cuentan auditorías, no alertas.','<p class="story-note">Las cargas reemplazadas y los registros retirados se excluyen. La gestión de descargar, reasignar o retirar pendientes se conserva en el panel de supervisión.</p>');
@@ -390,7 +379,7 @@
     html+=panel('Reportes clásicos y exportaciones','Se conservan a continuación el histórico, las tablas y descargas anteriores. Usan los filtros generales de estudio, país / región, módulo y fecha del portal; no el mes ni los filtros adicionales de esta lectura.', '<p class="story-note">Pueden tener una base distinta: incluyen el módulo seleccionado (también Smart en Consolidado). Por eso sus totales no necesariamente coinciden con el resumen de Bloqueantes.</p>');
     }
     const moduleLabel=module==='smart'?'SMART':module==='all'?'BLOQUEANTES + SMART':'BLOQUEANTES';
-    html=html.replace(/· BLOQUEANTES/g,'· '+moduleLabel).replace('No incluye Smart.','Módulo: '+moduleLabel+'. En Consolidado, cada caso y alerta se cuenta por módulo.').replace('resumen de Bloqueantes','resumen de esta lectura');
+    html=html.replace(/· BLOQUEANTES/g,'· '+moduleLabel).replace('No incluye Smart.','Módulo: '+moduleLabel+'. En Consolidado, cada caso y alerta se cuenta por módulo.').replace('resumen de Bloqueantes','resumen de esta lectura').replace(jump('decisions','Preparar decisiones'),'');
     target.innerHTML=html;
     target.querySelector('[data-universe-refresh]')?.addEventListener('click',()=>{app.databricksTotalsCache?.clear();app.renderReportsView();});
     target.querySelectorAll('[data-story-section]').forEach(el=>el.addEventListener('click',()=>{if(el.dataset.storySection===section)return;app[sectionKey]=el.dataset.storySection;if(el.dataset.storySection==='detail')app.renderClassicReports?.(audits);render(app,audits,historyAudits,snapshot);target.querySelector('[aria-current="page"]')?.focus({preventScroll:true});}));

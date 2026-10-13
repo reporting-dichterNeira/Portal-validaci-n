@@ -88,11 +88,12 @@ test('committee macro keeps month selector visible and empty data honest',()=>{
 
 test('committee has separate chapters without changing the operation journey',()=>{
  assert.deepEqual(U.journey.map(r=>r[0]),['summary','pending','findings','comparison','timing','detail']);
- assert.deepEqual(U.committeeJourney.map(r=>r[0]),['summary','focus','evolution','decisions','detail']);
+ assert.deepEqual(U.committeeJourney.map(r=>r[0]),['summary','focus','evolution','detail']);
  for(const [section] of U.committeeJourney){const {html,hidden}=render(section,true);assert.match(html,/aria-current="page"/);assert.equal(hidden.has('indicator-legacy-hidden'),section!=='detail');assert.match(html,/PENDIENTES HEREDADOS/);assert.doesNotMatch(html,/NaN|Infinity/);}
  assert.doesNotMatch(render('summary').html,/PENDIENTES HEREDADOS|Decisiones propuestas/);
  assert.match(render('summary',true).html,/Total Export/);
  assert.doesNotMatch(render('summary',true).html,/Reportes clásicos y exportaciones/);
+ for(const executive of [false,true])for(const section of ['summary','decisions','detail'])assert.doesNotMatch(render(section,executive).html,/Decisiones para discutir|Qué no debe concluirse aún|Qué significa y dónde actuar|Preparar decisiones|data-story-section="decisions"/);
 });
 
 test('carryover ignores date bounds, respects dimensions and never inflates month counts',()=>{
