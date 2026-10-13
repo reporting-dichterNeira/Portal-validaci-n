@@ -138,21 +138,22 @@
     }
     const rows=entry.data?.studies||[],names=studies.length?studies:['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'];
     const supported=new Set(['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley']);
-    const snapshots=entry.data?.snapshots||[],verified=snapshots.length>0&&snapshots.every(s=>/^Databricks/i.test(s.source));
+    const snapshots=(entry.data?.snapshots||[]).filter(s=>/^Databricks/i.test(s.source)),verified=snapshots.length>0;
     const partial=names.some(n=>!supported.has(n)&&!rows.some(r=>r.study_name===n));
     const total=entry.data&&snapshots.some(s=>/^Databricks/i.test(s.source))&&names.some(n=>supported.has(n))?rows.reduce((n,r)=>n+Number(r.databricks_total||0),0):null;
     return {entry,rows,names,verified,partial,total,snapshots};
   }
   function universePanel(u,result) {
-    const value=u.total===null?(u.entry.loading?'Consultando…':'Sin datos'):num(u.total)+(u.partial||!u.verified?' *':'');
+    const unavailable=u.entry.error?'Error al consultar':'Sin corte conectado';
+    const value=u.total===null?(u.entry.loading?'Consultando…':unavailable):num(u.total)+(u.partial?' *':'');
     return panel('🌐 Universo de auditorías y casos en el portal','Son bases distintas: Databricks cuenta todas las auditorías del export, en cualquier estado; el sistema cuenta las auditorías con alertas cargadas al módulo Bloqueantes.',cards([
-      ['Auditorías totales · Databricks',value,u.verified?'Último corte sincronizado · IDs únicos por estudio':'* Solo cortes verificados de Databricks; el histórico Excel no se suma','cyan','🌐'],
+      ['Auditorías totales · Databricks',value,'Cortes sincronizados de Databricks · IDs únicos por estudio','cyan','🌐'],
       ['Auditorías recibidas · sistema',num(result.audits),'Casos cargados al portal, no el universo de campo','blue','🏬']
-    ])+table(['Estudio','Total Databricks','Histórico Excel (aparte)','Recibidas en sistema'],u.names.map(name=>{
+    ])+table(['Estudio','Total Databricks','Recibidas en alertas'],u.names.map(name=>{
       const r=u.rows.find(r=>r.study_name===name);
       const known=u.snapshots.some(s=>/^Databricks/i.test(s.source))&&['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'].includes(name);
-      return row([esc(name),u.entry.loading?'Consultando…':known&&r?num(r.databricks_total)+(r.verified?'':' *'):known?'0':'Sin corte disponible',r&&!r.verified?num(Number(r.export_total)-Number(r.databricks_total)):'—',num(result.auditCountsByStudy?.[name]||0)]);
-    }))+'<p class="story-note">Databricks usa el mes de Ola y, si se filtran días, la fecha original de auditoría. El portal usa la jornada de carga. No se calcula una cobertura entre cohortes distintas. '+(u.partial?'Chile aún no está incluido en la sincronización de Databricks. ':'')+(u.snapshots.length?'Cortes: '+u.snapshots.map(s=>esc(String(s.month).slice(0,7))+' · '+esc(s.source)+' · '+esc(s.refreshed_at)).join('; '):'Sin un corte disponible no se interpreta el total como cero.')+'</p>'+(u.entry.error?'<p role="alert">No fue posible consultar el universo. Usa Actualizar o recarga la página.</p>':''));
+      return row([esc(name),u.entry.loading?'Consultando…':u.entry.error?unavailable:known&&r?num(r.databricks_total):known?'0':unavailable,num(result.auditCountsByStudy?.[name]||0)]);
+    }))+'<p class="story-note">Databricks usa el mes de Ola y, si se filtran días, la fecha original de auditoría. El portal usa la jornada de carga. No se calcula una cobertura entre cohortes distintas. '+(u.snapshots.length?'Cortes: '+u.snapshots.map(s=>esc(String(s.month).slice(0,7))+' · '+esc(s.refreshed_at)).join('; '):'La ausencia de un corte o un error de consulta no se interpreta como cero.')+'</p>'+(u.entry.error?'<p role="alert">No fue posible consultar Databricks: '+esc(u.entry.error)+'</p>':'')+'<button type="button" class="btn btn-outline btn-sm" data-universe-refresh>↻ Actualizar totales</button>');
   }
   const journey = [
     ['summary','📊','Resumen','¿Cómo va la operación?'],
@@ -385,6 +386,7 @@
     html+=panel('Reportes clásicos y exportaciones','Se conservan a continuación el histórico, las tablas y descargas anteriores. Usan los filtros generales de estudio, país / región, módulo y fecha del portal; no el mes ni los filtros adicionales de esta lectura.', '<p class="story-note">Pueden tener una base distinta: incluyen el módulo seleccionado (también Smart en Consolidado). Por eso sus totales no necesariamente coinciden con el resumen de Bloqueantes.</p>');
     }
     target.innerHTML=html;
+    target.querySelector('[data-universe-refresh]')?.addEventListener('click',()=>{app.databricksTotalsCache?.clear();app.renderReportsView();});
     target.querySelectorAll('[data-story-section]').forEach(el=>el.addEventListener('click',()=>{if(el.dataset.storySection===section)return;app[sectionKey]=el.dataset.storySection;if(el.dataset.storySection==='detail')app.renderClassicReports?.(audits);render(app,audits,historyAudits,snapshot);target.querySelector('[aria-current="page"]')?.focus({preventScroll:true});}));
     target.querySelectorAll('[data-indicator-filter]').forEach(el=>el.addEventListener('change',()=>{state[el.dataset.indicatorFilter]=el.value;render(app,audits,historyAudits,snapshot);}));
     target.querySelector('[data-committee-inherited]')?.addEventListener('click',()=>download(['ID auditoría','Jornada original','Estudio','País','Región','Sub-KPI','Estado actual'],committee.inherited.alerts.filter(a=>a.decision==='pendiente').map(a=>[a.id,a.periodDate,a.study,a.country,a.region,a.name,'Pendiente']),'Pendientes-heredados-antes-'+state.month+'.csv'));

@@ -3,7 +3,7 @@ create or replace function private.get_databricks_audit_totals(p_filters jsonb)
 returns jsonb language plpgsql stable security definer set search_path='' as $$
 declare result jsonb;
 begin
- if auth.uid() is null or not exists(select 1 from public.profiles p where p.id=auth.uid() and p.is_active and p.role::text in ('admin','visualizer','commercial')) then
+ if auth.uid() is null or not exists(select 1 from public.profiles p where p.id=auth.uid() and p.is_active and p.role::text in ('admin','supervisor','visualizer','commercial')) then
   raise exception 'VISUALIZATION_ACCESS_REQUIRED' using errcode='42501';
  end if;
  with source as (
