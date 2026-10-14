@@ -187,3 +187,69 @@ test('un cambio de mes de notas evita reutilizar filas del mes anterior', async 
   await a.ensureAdminAnalysisResource('notes');
   assert.deepEqual(calls.filter(x => x?.notes).map(x => x.notes.periodMonth), ['2026-09-01', '2026-08-01']);
 });
+
+test('abrir indicadores de Bloqueantes carga también Smart validado del histórico y reutiliza ambas consultas', async () => {
+  const { a } = app();
+  const loads = [];
+  Object.assign(a, { visualizationTab: 'metrics', visualizationModuleFilter: 'blocking', currentModule: 'blocking',
+    auditHistoryLoadPromises: { smart: null, blocking: null }, smartAudits: [], blockingAudits: [],
+    moveReportsContent() {}, renderReportsView() {}, renderCurrentDataViews() {}, setHistoryDateRangeFromAudits() {},
+    isExpiredPendingAudit: () => false,
+    backend: { configured: true, async loadAuditHistory({ module }) {
+      loads.push(module);
+      return [{ id: '42', _module: module, estudio: 'Chile', fecha: '2026-10-01', validationStatus: 'completada',
+        kpis: [{ name: 'Precio', needsReview: true }], validationResults: { Precio: { status: 'aplica' } } }];
+    } }
+  });
+  await a.switchVisualizationTab('metrics');
+  assert.deepEqual(loads.sort(), ['blocking', 'smart']);
+  assert.equal(a.getReportAuditSource('smart', 'smart')[0].validationStatus, 'completada');
+  assert.equal(a.getReportAuditSource().length, 1);
+  let receiptAudits;
+  ctx.PortalIndicators = { canonical: rows => rows, render: (_app, _rows, _history, _prepared, receipts) => receiptAudits = receipts };
+  Object.assign(a, { selectedStudies: ['ALL'], selectedReportCountry: 'all', reportsSubtab: 'operational',
+    populateStudyPills() {}, populateReportCountryFilter() {}, renderClassicReports() {}, ensureBenchmarkCountries() {} });
+  try {
+    ctx.App.prototype.renderReportsView.call(a);
+    assert.deepEqual(Array.from(receiptAudits, row => row._module).sort(), ['blocking', 'smart']);
+  } finally { delete ctx.PortalIndicators; }
+  await a.setVisualizationModuleFilter('smart');
+  assert.equal(loads.length, 2);
+  await a.ensureIndicatorHistoriesLoaded({ force: true });
+  assert.equal(loads.length, 4);
+});
+
+test('un alcance de supervisor no consulta módulos ajenos', async () => {
+  const { a } = app();
+  a.currentScope = { module: 'blocking' };
+  const modules = [];
+  a.ensureHistoricalReportsLoaded = async ({ module }) => modules.push(module);
+  await a.ensureIndicatorHistoriesLoaded();
+  assert.deepEqual(modules, ['blocking']);
+});
+
+test('filtros de métricas combinan país real, estudio y módulo; conservan opciones y filtran el histórico', async () => {
+  const { a } = app();
+  const rows = [
+    {id:'1',estudio:'Chile',pais:'Chile',region:'Norte',fecha:'2026-08-01',_module:'blocking'},
+    {id:'2',estudio:'Moderno',pais:'Panamá',fecha:'2026-10-01',_module:'blocking'},
+    {id:'3',estudio:'Moderno',pais:'Panamá',fecha:'2026-10-01',_module:'smart'},
+    {id:'4',estudio:'Moderno',pais:'Costa Rica',fecha:'2026-10-01',_module:'smart'},
+    {id:'5',estudio:'Lindley',pais:'Perú',region:'Lima',fecha:'2026-10-01',_module:'blocking'}
+  ];
+  Object.assign(a, {selectedStudies:['ALL'],selectedReportCountry:'all',selectedMetricsCountry:'all',visualizationModuleFilter:'all',currentModule:'blocking',
+    auditHistoryByModule:{smart:rows.filter(r=>r._module==='smart'),blocking:rows.filter(r=>r._module==='blocking')},
+    isExpiredPendingAudit:()=>false,renderReportsView(){},renderDailyReportsView(){},updateVisualizationModuleControls(){},renderCurrentDataViews(){},
+    visualizationTab:'metrics',ensureIndicatorHistoriesLoaded:async()=>{},getStudyForAudit:r=>r.estudio,
+    getAuditOperationDate:r=>r.fecha,getReportCountry:r=>r.pais,getReportGeography:r=>r.region||r.pais });
+  await a.setMetricsScopeFilter('country','Panamá');await a.setMetricsScopeFilter('study','Moderno');await a.setMetricsScopeFilter('module','smart');
+  assert.deepEqual(Array.from(a.getFilteredAuditsForReports(),r=>r.id),['3']);
+  assert.deepEqual(Array.from(a.getCommitteeHistoryForReports(),r=>r.id),['3']);
+  assert.ok(a.getMetricsScopeOptions().countries.some(r=>r.value==='Chile'));
+  await a.setMetricsScopeFilter('study','Chile');await a.setMetricsScopeFilter('country','Chile');await a.setMetricsScopeFilter('module','blocking');
+  assert.deepEqual(Array.from(a.getFilteredAuditsForReports(),r=>r.id),['1']);
+  a.visualizationDateFrom='2026-10-01';assert.equal(a.getFilteredAuditsForReports().length,0);
+  assert.equal(a.getCommitteeHistoryForReports().length,1);
+  await a.setMetricsScopeFilter('study','all');await a.setMetricsScopeFilter('country','Perú');
+  assert.deepEqual(Array.from(a.getFilteredAuditsForReports(),r=>r.id),['5']);
+});

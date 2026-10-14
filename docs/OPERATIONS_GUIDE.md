@@ -88,7 +88,9 @@ No se requiere cargar un archivo del mes anterior: el formato vigente contiene l
 
 El usuario de Operaciones puede alternar entre métricas operativas y la vista de comité/comercial. Desde allí puede descargar el consolidado y el libro con hojas por día. El usuario Comercial mantiene exclusivamente su visual comercial.
 
-El filtro y el desglose por país solo aparecen para jornadas cargadas desde octubre de 2026. Los registros de septiembre de 2026 y anteriores permanecen en los totales por estudio, sin país visible. El corte usa la fecha de carga/jornada, no la fecha de la auditoría en campo.
+En Métricas, los selectores **Estudio**, **País** y **Módulo** aparecen al inicio de la lectura. Se pueden combinar para consultar Bloqueantes, Smart o ambos; la selección se aplica a las gráficas, tablas y descargas. País usa el país real, incluidos Chile y Perú. El filtro adicional **Región**, dentro de **Afinar esta lectura**, permite desglosar sus territorios. Los registros sin país identificado permanecen disponibles como una opción explícita.
+
+La evolución mensual compara **KPIs con alerta**, **Aplica** y **No aplica**, y muestra por separado los pendientes. Una auditoría puede aportar varios KPIs. Las gráficas mantienen las tablas bajo **Ver datos en tabla**. El corte de las alertas usa la fecha de carga/jornada y las decisiones actuales; los meses parciales se identifican. Export usa el mes de Ola y la fecha original de auditoría cuando se filtran días.
 
 ## 5. Fuente de los exports
 

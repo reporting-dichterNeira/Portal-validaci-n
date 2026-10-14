@@ -120,6 +120,39 @@ test('evolution combines studies, distinguishes no decisions, and refuses partia
  for(const [section] of U.committeeJourney)assert.doesNotMatch(U.committeeSection(section,empty,e,'2026-10',true),/NaN|Infinity/);
 });
 
+test('monthly chart counts alert KPIs rather than audits and separates Aplica, No aplica and pending',()=>{
+ const audits=M.normalizeAudits([
+  {id:'1',study:'Moderno',periodDate:'2026-08-01',kpis:[{name:'A',needsReview:true,decision:'aplica'},{name:'B',needsReview:true,decision:'no_aplica'},{name:'C',needsReview:true}]},
+  {id:'2',study:'Chile',periodDate:'2026-08-02',kpis:[{name:'A',needsReview:true,decision:'aplica'}]},
+  {id:'3',study:'Moderno',periodDate:'2026-09-01',kpis:[{name:'A',needsReview:true,decision:'no_aplica'}]}
+ ]);
+ const result=M.compute(audits,{asOf:'2026-10-13'}),trend=U.monthlyTrend(result);
+ assert.deepEqual(trend.map(r=>[r.total,r.applies,r.rejects,r.pending]),[[4,2,1,1],[1,0,1,0]]);
+ for(const r of trend)assert.equal(r.total,r.applies+r.rejects+r.pending);
+ const html=U.monthlyChart(trend);
+ assert.match(html,/data-metric-chart="monthly"/);assert.match(html,/KPIs con alerta/);assert.match(html,/No aplica/);
+ assert.match(html,/width:100%/);assert.match(html,/width:50%/);assert.match(html,/1 pendientes/);
+ assert.doesNotMatch(html,/revisadas|NaN|Infinity/);
+});
+
+test('charts preserve missing data, zero and escaped labels',()=>{
+ const html=U.groupedChart([{name:'<script>x</script>',total:null},{name:'Known zero',total:0}],
+  [{key:'total',label:'<b>Tiempo</b>',tone:'blue'}]);
+ assert.match(html,/Sin muestras/);assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;b&gt;/);
+ assert.doesNotMatch(html,/<script>|<b>Tiempo|NaN|Infinity/);
+ assert.match(U.decisionDonut({total:0,applies:0,rejects:0,pending:0}),/Sin KPIs/);
+});
+
+test('metric sections show graphs and leave comparison tables collapsed',()=>{
+ for(const [section,executive] of [['summary',false],['pending',false],['findings',false],['comparison',false],['timing',false],['focus',true],['evolution',true]]) {
+  const html=render(section,executive).html;
+  assert.match(html,/data-metric-chart=|Sin registros para graficar/);
+  assert.doesNotMatch(html,/<details class="metric-chart-details" open/);
+ }
+ assert.match(render('evolution',true).html,/Evolución mensual de KPIs con alerta/);
+ assert.doesNotMatch(render('evolution',true).html,/Volumen y avance de la revisión|committee-trend-bars/);
+});
+
 test('committee carries history through month and tab callbacks',()=>{
  const events=[]; const element={dataset:{storySection:'detail'},addEventListener:(name,fn)=>events.push(fn)};
  const target={innerHTML:'',querySelectorAll:selector=>selector==='[data-story-section]'?[element]:[],querySelector:()=>null};

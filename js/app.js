@@ -89,6 +89,7 @@ class ValidaFlowApp {
     // Filtro multi-estudio activo en Métricas (ej: ['ALL'] o ['Tradicional', 'Stills'])
     this.selectedStudies = ['ALL'];
     this.selectedReportCountry = 'all';
+    this.selectedMetricsCountry = 'all';
     this.expandedBenchmarkStudies = new Set(['Tradicional', 'Moderno']);
     this.benchmarkCountryRows = [];
     this.benchmarkCountryCheckedIds = new Set();
@@ -344,14 +345,7 @@ class ValidaFlowApp {
       ? this.refreshAdminExternalAnalysis().catch(error => console.error('No fue posible actualizar el cruce segmentado:', error))
       : Promise.resolve();
     if (['alerts', 'editions', 'score-changes'].includes(section)) return refreshExternal;
-    if (nextModule === 'all') {
-      await Promise.all([
-        refreshExternal,
-        ...['smart', 'blocking'].map(item => this.ensureHistoricalReportsLoaded({ module: item }))
-      ]);
-    } else {
-      await Promise.all([refreshExternal, this.ensureHistoricalReportsLoaded({ module: nextModule })]);
-    }
+    await Promise.all([refreshExternal, this.ensureIndicatorHistoriesLoaded()]);
   }
 
   mountVisualizationContent() {
@@ -450,14 +444,8 @@ class ValidaFlowApp {
     } else {
       this.moveReportsContent('visualization-pane-metrics');
       this.renderReportsView();
-      const visualizationModule = this.getVisualizationModuleFilter();
-      if (visualizationModule === 'all') {
-        Promise.all(['smart', 'blocking'].map(module => this.ensureHistoricalReportsLoaded({ module })))
-          .catch(error => console.error('No fue posible cargar el histórico segmentado:', error));
-      } else {
-        this.ensureHistoricalReportsLoaded({ module: visualizationModule === 'all' ? this.currentModule : visualizationModule })
-          .catch(error => console.error('No fue posible cargar el histórico:', error?.message));
-      }
+      await this.ensureIndicatorHistoriesLoaded()
+        .catch(error => console.error('No fue posible cargar el histórico:', error?.message));
     }
   }
 
@@ -3464,6 +3452,15 @@ class ValidaFlowApp {
     return true;
   }
 
+  async ensureIndicatorHistoriesLoaded({ force = false } = {}) {
+    // El resumen siempre compara recibidos de ambos módulos, incluso cuando
+    // las decisiones se filtran a uno. El backend mantiene el alcance y RLS.
+    const modules = this.currentScope?.module ? [this.currentScope.module] : ['smart', 'blocking'];
+    const results = await Promise.allSettled(modules.map(module => this.ensureHistoricalReportsLoaded({ module, force })));
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+  }
+
   async ensureHistoricalReportsLoaded({ force = false, module = this.currentModule } = {}) {
     if (!this.backend.configured || !(this.currentRole === 'admin' || this.isSupervisor || this.isVisualizationRole())) return;
     if (!force && Array.isArray(this.auditHistoryByModule[module])) return;
@@ -3479,6 +3476,8 @@ class ValidaFlowApp {
       }
     }
 
+    this.auditHistoryErrors ||= {};
+    delete this.auditHistoryErrors[module];
     this.setHistoricalReportsLoading(true);
     const loadPromise = this.backend.loadAuditHistory({
       module,
@@ -3496,6 +3495,7 @@ class ValidaFlowApp {
       }
       this.renderCurrentDataViews();
     } catch (error) {
+      this.auditHistoryErrors[module] = error.message || 'No fue posible consultar el histórico.';
       console.error('Error cargando el histórico completo:', error);
       this.renderCurrentDataViews();
       this.showToast(error.message || 'No fue posible cargar el histórico completo.', 'error');
@@ -6145,7 +6145,42 @@ class ValidaFlowApp {
       const studyOfAudit = this.getStudyForAudit(a);
       return this.selectedStudies.some(s => s.toUpperCase() === studyOfAudit.toUpperCase());
     });
-    return studyFiltered.filter(audit => this.isWithinVisualizationDateRange(this.getAuditOperationDate(audit)));
+    return studyFiltered.filter(audit => this.isWithinVisualizationDateRange(this.getAuditOperationDate(audit))
+      && this.matchesMetricsCountry(audit));
+  }
+
+  matchesMetricsCountry(audit) {
+    const country = this.selectedMetricsCountry || 'all';
+    return country === 'all' || this.getReportCountry(audit) === (country === '__missing__' ? '' : country);
+  }
+
+  getMetricsScopeOptions() {
+    // Keep choices available across modules and selections, using only the
+    // authorized historical data. This lets a user recover an empty selection.
+    const source = ['smart', 'blocking'].flatMap(item => this.getReportAuditSource(item, item));
+    const studies = [...new Set(source.map(audit => this.getStudyForAudit(audit)).filter(Boolean))].sort();
+    const countries = [...new Set(source.map(audit => this.getReportCountry(audit) || '__missing__'))]
+      .sort((a, b) => a.localeCompare(b, 'es'));
+    for (const study of this.selectedStudies || []) if (study !== 'ALL' && !studies.includes(study)) studies.push(study);
+    const selectedCountry = this.selectedMetricsCountry || 'all';
+    if (selectedCountry !== 'all' && !countries.includes(selectedCountry)) countries.push(selectedCountry);
+    return { studies: studies.map(value => ({ value, label: getStudyDisplayName(value) })),
+      countries: countries.map(value => ({ value, label: value === '__missing__' ? 'Sin país identificado' : value })) };
+  }
+
+  async setMetricsScopeFilter(key, value) {
+    if (key === 'module') {
+      if (this.currentView === 'visualizations') await this.setVisualizationModuleFilter(value);
+      return;
+    }
+    if (key === 'study') this.selectedStudies = value === 'all' ? ['ALL'] : [value];
+    else if (key === 'country') this.selectedMetricsCountry = value || 'all';
+    else return;
+    // The visible country selector replaces any legacy geography selection.
+    // Region remains available in the additional dashboard filters.
+    this.selectedReportCountry = 'all';
+    this.renderReportsView();
+    this.renderDailyReportsView();
   }
 
   getFilteredAuditsForReports(reportAudits = this.getReportAuditSource()) {
@@ -6163,7 +6198,7 @@ class ValidaFlowApp {
       const studyMatches = !this.selectedStudies.length || this.selectedStudies.includes('ALL')
         || this.selectedStudies.some(s => s.toUpperCase() === study.toUpperCase());
       const geography = this.selectedReportCountry;
-      return studyMatches && (!geography || geography === 'all'
+      return studyMatches && this.matchesMetricsCountry(a) && (!geography || geography === 'all'
         || this.getReportGeography(a) === (geography === '__missing__' ? '' : geography));
     });
   }
@@ -6220,7 +6255,7 @@ class ValidaFlowApp {
     }
     globalThis.PortalIndicators?.render(this, filteredAudits,
       this.reportsSubtab === 'executive' || this.visualizationTab === 'committee' ? this.getCommitteeHistoryForReports() : null,
-      null, this.getFilteredAuditsForReports(this.getReportAuditSource(this.currentModule, 'all')));
+      null, this.getFilteredAuditsForReports(['smart', 'blocking'].flatMap(item => this.getReportAuditSource(item, item))));
     this.ensureBenchmarkCountries(reportAudits);
   }
 
@@ -7317,7 +7352,7 @@ class ValidaFlowApp {
     } else if (targetTab === 'reports') {
       this.renderReportsView();
       this.renderDailyReportsView();
-      this.ensureHistoricalReportsLoaded().catch(error => console.error('No fue posible cargar el histórico:', error?.message));
+      this.ensureIndicatorHistoriesLoaded().catch(error => console.error('No fue posible cargar el histórico:', error?.message));
     } else if (targetTab === 'admin') {
       this.renderAdminView();
     } else if (targetTab === 'lookup') {

@@ -25,3 +25,39 @@ test('un fallo de acceso no se presenta como ausencia de datos y se puede reinte
  const app={currentProfile:{id:'supervisor'},currentView:'visualizations',reportsSubtab:'operational',getVisualizationModuleFilter:()=> 'blocking',getReportCountry:()=> 'Chile',backend:{async loadDatabricksAuditTotals(){calls++;if(calls===1)throw new Error('VISUALIZATION_ACCESS_REQUIRED');return {studies:[{study_name:'Chile',databricks_total:2702}],snapshots:[{month:'2026-10-01',source:'Databricks · Reporting Cluster'}]};}},renderReportsView(){U.render(app,rows);}};
  try {app.renderReportsView();await new Promise(resolve=>setImmediate(resolve));assert.match(target.innerHTML,/Error al consultar/);assert.doesNotMatch(target.innerHTML,/Sin datos|Histórico Excel/);retry();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,2);assert.match(target.innerHTML,/2\.702/);assert.doesNotMatch(target.innerHTML,/VISUALIZATION_ACCESS_REQUIRED/);}finally{delete global.document;}
 });
+
+test('Smart pendiente de consulta o con error no muestra cero y Actualizar vuelve a consultar ambos históricos',async()=>{
+ let refresh;
+ const target={innerHTML:'',parentElement:{children:[]},querySelectorAll:()=>[],querySelector:s=>s==='[data-universe-refresh]'?{addEventListener:(_event,fn)=>refresh=fn}:null};
+ target.parentElement.children=[target];global.document={getElementById:()=>target};
+ const blocking={id:'10',_module:'blocking',estudio:'Chile',fecha:'2026-10-01',kpis:[]};
+ const smart={id:'10',_module:'smart',estudio:'Chile',fecha:'2026-10-01',validationStatus:'completada',kpis:[{name:'Precio',needsReview:true}],validationResults:{Precio:{status:'aplica'}}};
+ const app={currentView:'visualizations',reportsSubtab:'operational',getVisualizationModuleFilter:()=> 'blocking',getReportCountry:()=> 'Chile',
+   selectedStudies:['Chile'],backend:{configured:true},auditHistoryByModule:{blocking:[blocking],smart:null},
+   renderReportsView(){U.render(app,[blocking],null,null,[blocking,...(app.auditHistoryByModule.smart||[])]);},
+   async ensureIndicatorHistoriesLoaded(opts){assert.equal(opts.force,true);app.auditHistoryErrors={};app.auditHistoryByModule.smart=[smart];}
+ };
+ try {
+   app.renderReportsView();assert.match(target.innerHTML,/<td>Chile<\/td><td>[^<]*<\/td><td>1<\/td><td>Consultando…<\/td>/);
+   app.auditHistoryErrors={smart:'Access denied'};app.renderReportsView();
+   assert.match(target.innerHTML,/<td>Chile<\/td><td>[^<]*<\/td><td>1<\/td><td>Error al consultar<\/td>/);
+   await refresh();assert.match(target.innerHTML,/<td>Chile<\/td><td>[^<]*<\/td><td>1<\/td><td>1<\/td>/);
+   app.currentScope={module:'blocking'};app.renderReportsView();assert.match(target.innerHTML,/<td>Fuera de alcance<\/td>/);
+ }finally{delete global.document;}
+});
+
+test('el país seleccionado se envía a Export sin convertir Chile o Perú en una región',async()=>{
+ let filters;
+ const target={innerHTML:'',parentElement:{children:[]},querySelectorAll:()=>[],querySelector:()=>null};target.parentElement.children=[target];
+ global.document={getElementById:()=>target};
+ const app={currentView:'visualizations',reportsSubtab:'operational',selectedStudies:['Chile'],selectedMetricsCountry:'Chile',selectedReportCountry:'all',
+  getVisualizationModuleFilter:()=> 'all',getReportCountry:()=> 'Chile',renderReportsView(){},
+  getMetricsScopeOptions:()=>({studies:[{value:'Chile',label:'Chile'}],countries:[{value:'Chile',label:'Chile'}]}),
+  backend:{async loadDatabricksAuditTotals(f){filters=f;return {studies:[],snapshots:[]};}}};
+ try {
+  U.render(app,[{id:'1',_module:'blocking',estudio:'Chile',fecha:'2026-10-01',kpis:[]}]);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(filters.country,'Chile');assert.equal(filters.geography,'all');assert.deepEqual(filters.studies,['Chile']);
+  assert.match(target.innerHTML,/data-metric-scope-filter="country"/);assert.match(target.innerHTML,/value="Chile" selected/);
+ }finally{delete global.document;}
+});
