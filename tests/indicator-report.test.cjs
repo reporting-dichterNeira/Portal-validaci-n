@@ -52,3 +52,45 @@ test('resumen muestra semáforos con textos y PDF está disponible desde todas l
     for(const [section] of U.journey){app.indicatorOperationalSection=section;U.render(app,[audit(1,'blocking','2026-10-01','aplica')]);assert.match(target.innerHTML,/data-indicator-pdf/);}
   } finally {delete global.document;}
 });
+
+test('desglose ordena por frecuencia recibida y reconcilia Aplica, No aplica y pendientes de ambos módulos',()=>{
+  const rows=[
+    {id:'1',_module:'blocking',study:'Moderno',periodDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true,decision:'aplica'},{name:'Disponibilidad',needsReview:true,decision:'no_aplica'}]},
+    {id:'1',_module:'smart',study:'Moderno',periodDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true,decision:'no_aplica'},{name:'Exhibición',needsReview:true}]},
+    {id:'2',_module:'smart',study:'Moderno',periodDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true}]}
+  ];
+  const result=M.compute(M.normalizeAudits(rows),{asOf:'2026-10-14'}),before=JSON.stringify(result.rejectedTypes);
+  const groups=R.alertBreakdown(result);
+  assert.deepEqual(groups.map(r=>[r.name,r.total,r.applies,r.rejects,r.pending]),[
+    ['Precio',3,1,1,1],['Disponibilidad',1,0,1,0],['Exhibición',1,0,0,1]
+  ]);
+  assert.equal(groups.reduce((sum,r)=>sum+r.total,0),result.counts.total);
+  for(const row of groups)assert.equal(row.total,row.applies+row.rejects+row.pending);
+  assert.equal(JSON.stringify(result.rejectedTypes),before);
+});
+
+class PdfRecorder {
+  constructor(){this.pages=[[]];this.current=0;this.internal={pageSize:{getWidth:()=>297,getHeight:()=>210},getNumberOfPages:()=>this.pages.length};}
+  addPage(){this.pages.push([]);this.current=this.pages.length-1;}
+  setPage(page){this.current=page-1;}
+  setFillColor(){} setDrawColor(){} setTextColor(){} setFont(){} setFontSize(){} rect(){} roundedRect(){} line(){} circle(){}
+  splitTextToSize(text,width){return String(text).match(new RegExp('.{1,'+Math.floor(width*.7)+'}','g')) || [''];}
+  text(text,x,y){assert.ok(x>=0&&x<297&&y>=0&&y<210,'Texto fuera de página');this.pages[this.current].push(Array.isArray(text)?text.join(' '):text);}
+}
+test('PDF pagina todos los tipos de alerta y mantiene ranking y columnas incluso con nombres largos',()=>{
+  const audits=M.normalizeAudits(Array.from({length:35},(_,i)=>({id:String(i+1),study:'Moderno',periodDate:'2026-10-01',
+    kpis:[{name:'Tipo '+String(i+1).padStart(2,'0')+' - '+('Nombre largo de alerta '.repeat(3)),needsReview:true,decision:i%3===0?'aplica':i%3===1?'no_aplica':'pendiente'}]})));
+  const result=M.compute(audits,{asOf:'2026-10-14'});
+  const pdf=R.buildPdf(PdfRecorder,{asOf:'2026-10-14',scope:'Todos los estudios',result,trend:[],signals:R.signals(result)});
+  const pages=pdf.pages.filter(page=>page.some(text=>text.includes('Desglose por tipo de alerta')));
+  assert.ok(pages.length>1);
+  const all=pages.flat().join('\n');
+  for(let i=1;i<=35;i++)assert.ok(all.includes('Tipo '+String(i).padStart(2,'0')),String(i));
+  for(const page of pages)for(const label of ['Recibidas','Aplica','No aplica','Pendientes'])assert.ok(page.includes(label),label);
+  assert.ok(all.indexOf('Tipo 01')<all.indexOf('Tipo 35'));
+});
+test('PDF sin alertas muestra ausencia de datos en el desglose',()=>{
+  const result=M.compute([],{asOf:'2026-10-14'});
+  const pdf=R.buildPdf(PdfRecorder,{asOf:'2026-10-14',scope:'Sin selección',result,trend:[],signals:R.signals(result)});
+  assert.ok(pdf.pages.flat().includes('Sin alertas para el alcance seleccionado.'));
+});

@@ -4,6 +4,10 @@
   const percent = value => value == null ? 'Sin base' : number(Math.round(value * 1000) / 10) + '%';
   const palette = { navy: [36,51,95], blue: [13,92,171], green: [20,168,59], red: [211,43,73], amber: [169,105,0], gray: [99,112,132], pink: [248,56,117] };
 
+  function alertBreakdown(result) {
+    return [...result.rejectedTypes].sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name,'es'));
+  }
+
   function signals(result) {
     const c = result.counts;
     const pending = Object.values(result.backlog).flat();
@@ -40,7 +44,7 @@
       'País: '+(app.selectedMetricsCountry === '__missing__' ? 'Sin país identificado' : app.selectedMetricsCountry || 'all').replace(/^all$/,'Todos'),
       'Mes: '+(month || 'Todos'), 'Desde: '+(app.visualizationDateFrom || 'Inicio del histórico'), 'Hasta: '+(app.visualizationDateTo || asOf),
       ...['region','channel','subchannel'].filter(k=>state[k]!=='all').map(k=>({region:'Región',channel:'Canal',subchannel:'Subcanal'}[k])+': '+state[k])];
-    return {asOf,scope:labels.join(' | '),result,trend:U.monthlyTrend(range,month || asOf.slice(0,7),6),signals:signals(result)};
+    return {asOf,scope:labels.join(' | '),result,trend:U.monthlyTrend(range,month || asOf.slice(0,7),6),signals:signals(result),alertTypes:alertBreakdown(result)};
   }
 
   // Compose vector charts and text directly; no DOM screenshot or canvas.
@@ -122,6 +126,37 @@
       write(number(row.total)+' | '+percent(row.coverage)+' revisado',width-margin-48,y,8,'gray');
     });
 
+    const alertTypes=snapshot.alertTypes || alertBreakdown(r);
+    const alertMax=Math.max(1,...alertTypes.map(row=>row.total));
+    let alertY;
+    const alertPage=()=>{
+      page('Desglose por tipo de alerta');
+      write('¿Qué alertas se reciben con mayor frecuencia?',margin,60,14,'navy',true);
+      write('Ordenadas de mayor a menor cantidad recibida. Se incluyen todos los tipos del alcance seleccionado.',margin,68,9,'gray');
+      write('Recibidas = Aplica + No aplica + pendientes. Escala común de barras: 0 a '+number(alertMax)+' KPIs con alerta.',margin,73,8,'gray');
+      write('Tipo de alerta / Sub-KPI',margin,78,9,'navy',true);
+      write('Aplica | No aplica | Pendientes',margin+86,78,8,'gray');
+      [['Recibidas',174,'blue'],['Aplica',199,'green'],['No aplica',224,'pink'],['Pendientes',249,'amber']].forEach(([label,x,tone])=>write(label,margin+x,78,9,tone,true));
+      alertY=88;
+    };
+    alertPage();
+    if(!alertTypes.length)write('Sin alertas para el alcance seleccionado.',margin,alertY,11,'gray');
+    alertTypes.forEach((row,i)=>{
+      pdf.setFont('helvetica','normal');pdf.setFontSize(9);
+      const label=pdf.splitTextToSize(clean((i+1)+'. '+row.name),82);
+      const rowHeight=Math.max(11,label.length*4+4);
+      if(alertY+rowHeight>height-18)alertPage();
+      write((i+1)+'. '+row.name,margin,alertY,9,'navy',false,82);
+      let x=margin+86;
+      [['applies','green'],['rejects','pink'],['pending','amber']].forEach(([key,tone])=>{
+        const w=80*row[key]/alertMax;
+        if(w){pdf.setFillColor(...palette[tone]);pdf.rect(x,alertY-2.5,w,4,'F');x+=w;}
+      });
+      [['total',174,'blue'],['applies',199,'green'],['rejects',224,'pink'],['pending',249,'amber']].forEach(([key,x,tone])=>write(number(row[key]),margin+x,alertY,10,tone,true));
+      pdf.setDrawColor(231,236,243);pdf.line(margin,alertY+rowHeight-5,width-margin,alertY+rowHeight-5);
+      alertY+=rowHeight;
+    });
+
     page('Hallazgos y tiempos');
     write('Motivos más frecuentes de No aplica',margin,61,13,'navy',true);
     if(!r.reasons.length)write('Sin alertas descartadas en este alcance.',margin,73,10,'gray');
@@ -143,6 +178,6 @@
     }
     return pdf;
   }
-  root.PortalIndicatorReport={signals,buildSnapshot,buildPdf};
+  root.PortalIndicatorReport={signals,buildSnapshot,buildPdf,alertBreakdown};
   if(typeof module!=='undefined')module.exports=root.PortalIndicatorReport;
 })(typeof globalThis!=='undefined'?globalThis:this);

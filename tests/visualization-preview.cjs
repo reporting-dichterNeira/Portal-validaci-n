@@ -7,6 +7,7 @@ const previewRole = process.env.PREVIEW_ROLE === 'supervisor' ? 'supervisor' : '
 const previewPort = Number(process.env.PREVIEW_PORT || 8772);
 const geographyPreview = process.env.PREVIEW_GEOGRAPHY === '1';
 const storyPreview = process.env.PREVIEW_STORY === '1';
+const alertTypesPreview = process.env.PREVIEW_ALERT_TYPES === '1';
 const backend = `
 const role=${JSON.stringify(previewRole)};
 const scope={id:'fixture-assignment',module:'blocking',study:{id:'fixture-study',name:'Moderno'},country:{id:'fixture-country',name:'CAM'}};
@@ -32,6 +33,11 @@ if (${storyPreview}) audits.forEach((a,i)=>{
  a.estudio=['Chile','Lindley','Tradicional','Moderno'][i%4];
  a.databricksGeography={country:a.estudio==='Chile'?'Chile':a.estudio==='Lindley'?'Perú':'Panamá',region:a.estudio==='Chile'?'ARICA':a.estudio==='Lindley'?'REGION LIMA':''};
  if(i%3===0){a.validationStatus='pendiente';a.validationResults={};a.completedAt=null;a.durationSeconds=0;a.fechaAuditoriaOriginal=i%2?'2026-09-01':'';}
+});
+if (${alertTypesPreview}) audits.forEach((a,i)=>{
+ const name=i%3===0?'Disponibilidad':i%3===1?'Precio':'Control de presentación '+(i%32+1)+' - Verificación de exhibición y portafolio en el punto de venta';
+ const decision=a.validationResults['KPI de prueba'];
+ a.kpis=[{name,needsReview:true}];a.validationResults=decision?{[name]:decision}:{};
 });
 let pending=[3001,3002].map((id,i)=>({id,external_id:String(id),source_filename:'Base anterior de prueba.csv',operation_date:'2026-10-08',
  status:'pendiente',validator_name:'Responsable anterior',payload:{pais:'Panamá',kpis:[{name:'A',needsReview:true},{name:'B',needsReview:true}]},
