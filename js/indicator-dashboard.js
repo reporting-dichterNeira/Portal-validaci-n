@@ -120,6 +120,25 @@
     const url = URL.createObjectURL(new Blob([csv(headers,rows)],{type:'text/csv;charset=utf-8'}));
     const link = document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
+  function alertExport(audits, context = [], countryFor = null, sourceModule = 'all', {includeRows = true} = {}) {
+    const source = canonical(audits).filter(a => (sourceModule === 'all' || (a._module || 'blocking') === sourceModule) && /^\d+$/.test(String(a.id)));
+    const inputs = adapt(source, context, countryFor, sourceModule);
+    const rows = includeRows ? inputs.flatMap((a,i) => a.kpis.map(k => {
+      const raw = source[i], decision = raw.validationResults?.[k.key] || {};
+      return [a.module === 'smart' ? 'Smart' : 'Bloqueantes',a.id,a.pdv,a.periodDate,a.auditDate,a.alertUploadedAt,k.validatedAt,
+        a.study,a.country,a.region,a.channel,a.subchannel,a.auditor,raw._validatorName || raw.assignedValidatorId || '',
+        k.name,k.decision,k.reason,decision.observaciones || '',raw.validationStatus || ''];
+    })) : [];
+    return {inputs,rows,headers:['Módulo','ID auditoría','ID PDV','Jornada','Fecha auditoría original','Fecha de carga','Fecha de decisión',
+      'Estudio','País','Región','Canal','Subcanal','Auditor','Validador','Sub-KPI','Decisión','Tipificación','Observaciones','Estado auditoría'],
+      counts:M.totals(inputs.flatMap(a=>a.kpis)),audits:inputs.filter(a=>a.kpis.length).length};
+  }
+  function signalPanel(result) {
+    const signals = root.PortalIndicatorReport?.signals(result) || [];
+    if (!signals.length) return '';
+    return panel('🚦 Semáforos de revisión','Criterios orientativos sobre el alcance seleccionado. El estado se acompaña de su valor y criterio.',
+      '<div class="metric-signals">'+signals.map(signal=>'<article class="metric-signal metric-signal--'+signal.tone+'"><div><span class="metric-signal-dot" aria-hidden="true"></span><strong>'+esc(signal.name)+'</strong></div><p><b>'+esc(signal.value)+'</b> · '+esc(signal.label)+'</p><small>'+esc(signal.detail)+'</small><small class="metric-signal-rule">'+esc(signal.rule)+'</small></article>').join('')+'</div>');
+  }
   function time(t) { return (t.meanDays == null ? 'Sin muestras' : decimal(t.meanDays)+' días')+' · '+num(t.measured)+' muestras'+
     (t.exact ? '<br>'+decimal(t.meanHours)+' horas · '+num(t.exact)+' con hora exacta' : '')+
     '<br><small>Sin fecha: '+num(t.missing)+' · Inválidas: '+num(t.invalid)+' · Futuras: '+num(t.future)+'</small>'; }
@@ -362,14 +381,14 @@
     const studyValue=!selectedStudies.length || selectedStudies.includes('ALL')?'all':selectedStudies.length===1?selectedStudies[0]:'__multiple__';
     const countryValue=app.selectedMetricsCountry || 'all';
     const scopeSelect=(key,label,value,choices,disabled=false)=>'<label>'+label+'<select class="form-control" data-metric-scope-filter="'+key+'" '+(disabled?'disabled':'')+'>'+choices.map(option=>'<option value="'+esc(option.value)+'" '+(option.value===value?'selected':'')+'>'+esc(option.label)+'</option>').join('')+'</select></label>';
-    const scopeControls='<section class="glass-panel metric-scope-panel" aria-label="Filtros de métricas"><div class="metric-scope-title"><strong>Filtrar métricas</strong><small>La selección aplica a las gráficas, tablas y descargas de este apartado.</small></div><div class="metric-scope-controls">'+
+    const scopeControls='<section class="glass-panel metric-scope-panel" aria-label="Filtros de métricas"><div class="metric-scope-title"><strong>Filtrar métricas</strong><small>'+(daily?'La selección aplica al detalle diario y sus descargas. El consolidado histórico se muestra completo.':'La selección aplica a las gráficas, tablas y descargas de este apartado.')+'</small></div><div class="metric-scope-controls">'+
       scopeSelect('study','Estudio',studyValue,[{value:'all',label:'Todos los estudios'},...(studyValue==='__multiple__'?[{value:'__multiple__',label:'Selección múltiple ('+selectedStudies.length+')'}]:[]),...options.studies])+
       scopeSelect('country','País',countryValue,[{value:'all',label:'Todos los países'},...options.countries])+
       scopeSelect('module','Módulo',module,[{value:'all',label:'Bloqueantes + Smart'},{value:'blocking',label:'Bloqueantes'},{value:'smart',label:'Smart'}],app.currentView!=='visualizations')+
       scopeSelect('month','Mes',state.month||'all',[{value:'all',label:'Todos los meses'},...(options.months || [...new Set(audits.map(a=>(a._batchOperationDate||a.fecha||'').slice(0,7)).filter(m=>/^\d{4}-\d{2}$/.test(m)))].sort().reverse().map(value=>({value,label:value})))])+
       '<label>Desde<input class="form-control" type="date" data-metric-scope-filter="from" value="'+esc(app.visualizationDateFrom||'')+'"></label>'+
       '<label>Hasta<input class="form-control" type="date" data-metric-scope-filter="to" value="'+esc(app.visualizationDateTo||'')+'"></label>'+
-      '</div><div class="metric-scope-actions"><small>Mes y fechas se combinan por la jornada de auditoría. La evolución compara hasta seis meses del rango.</small><button type="button" class="btn btn-outline btn-sm" data-metric-dates-clear>Limpiar fechas</button></div></section>';
+      '</div><div class="metric-scope-actions"><small>Mes y fechas se combinan por la jornada de auditoría. '+(daily?'El consolidado histórico incluye ambos módulos y todos los meses.':'La evolución compara hasta seis meses del rango.')+'</small><div class="metric-download-actions"><button type="button" class="btn btn-outline btn-sm" data-metric-dates-clear>Limpiar fechas</button>'+(!daily?'<button type="button" class="btn btn-primary btn-sm" data-indicator-pdf>📄 Descargar indicadores (PDF)</button>':'')+'</div></div></section>';
     const bindScopeControls=()=>{
       target.querySelectorAll('[data-metric-scope-filter]').forEach(el=>el.addEventListener('change',async()=>{
         if(el.value==='__multiple__')return;
@@ -377,6 +396,7 @@
         catch(error) {console.error('No fue posible aplicar el filtro de métricas:',error);}
       }));
       target.querySelector('[data-metric-dates-clear]')?.addEventListener('click',()=>app.setMetricsScopeFilter?.('dates-clear',''));
+      target.querySelector('[data-indicator-pdf]')?.addEventListener('click',()=>app.exportIndicatorPDF?.());
     };
     if(daily) {
       legacy.forEach(el=>el.classList.toggle('indicator-legacy-hidden',true));
@@ -442,6 +462,7 @@
         '<button type="button" class="btn btn-outline btn-sm" data-committee-inherited '+(!committee.inherited.counts.pending?'disabled':'')+'>📥 Descargar pendientes heredados (CSV)</button>'+table(['ID','Jornada original','Estudio','País / región','Alertas pendientes'],Object.values(committee.inherited.backlog).flat().slice(0,100).map(a=>row([esc(a.id),esc(a.periodDate),esc(a.study),esc(a.geography),num(a.pending)]))));
     }
     if(section==='summary') {
+      html+=signalPanel(result);
       html+=panel('La operación en una mirada',esc(narrative.headline),cards([
         ['Auditorías recibidas · sistema',num(result.audits),'IDs únicos cargados al portal','blue','🏬'],
         ['Alertas recibidas',num(c.total),'Sub-KPIs que requieren revisión','purple','📥'],
@@ -499,6 +520,6 @@
       return [a.module==='smart'?'Smart':'Bloqueantes',a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,a.study,a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,a.decision,a.reason];
     }),'Indicadores-'+(module || 'blocking')+'-'+asOf+'.csv'));
   }
-  root.PortalIndicators={adapt,canonical,render,csv,download,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart};
+  root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart};
   if(typeof module!=='undefined')module.exports=root.PortalIndicators;
 })(typeof globalThis!=='undefined'?globalThis:this);

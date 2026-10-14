@@ -7989,6 +7989,7 @@ class ValidaFlowApp {
   // DESCARGAS DÍA POR DÍA, CONSOLIDADO Y COMITÉ
   // ==========================================
   initDailyReportsModule() {
+    document.getElementById('btn-export-historical-alerts-csv')?.addEventListener('click', () => this.exportHistoricalAlertsCSV());
     // 1. Descargar Consolidado General
     document.getElementById('btn-export-excel')?.addEventListener('click', () => {
       this.exportConsolidatedExcel();
@@ -8006,6 +8007,7 @@ class ValidaFlowApp {
   }
 
   renderDailyReportsView() {
+    this.renderHistoricalAlertsConsolidated();
     const valMap = new Map(this.validators.map(v => [v.id, v]));
     const auditsToRender = this.getFilteredAuditsForReports();
 
@@ -8232,6 +8234,80 @@ class ValidaFlowApp {
         this.showToast(`Descargando reporte de fecha: ${dKey} (${sKey || 'Todos'})`, 'success');
       });
     });
+  }
+
+  getHistoricalAlertsSource() {
+    const modules = this.currentScope?.module ? [this.currentScope.module] : ['blocking', 'smart'];
+    return modules.flatMap(module => this.getReportAuditSource(module, module));
+  }
+
+  getHistoricalAlertsExport({includeRows = true} = {}) {
+    const context = [...(this.adminExternalAnalysis?.alertRecords || []), ...(this.benchmarkCountryRows || [])];
+    return globalThis.PortalIndicators.alertExport(this.getHistoricalAlertsSource(), context, audit => this.getReportCountry(audit), 'all', {includeRows});
+  }
+
+  renderHistoricalAlertsConsolidated() {
+    const target = document.getElementById('daily-consolidated-summary');
+    const U = globalThis.PortalIndicators;
+    if (!target || !U) return;
+    const modules = this.currentScope?.module ? [this.currentScope.module] : ['blocking', 'smart'];
+    const loading = this.backend?.configured && modules.some(module => !Array.isArray(this.auditHistoryByModule?.[module]));
+    const button = document.getElementById('btn-export-historical-alerts-csv');
+    const context = document.getElementById('daily-consolidated-context');
+    if (button) button.disabled = !!this.historicalAlertsExporting;
+    if (loading) {
+      target.innerHTML = '';
+      if (context) context.textContent = 'Consultando el histórico completo de alertas…';
+      return;
+    }
+    const data = this.getHistoricalAlertsExport({includeRows:false}), c = data.counts;
+    const dates = data.inputs.map(audit => audit.periodDate).filter(Boolean).sort();
+    const format = number => new Intl.NumberFormat('es-CO').format(number);
+    if (context) context.textContent = `${format(data.audits)} auditorías con alertas · ${format(c.total)} KPIs con alerta · ${dates.length ? `${dates[0]} a ${dates.at(-1)}` : 'Sin jornadas fechadas'} · ${modules.map(module => module === 'smart' ? 'Smart' : 'Bloqueantes').join(' + ')}`;
+    if (button) button.disabled = !c.total || !!this.historicalAlertsExporting;
+    target.innerHTML = '<div class="indicator-cards">'+[
+      ['KPIs con alerta', c.total, 'blue'], ['Aplica', c.applies, 'green'], ['No aplica', c.rejects, 'magenta'], ['Pendientes', c.pending, 'orange']
+    ].map(([label,value,tone])=>`<div class="stat-card indicator-card indicator-tone-${tone}"><span class="stat-label">${label}</span><strong class="stat-value">${format(value)}</strong></div>`).join('')+'</div>'+U.decisionDonut(c);
+  }
+
+  async exportHistoricalAlertsCSV() {
+    if (this.historicalAlertsExporting) return;
+    this.historicalAlertsExporting = true;
+    const button = document.getElementById('btn-export-historical-alerts-csv');
+    const profile = this.currentProfile;
+    if (button) button.disabled = true;
+    try {
+      await this.ensureIndicatorHistoriesLoaded();
+      await this.ensureBenchmarkCountries(this.getHistoricalAlertsSource());
+      if (this.currentProfile !== profile) return;
+      const data = this.getHistoricalAlertsExport();
+      if (!data.rows.length) { this.showToast('No hay alertas en el histórico disponible.', 'warning'); return; }
+      globalThis.PortalIndicators.download(data.headers, data.rows, 'Historico_completo_alertas.csv');
+      this.showToast(`Descargadas ${data.rows.length.toLocaleString('es-CO')} alertas del histórico completo.`, 'success');
+    } catch (error) {
+      console.error('No fue posible descargar el histórico de alertas:', error);
+      this.showToast('No se pudo completar la consulta del histórico. Intenta descargar nuevamente.', 'error');
+    } finally { this.historicalAlertsExporting = false; this.renderHistoricalAlertsConsolidated(); }
+  }
+
+  async exportIndicatorPDF() {
+    if (this.indicatorPdfExporting) return;
+    this.indicatorPdfExporting = true;
+    const profile = this.currentProfile;
+    try {
+      if (!window.jspdf?.jsPDF || !globalThis.PortalIndicatorReport) throw new Error('Generador de PDF no disponible');
+      this.showToast('Preparando los indicadores para el PDF…', 'info');
+      await this.ensureIndicatorHistoriesLoaded();
+      await this.ensureBenchmarkCountries(this.getReportAuditSource());
+      if (this.currentProfile !== profile) return;
+      const snapshot = globalThis.PortalIndicatorReport.buildSnapshot(this);
+      const pdf = globalThis.PortalIndicatorReport.buildPdf(window.jspdf.jsPDF, snapshot);
+      pdf.save(`Indicadores_validacion_${snapshot.asOf}.pdf`);
+      this.showToast('PDF de indicadores descargado.', 'success');
+    } catch (error) {
+      console.error('No fue posible descargar los indicadores:', error);
+      this.showToast('No se pudo generar el PDF. Verifica la conexión e intenta nuevamente.', 'error');
+    } finally { this.indicatorPdfExporting = false; }
   }
 
   // ==========================================

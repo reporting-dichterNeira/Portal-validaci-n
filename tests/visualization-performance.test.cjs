@@ -290,3 +290,31 @@ test('accesos directo diario y métricas conservan restricciones comerciales', (
   a.currentRole = 'commercial';
   a.switchReportsSubtab('daily'); assert.equal(a.reportsSubtab, 'metrics');
 });
+
+test('histórico completo abarca ambos módulos aunque el detalle tenga mes, país y módulo seleccionado', () => {
+  const {a}=app();
+  const rows=[{id:'1',_module:'blocking',estudio:'Chile',pais:'Chile',fecha:'2026-09-01'},
+    {id:'2',_module:'smart',estudio:'Lindley',pais:'Perú',fecha:'2026-10-01'}];
+  Object.assign(a,{currentModule:'blocking',visualizationModuleFilter:'smart',selectedMetricsMonth:'2026-10',selectedStudies:['Lindley'],
+    selectedMetricsCountry:'Perú',selectedReportCountry:'all',visualizationDateFrom:'2026-10-01',visualizationDateTo:'2026-10-14',
+    isExpiredPendingAudit:()=>false,getReportCountry:r=>r.pais,getStudyForAudit:r=>r.estudio,getAuditOperationDate:r=>r.fecha,
+    auditHistoryByModule:{smart:rows.filter(r=>r._module==='smart'),blocking:rows.filter(r=>r._module==='blocking')}});
+  assert.deepEqual(Array.from(a.getFilteredAuditsForReports(),r=>r.id),['2']);
+  assert.deepEqual(Array.from(a.getHistoricalAlertsSource(),r=>r.id),['1','2']);
+  a.currentScope={module:'blocking'};
+  assert.deepEqual(Array.from(a.getHistoricalAlertsSource(),r=>r.id),['1']);
+});
+
+test('CSV histórico espera ambas consultas y evita descargar datos parciales si falla el histórico', async () => {
+  const {a}=app();let downloads=0,prepared=0;
+  Object.assign(a,{ensureIndicatorHistoriesLoaded:async()=>{throw new Error('Consulta incompleta');},
+    ensureBenchmarkCountries:async()=>{},getHistoricalAlertsSource:()=>[],renderHistoricalAlertsConsolidated(){},showToast(){},
+    getHistoricalAlertsExport(){prepared++;return {headers:[],rows:[[1]]};}});
+  ctx.PortalIndicators={download(){downloads++;}};
+  const original=console.error;console.error=()=>{};
+  try {
+    await a.exportHistoricalAlertsCSV();assert.equal(downloads,0);assert.equal(prepared,0);assert.equal(a.historicalAlertsExporting,false);
+    a.ensureIndicatorHistoriesLoaded=async()=>{};
+    await a.exportHistoricalAlertsCSV();assert.equal(downloads,1);assert.equal(prepared,1);
+  } finally {delete ctx.PortalIndicators;console.error=original;}
+});

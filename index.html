@@ -18,7 +18,7 @@
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
   <link rel="stylesheet" href="css/styles.css?v=65.0" />
-  <link rel="stylesheet" href="css/indicators.css?v=5.2" />
+  <link rel="stylesheet" href="css/indicators.css?v=5.3" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -1595,6 +1595,17 @@
         </div>
 
         <div id="metrics-view-daily" class="metrics-subview hidden">
+          <section class="glass-panel indicator-panel daily-consolidated-panel" aria-labelledby="daily-consolidated-title">
+            <div class="panel-header metric-consolidated-header">
+              <div>
+                <h3 id="daily-consolidated-title">📚 Consolidado histórico de alertas</h3>
+                <p class="panel-desc">Todo el histórico disponible para tu usuario: Bloqueantes y Smart, revisadas y pendientes. Una fila por KPI con alerta en el CSV. Esta descarga incluye todos los meses y no se limita por los filtros del detalle diario.</p>
+              </div>
+              <button type="button" class="btn btn-success" id="btn-export-historical-alerts-csv">📥 Descargar todo el histórico (CSV)</button>
+            </div>
+            <p id="daily-consolidated-context" class="story-note" role="status">Consultando histórico…</p>
+            <div id="daily-consolidated-summary"></div>
+          </section>
           <!-- Panel de Desglose y Descarga Día por Día -->
           <div class="glass-panel daily-breakdown-panel" style="margin-top: 1.75rem;">
             <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
@@ -2904,8 +2915,9 @@
   <!-- Scripts ES Modules -->
   <script src="js/indicator-metrics.js?v=1.4"></script>
   <script src="js/indicator-catalog.js?v=1.0"></script>
-  <script src="js/indicator-dashboard.js?v=5.0"></script>
+  <script src="js/indicator-dashboard.js?v=5.1"></script>
+  <script src="js/indicator-report.js?v=1.0"></script>
   <script src="js/pending-workspace.js?v=2.0"></script>
-  <script type="module" src="js/app.js?v=137.0"></script>
+  <script type="module" src="js/app.js?v=138.0"></script>
 </body>
 </html>
