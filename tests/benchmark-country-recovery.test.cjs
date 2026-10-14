@@ -48,6 +48,14 @@ test('regiones se recuperan por ID y estudio, con cruces ambiguos explícitament
   assert.equal(a.getReportGeography(audit('1','','Chile')),'');
 });
 
+test('la misma región en distintas capitalizaciones no se considera un cruce ambiguo',()=>{
+ const a=app();
+ a.benchmarkCountryRows=[{audit_external_id:'1',study:'lindley_202610',region:'Region Lima'},
+  {audit_external_id:'1',study:'lindley_202610',region:'REGIÓN LIMA'}];
+ assert.equal(a.getReportGeography(audit('1','','Lindley')),'REGION LIMA');
+ assert.equal(a.normalizeBenchmarkRegion('viña  del mar'),'VIÑA DEL MAR');
+});
+
 test('país diario real tiene prioridad y normaliza Guatemala ABVO/Embocen a Guatemala', () => {
   const a = app();
   a.adminExternalAnalysis.alertRecords = [{ audit_external_id: '123', country: 'Panamá' }];

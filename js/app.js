@@ -5958,7 +5958,9 @@ class ValidaFlowApp {
 
   normalizeBenchmarkRegion(value) {
     const region = String(value ?? '').trim().replace(/\s+/g, ' ');
-    return !region || /^(null|undefined|n\/?a|sin regi[oó]n|-|\d+(\.\d+)?)$/i.test(region) ? '' : region;
+    if (!region || /^(null|undefined|n\/?a|sin regi[oó]n(?: identificada)?|-|\d+(\.\d+)?)$/i.test(region)) return '';
+    return globalThis.PortalIndicatorMetrics?.normalizeRegion(region)
+      ?? region.normalize('NFD').replace(/\u0301/g, '').normalize('NFC').toLocaleUpperCase('es');
   }
 
   getBenchmarkRegion(audit) {

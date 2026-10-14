@@ -6,6 +6,23 @@ const M=global.PortalIndicatorMetrics;
 const sample=(id,decisions,extra={})=>({id:String(id),study:'Moderno',country:'Panamá',periodDate:'2026-10-08',auditDate:'2026-10-08',auditor:'campo.a',kpis:decisions.map((decision,i)=>({name:'K'+i,needsReview:true,decision})),...extra});
 const compute=(rows,filters={})=>M.compute(M.normalizeAudits(rows),{from:'2026-08-01',to:'2026-10-08',asOf:'2026-10-08',...filters});
 
+test('region case, vowel accents and repeated spaces form one group with combined decisions',()=>{
+ const regions=['Region Centro','REGIÓN   CENTRO','Region Lima','REGION LIMA','Region Norte','region norte'];
+ const rows=regions.map((region,i)=>sample(i+1,[['aplica','no_aplica','aplica','pendiente','aplica','no_aplica'][i]],{study:'Lindley',country:'Perú',region}));
+ const r=compute(rows);
+ assert.equal(r.benchmark.length,3);
+ assert.deepEqual(r.benchmark.map(b=>[b.geography,b.total,b.applies,b.rejects,b.pending]),[
+  ['REGION CENTRO',2,1,1,0],['REGION LIMA',2,1,0,1],['REGION NORTE',2,1,1,0]]);
+ assert.equal(r.benchmark.reduce((n,b)=>n+b.total,0),6);
+ assert.equal(compute(rows,{region:'Región Centro'}).counts.total,2);
+ assert.equal(rows[0].region,'Region Centro');
+ assert.equal(M.normalizeRegion('  Viña del Mar  '),'VIÑA DEL MAR');
+ assert.equal(M.normalizeRegion('Sin región identificada'),'');
+ const [enriched]=U.adapt([{id:'99',estudio:'Lindley',fecha:'2026-10-01',kpis:[]}],
+  [{audit_external_id:'99',region:'Región Centro'},{audit_external_id:'99',region:'REGION CENTRO'}]);
+ assert.equal(enriched.region,'REGION CENTRO');
+});
+
 test('historical benchmarks use KO countries and Chile/Lindley regions without changing country fields',()=>{
  const r=compute([
    sample(1,['aplica'],{periodDate:'2026-09-01',study:'Chile',region:'ARICA'}),
@@ -55,7 +72,7 @@ const base={id:'123',_module:'blocking',estudio:'Moderno',_studyId:'s',_countryI
  kpis:[{name:'A',needsReview:true}],validationResults:{A:{status:'no_aplica',tipificacion:'Falso positivo',decisionAt:'2026-10-02T12:00:00Z'}}};
 test('adapter keeps original audit, upload and decision timestamps, daily dimensions have priority',()=>{
  const [a]=U.adapt([base],[{audit_external_id:'123',region:'Sur',subchannel:'Otro',audit_date:'2026-09-29'}]);
- assert.equal(a.auditDate,'2026-09-30');assert.equal(a.region,'Norte');assert.equal(a.subchannel,'Supermercado');
+ assert.equal(a.auditDate,'2026-09-30');assert.equal(a.region,'NORTE');assert.equal(a.subchannel,'Supermercado');
  const r=global.PortalIndicatorMetrics.compute([a],{asOf:'2026-10-10',from:'2026-10-01',to:'2026-10-10'});
  assert.equal(r.counts.rejects,1);assert.equal(r.timing.intake.dateOnly,1);assert.equal(r.timing.validation.meanHours,24);
 });

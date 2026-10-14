@@ -64,7 +64,7 @@
     return M.normalizeAudits(canonical(audits).filter(a=> (sourceModule==='all' || (a._module || 'blocking') === sourceModule) && /^\d+$/.test(String(a.id))).map(a=> {
       const candidates = byId.get(String(a.id)) || [];
       const fallback = names => {
-        const values = [...new Set(candidates.map(c=>readField(c,names)).filter(Boolean))];
+        const values = [...new Set(candidates.map(c=>names.includes('region')?M.normalizeRegion(readField(c,names)):readField(c,names)).filter(Boolean))];
         return values.length === 1 ? values[0] : '';
       };
       const kpis = (a.kpis || []).filter(k=>k.needsReview === true || k.alertaStatus === 'SE ALERTA').map(k=> {
@@ -354,6 +354,7 @@
     const module = app.currentView === 'visualizations' ? app.getVisualizationModuleFilter() : app.currentModule;
     const legacy=Array.from(target.parentElement.children).filter(el=>el!==target);
     const state = app.indicatorFilters ||= {region:'all',channel:'all',subchannel:'all',month:''};
+    if(state.region!=='all')state.region=M.normalizeRegion(state.region)||'Sin región';
     const options=app.getMetricsScopeOptions?.() || {studies:[],countries:[]};
     const selectedStudies=app.selectedStudies || ['ALL'];
     const studyValue=!selectedStudies.length || selectedStudies.includes('ALL')?'all':selectedStudies.length===1?selectedStudies[0]:'__multiple__';

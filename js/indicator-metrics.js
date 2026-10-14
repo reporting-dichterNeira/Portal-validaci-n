@@ -4,6 +4,12 @@
   const norm = v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   const text = v => String(v ?? '').trim();
   const ratio = (n, d) => d > 0 ? n / d : null;
+  function normalizeRegion(value) {
+    const region = text(value).replace(/\s+/g, ' ');
+    if (!region || /^(null|undefined|n\/?a|sin regi[oó]n(?: identificada)?|-|\d+(\.\d+)?)$/i.test(region)) return '';
+    // Fold vowel accents and case, preserving Ñ as a distinct letter.
+    return region.normalize('NFD').replace(/\u0301/g, '').normalize('NFC').toLocaleUpperCase('es');
+  }
   function dateKey(value) {
     const raw = text(value);
     let candidate = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/);
@@ -124,9 +130,9 @@
         validatedEvent:eventStamp(k.validatedAt || row.validationResults?.[k.name]?.supervisorResolvedAt || row.validationResults?.[k.name]?.decisionAt)
       }));
       records.set(key, { id: text(row.id), module:sourceModule, study, country,
-        geography: ['Chile','Lindley'].includes(study) ? text(row.region) || 'Sin región identificada' : country,
+        geography: ['Chile','Lindley'].includes(study) ? normalizeRegion(row.region) || 'Sin región identificada' : country,
         pdv: text(row.pdv || row.idPDV),
-        auditor: text(row.auditor || row.usuario), region:text(row.region), channel:text(row.channel || row.canal),
+        auditor: text(row.auditor || row.usuario), region:normalizeRegion(row.region), channel:text(row.channel || row.canal),
         subchannel:text(row.subchannel || row.subcanal), periodDate, auditDate, auditEvent,
         alertUploadedAt:text(row.alertUploadedAt || row.alertUploadedDate || row._batchUploadedAt), alertUploadedEvent, month, kpis });
     }
@@ -177,7 +183,7 @@
       const id = lookup(row, ['idaudito', 'idauditoria', 'iddeaudito']);
       if (!/^\d+$/.test(id)) continue;
       const context = { country: lookup(row, ['pais','country']), auditor: lookup(row, ['auditor','nombreusuario']),
-        pdv: lookup(row, ['idpdv','iddepdv']), region:lookup(row,['region']), channel:lookup(row,['canal','channel']),
+        pdv: lookup(row, ['idpdv','iddepdv']), region:normalizeRegion(lookup(row,['region'])), channel:lookup(row,['canal','channel']),
         subchannel:lookup(row,['subcanal','subchannel']), auditEvent:eventStamp(lookup(row,['fechadelaudito','fechaaudito','auditdate','fechaauditoria'])),
         auditDate: dateKey(lookup(row, ['fechadelaudito','fechaaudito','auditdate','fechaauditoria'])) };
       context.auditDate=context.auditEvent?.day || null;
@@ -211,8 +217,9 @@
     const { from = '', to = asOf, study = 'all', country = 'all', region='all', channel='all', subchannel='all', month = '' } = filters;
     if ((from && !dateKey(from)) || (to && !dateKey(to)) || (from && to && from > to)) throw new Error('El rango de fechas no es válido.');
     const dimension=(value,label)=>value || `Sin ${label}`;
+    const selectedRegion=region==='all'?'all':normalizeRegion(region)||'Sin región';
     const scoped = audits.filter(a => (study === 'all' || a.study === study) && (country === 'all' || a.country === country)
-      && (region==='all' || dimension(a.region,'región')===region) && (channel==='all' || dimension(a.channel,'canal')===channel)
+      && (selectedRegion==='all' || dimension(a.region,'región')===selectedRegion) && (channel==='all' || dimension(a.channel,'canal')===channel)
       && (subchannel==='all' || dimension(a.subchannel,'subcanal')===subchannel));
     const undated = scoped.filter(a => !a.periodDate).length;
     const selected = scoped.filter(a => a.periodDate && (!from || a.periodDate >= from) && (!to || a.periodDate <= to) && a.periodDate <= asOf);
@@ -257,7 +264,7 @@
       missingPeriodDates: undated, missingCountries: selected.filter(a => a.country === 'Sin país identificado').length,
       missingPdv: selected.filter(a => !a.pdv).length, monthlyCounts: totals(monthlyAlerts) };
   }
-  const api = { dateKey, weekKey, ratio, eventStamp, interval, normalizeAudits, parseCSV, readConsolidatedCSV, attachContext, compute, totals };
+  const api = { dateKey, weekKey, ratio, eventStamp, interval, normalizeRegion, normalizeAudits, parseCSV, readConsolidatedCSV, attachContext, compute, totals };
   root.PortalIndicatorMetrics = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
