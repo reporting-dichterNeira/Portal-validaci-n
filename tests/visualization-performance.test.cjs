@@ -253,3 +253,40 @@ test('filtros de métricas combinan país real, estudio y módulo; conservan opc
   await a.setMetricsScopeFilter('study','all');await a.setMetricsScopeFilter('country','Perú');
   assert.deepEqual(Array.from(a.getFilteredAuditsForReports(),r=>r.id),['5']);
 });
+
+test('mes y rango de fechas se combinan para jornadas y descargas; evolución conserva contexto', async () => {
+  const { a } = app();
+  const rows = ['2026-09-15', '2026-10-01', '2026-10-08', '2026-10-20'].map((fecha, i) =>
+    ({ id: String(i), fecha, estudio: 'Moderno', pais: 'Panamá', _module: 'blocking' }));
+  let dailyRenders = 0;
+  Object.assign(a, { selectedStudies: ['ALL'], selectedReportCountry: 'all', selectedMetricsCountry: 'all',
+    visualizationTab: 'metrics', visualizationModuleFilter: 'blocking', visualizationDateFrom: '', visualizationDateTo: '',
+    getReportAuditSource: () => rows, getAuditOperationDate: r => r.fecha, getStudyForAudit: r => r.estudio,
+    getReportCountry: r => r.pais, getReportGeography: r => r.pais, renderReportsView() {},
+    renderDailyReportsView() { dailyRenders++; }, renderCurrentDataViews() {}, showToast() {} });
+  await a.setMetricsScopeFilter('month', '2026-10');
+  await a.setMetricsScopeFilter('from', '2026-09-01');
+  await a.setMetricsScopeFilter('to', '2026-10-08');
+  assert.deepEqual(Array.from(a.getFilteredAuditsForReports(), r => r.fecha), ['2026-10-01', '2026-10-08']);
+  assert.deepEqual(Array.from(a.getFilteredAuditsForReports(rows, { ignoreMonth: true }), r => r.fecha),
+    ['2026-09-15', '2026-10-01', '2026-10-08']);
+  assert.equal(a.getCommitteeHistoryForReports().length, 4);
+  assert.ok(a.getMetricsScopeOptions().months.some(r => r.value === '2026-09'));
+  await a.setMetricsScopeFilter('month', '2026-08');
+  assert.equal(a.getFilteredAuditsForReports().length, 0);
+  assert.ok(a.getMetricsScopeOptions().months.some(r => r.value === '2026-08'));
+  await a.setMetricsScopeFilter('dates-clear', '');
+  assert.equal(a.visualizationDateFrom, ''); assert.equal(a.visualizationDateTo, '');
+  assert.equal(a.selectedMetricsMonth, '2026-08');
+  assert.ok(dailyRenders >= 5);
+});
+
+test('accesos directo diario y métricas conservan restricciones comerciales', () => {
+  const { a } = app();
+  a.renderReportsView = () => {};
+  a.switchReportsSubtab('daily'); assert.equal(a.reportsSubtab, 'daily');
+  a.switchReportsSubtab('executive'); assert.equal(a.reportsSubtab, 'metrics');
+  a.switchReportsSubtab('operational'); assert.equal(a.reportsSubtab, 'metrics');
+  a.currentRole = 'commercial';
+  a.switchReportsSubtab('daily'); assert.equal(a.reportsSubtab, 'metrics');
+});

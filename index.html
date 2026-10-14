@@ -18,7 +18,7 @@
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
   <link rel="stylesheet" href="css/styles.css?v=65.0" />
-  <link rel="stylesheet" href="css/indicators.css?v=5.1" />
+  <link rel="stylesheet" href="css/indicators.css?v=5.2" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -185,33 +185,7 @@
     };
 
     window.switchReportsSubtab = function(subtab) {
-      window.currentNavState.subtab = subtab;
-      var btnOp = document.getElementById('btn-subtab-operational');
-      var btnExec = document.getElementById('btn-subtab-executive');
-      var viewOp = document.getElementById('metrics-view-operational');
-      var viewExec = document.getElementById('metrics-view-executive');
-      var titleEl = document.getElementById('reports-view-title');
-      var subtitleEl = document.getElementById('reports-view-subtitle');
-
-      if (subtab === 'operational') {
-        if (btnOp) btnOp.classList.add('active');
-        if (btnExec) btnExec.classList.remove('active');
-        if (viewOp) viewOp.classList.remove('hidden');
-        if (viewExec) viewExec.classList.add('hidden');
-        if (titleEl) titleEl.textContent = 'Métricas Operacionales de Supervisión';
-        if (subtitleEl) subtitleEl.textContent = 'Consulta todo el histórico de validación, tiempos por validador y descargas día a día.';
-      } else {
-        if (btnExec) btnExec.classList.add('active');
-        if (btnOp) btnOp.classList.remove('active');
-        if (viewExec) viewExec.classList.remove('hidden');
-        if (viewOp) viewOp.classList.add('hidden');
-        if (titleEl) titleEl.textContent = 'Informe Ejecutivo de Calidad y KPIs (Comité)';
-        if (subtitleEl) subtitleEl.textContent = 'Ranking de variables con alertas, tasa de efectividad de negocio y causas raíz para comités directivos.';
-      }
-
-      if (window.app && window.app.switchReportsSubtab) {
-        window.app.switchReportsSubtab(subtab);
-      }
+      if (window.app?.switchReportsSubtab) window.app.switchReportsSubtab(subtab);
     };
 
     window.openDailyDetailModal = function(dateKey, studyKey) {
@@ -1429,23 +1403,19 @@
           <div>
             <div class="corporate-badge">dichter & neira • Intelligence & Analytics</div>
             <h1 id="reports-view-title">Centro de Métricas y Analítica</h1>
-            <p id="reports-view-subtitle">Consulta todo el histórico acumulado de validación y las métricas ejecutivas para el área comercial.</p>
+            <p id="reports-view-subtitle">Resultados, evolución y comparativas en una sola vista; consulta las notas y cada jornada desde sus accesos directos.</p>
           </div>
           
           <!-- Selector tipo Toggle / Botones de Sub-Pestaña -->
-          <div class="metrics-subtab-switch">
-            <button class="btn btn-outline btn-open-blocking-kpis hidden" type="button">🔎 Detalle KPIs Bloqueantes</button>
-            <button class="subtab-btn active" id="btn-subtab-operational" data-subtab="operational" onclick="window.switchReportsSubtab('operational')">
-              <span class="subtab-icon">📋</span> Operación · período seleccionado
-            </button>
-            <button class="subtab-btn" id="btn-subtab-executive" data-subtab="executive" onclick="window.switchReportsSubtab('executive')">
-              <span class="subtab-icon">👔</span> Comité · resumen mensual
-            </button>
+          <div class="metrics-subtab-switch" aria-label="Consultas y métricas">
+            <button class="subtab-btn btn-open-blocking-kpis hidden" type="button">🔎 Detalle de notas</button>
+            <button class="subtab-btn" id="btn-subtab-daily" type="button" onclick="window.switchReportsSubtab('daily')">🗓️ Detalle de operación diaria</button>
+            <button class="subtab-btn active" id="btn-subtab-metrics" type="button" onclick="window.switchReportsSubtab('metrics')">📊 Métricas</button>
           </div>
         </div>
 
         <!-- Barra de Filtro Multi-Estudio / Selector de Estudios -->
-        <div class="glass-panel study-filter-bar">
+        <div class="glass-panel study-filter-bar hidden">
           <div class="study-filter-header">
             <div class="study-filter-title-group">
               <span class="filter-icon">🔍</span>
@@ -1622,6 +1592,9 @@
             </div>
           </div>
 
+        </div>
+
+        <div id="metrics-view-daily" class="metrics-subview hidden">
           <!-- Panel de Desglose y Descarga Día por Día -->
           <div class="glass-panel daily-breakdown-panel" style="margin-top: 1.75rem;">
             <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
@@ -1696,7 +1669,7 @@
           </div>
 
           <!-- Banner de Impacto Comercial y ROI de Validación -->
-          <div id="indicators-executive"></div>
+
           <div class="commercial-roi-banner glass-panel">
             <div class="commercial-roi-header">
               <div class="roi-icon-box">🛡️✨</div>
@@ -2032,7 +2005,7 @@
   <!-- MODAL: DETALLE HISTÓRICO DE KPIS BLOQUEANTES              -->
   <div class="modal-overlay hidden" id="modal-blocking-kpis" role="dialog" aria-modal="true" aria-labelledby="blocking-kpi-title">
     <div class="modal-card blocking-kpi-modal-card">
-      <div class="modal-header"><div><h3 id="blocking-kpi-title">Auditorías y notas por KPI · Bloqueantes</h3><p class="form-help">Respeta los filtros de estudio, país / región y fecha seleccionados en Métricas.</p></div><button class="btn-close-modal" id="btn-close-blocking-kpis" type="button" aria-label="Cerrar detalle de KPIs">×</button></div>
+      <div class="modal-header"><div><h3 id="blocking-kpi-title">Auditorías y notas por KPI · Bloqueantes</h3><p class="form-help">Respeta los filtros de estudio, país, mes y fechas seleccionados en Métricas.</p></div><button class="btn-close-modal" id="btn-close-blocking-kpis" type="button" aria-label="Cerrar detalle de KPIs">×</button></div>
       <div class="modal-body">
         <p class="modal-desc">Una fila por alerta de KPI y auditoría del histórico. Las notas corresponden a las olas anterior y actual del export de Bloqueantes. Diferencia en puntos = actual − anterior; la variación porcentual se muestra tal como viene en el export. Una nota ausente se muestra como —.</p>
         <div class="blocking-kpi-filters">
@@ -2931,8 +2904,8 @@
   <!-- Scripts ES Modules -->
   <script src="js/indicator-metrics.js?v=1.4"></script>
   <script src="js/indicator-catalog.js?v=1.0"></script>
-  <script src="js/indicator-dashboard.js?v=4.2"></script>
+  <script src="js/indicator-dashboard.js?v=5.0"></script>
   <script src="js/pending-workspace.js?v=2.0"></script>
-  <script type="module" src="js/app.js?v=136.0"></script>
+  <script type="module" src="js/app.js?v=137.0"></script>
 </body>
 </html>

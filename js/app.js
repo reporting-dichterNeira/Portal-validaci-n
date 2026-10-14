@@ -82,7 +82,8 @@ class ValidaFlowApp {
     this.auditHistoryLoadPromises = { smart: null, blocking: null };
 
     // Sub-Pestaña activa en Métricas & Reportes: 'operational' | 'executive'
-    this.reportsSubtab = 'operational';
+    this.reportsSubtab = 'metrics';
+    this.selectedMetricsMonth = 'all';
     this.blockingKpiFilters = { kpi: 'all', decision: 'all', search: '', minDifference: '', maxDifference: '' };
     this.blockingKpiPage = 1;
 
@@ -402,12 +403,12 @@ class ValidaFlowApp {
     });
     // Operaciones puede alternar entre el seguimiento operativo y la lectura
     // ejecutiva. Comercial se mantiene como antes: entra únicamente al Comité.
-    document.getElementById('btn-subtab-operational')?.classList.toggle('hidden', isCommercial);
-    document.getElementById('btn-subtab-executive')?.classList.remove('hidden');
+    document.getElementById('btn-subtab-daily')?.classList.toggle('hidden', isCommercial);
+    document.getElementById('btn-subtab-metrics')?.classList.remove('hidden');
     document.getElementById('visualization-module-switcher')?.classList.remove('hidden');
     this.updateVisualizationModuleControls();
     this.updateVisualizationDateControls();
-    this.switchReportsSubtab(isCommercial ? 'executive' : 'operational');
+    this.switchReportsSubtab(this.reportsSubtab === 'daily' ? 'daily' : 'metrics');
     this.switchVisualizationTab(isCommercial ? 'committee' : this.visualizationTab || 'overview');
     // Las bases externas se restauran únicamente cuando se abre su pestaña.
     // Seguimiento diario y Comité no necesitan descargar notas ni ediciones.
@@ -421,6 +422,7 @@ class ValidaFlowApp {
     document.querySelectorAll('.visualization-tab').forEach(button => {
       button.classList.toggle('active', button.dataset.visualizationTab === target);
     });
+    document.getElementById('visualization-date-filter')?.classList.toggle('hidden', ['metrics', 'committee'].includes(target));
     const visiblePane = target === 'committee' ? 'metrics' : target;
     document.querySelectorAll('.visualization-pane').forEach(pane => {
       const paneTab = pane.id.replace('visualization-pane-', '');
@@ -428,7 +430,7 @@ class ValidaFlowApp {
     });
     // Cambio de nota compara exports mensuales completos por PDV y sub-KPI;
     // no depende del módulo Smart/Bloqueantes.
-    document.getElementById('visualization-module-switcher')?.classList.toggle('hidden', target === 'score-changes');
+    document.getElementById('visualization-module-switcher')?.classList.toggle('hidden', ['score-changes', 'metrics', 'committee'].includes(target));
 
     if (target === 'overview') {
       await this.loadAdministratorPanel({ visualOnly: true });
@@ -5688,36 +5690,7 @@ class ValidaFlowApp {
   // SUB-PESTAÑAS DE MÉTRICAS (OPERACIONALES VS EJECUTIVAS)
   // ==========================================
   initReportsSubtabs() {
-    const btnOp = document.getElementById('btn-subtab-operational');
-    const btnExec = document.getElementById('btn-subtab-executive');
-    const viewOp = document.getElementById('metrics-view-operational');
-    const viewExec = document.getElementById('metrics-view-executive');
-    const titleEl = document.getElementById('reports-view-title');
-    const subtitleEl = document.getElementById('reports-view-subtitle');
-
-    btnOp?.addEventListener('click', () => {
-      this.reportsSubtab = 'operational';
-      btnOp.classList.add('active');
-      btnExec?.classList.remove('active');
-      viewOp?.classList.remove('hidden');
-      viewExec?.classList.add('hidden');
-
-      if (titleEl) titleEl.textContent = 'Métricas Operacionales de Supervisión';
-      if (subtitleEl) subtitleEl.textContent = 'Consulta todo el histórico de validación, tiempos por validador y descargas día a día.';
-      this.renderReportsView();
-    });
-
-    btnExec?.addEventListener('click', () => {
-      this.reportsSubtab = 'executive';
-      btnExec.classList.add('active');
-      btnOp?.classList.remove('active');
-      viewExec?.classList.remove('hidden');
-      viewOp?.classList.add('hidden');
-
-      if (titleEl) titleEl.textContent = 'Informe Ejecutivo de Calidad y KPIs (Comité)';
-      if (subtitleEl) subtitleEl.textContent = 'Resultados del mes, avance de revisión, focos de atención y decisiones para la dirección regional.';
-      this.renderReportsView();
-    });
+    // The three direct accesses use the inline navigation and notes handler.
   }
 
   initBlockingKpiAnalysis() {
@@ -5785,15 +5758,7 @@ class ValidaFlowApp {
   refreshBlockingKpiAnalysisRows() {
     const source = Array.isArray(this.auditHistoryByModule?.blocking)
       ? this.auditHistoryByModule.blocking : (this.blockingAudits || []);
-    const selected = source.filter(audit => {
-      const study = this.getStudyForAudit(audit);
-      const matchesStudy = !this.selectedStudies?.length || this.selectedStudies.includes('ALL')
-        || this.selectedStudies.some(value => value.toUpperCase() === study.toUpperCase());
-      const country = this.selectedReportCountry;
-      const matchesCountry = !country || country === 'all'
-        || this.getReportGeography(audit) === (country === '__missing__' ? '' : country);
-      return matchesStudy && matchesCountry && this.isWithinVisualizationDateRange(this.getAuditOperationDate(audit));
-    });
+    const selected = this.getFilteredAuditsForReports(source);
     this.blockingKpiRows = buildBlockingKpiRows(selected, audit => ({
       study: getStudyDisplayName(this.getStudyForAudit(audit)),
       country: audit.pais || audit.country || '', date: this.getAuditOperationDate(audit)
@@ -6140,7 +6105,7 @@ class ValidaFlowApp {
     return 'Tradicional';
   }
 
-  getStudyAndDateFilteredAuditsForReports(reportAudits = this.getReportAuditSource()) {
+  getStudyAndDateFilteredAuditsForReports(reportAudits = this.getReportAuditSource(), { ignoreMonth = false } = {}) {
     const studyFiltered = this.selectedStudies.includes('ALL') || this.selectedStudies.length === 0
       ? reportAudits
       : reportAudits.filter(a => {
@@ -6148,7 +6113,9 @@ class ValidaFlowApp {
       return this.selectedStudies.some(s => s.toUpperCase() === studyOfAudit.toUpperCase());
     });
     return studyFiltered.filter(audit => this.isWithinVisualizationDateRange(this.getAuditOperationDate(audit))
-      && this.matchesMetricsCountry(audit));
+      && this.matchesMetricsCountry(audit)
+      && (ignoreMonth || !this.selectedMetricsMonth || this.selectedMetricsMonth === 'all'
+        || this.getAuditOperationDate(audit).slice(0, 7) === this.selectedMetricsMonth));
   }
 
   matchesMetricsCountry(audit) {
@@ -6166,7 +6133,9 @@ class ValidaFlowApp {
     for (const study of this.selectedStudies || []) if (study !== 'ALL' && !studies.includes(study)) studies.push(study);
     const selectedCountry = this.selectedMetricsCountry || 'all';
     if (selectedCountry !== 'all' && !countries.includes(selectedCountry)) countries.push(selectedCountry);
-    return { studies: studies.map(value => ({ value, label: getStudyDisplayName(value) })),
+    const months = [...new Set(source.map(audit => this.getAuditOperationDate(audit).slice(0, 7)).filter(value => /^\d{4}-\d{2}$/.test(value)))].sort().reverse();
+    if (this.selectedMetricsMonth && this.selectedMetricsMonth !== 'all' && !months.includes(this.selectedMetricsMonth)) months.push(this.selectedMetricsMonth);
+    return { months: months.map(value => ({ value, label: value })), studies: studies.map(value => ({ value, label: getStudyDisplayName(value) })),
       countries: countries.map(value => ({ value, label: value === '__missing__' ? 'Sin país identificado' : value })) };
   }
 
@@ -6175,7 +6144,15 @@ class ValidaFlowApp {
       if (this.currentView === 'visualizations') await this.setVisualizationModuleFilter(value);
       return;
     }
-    if (key === 'study') this.selectedStudies = value === 'all' ? ['ALL'] : [value];
+    if (key === 'from' || key === 'to' || key === 'dates-clear') {
+      await this.setVisualizationDateFilter(key === 'dates-clear' ? '' : key === 'from' ? value : this.visualizationDateFrom,
+        key === 'dates-clear' ? '' : key === 'to' ? value : this.visualizationDateTo);
+      this.renderReportsView();
+      this.renderDailyReportsView();
+      return;
+    }
+    if (key === 'month') this.selectedMetricsMonth = /^\d{4}-\d{2}$/.test(value) ? value : 'all';
+    else if (key === 'study') this.selectedStudies = value === 'all' ? ['ALL'] : [value];
     else if (key === 'country') this.selectedMetricsCountry = value || 'all';
     else return;
     // The visible country selector replaces any legacy geography selection.
@@ -6185,8 +6162,8 @@ class ValidaFlowApp {
     this.renderDailyReportsView();
   }
 
-  getFilteredAuditsForReports(reportAudits = this.getReportAuditSource()) {
-    const audits = this.getStudyAndDateFilteredAuditsForReports(reportAudits);
+  getFilteredAuditsForReports(reportAudits = this.getReportAuditSource(), options = {}) {
+    const audits = this.getStudyAndDateFilteredAuditsForReports(reportAudits, options);
     if (this.selectedReportCountry === 'all' || !this.selectedReportCountry) return audits;
     const selectedCountry = this.selectedReportCountry === '__missing__' ? '' : this.selectedReportCountry;
     return audits.filter(audit => this.getReportGeography(audit) === selectedCountry);
@@ -6247,23 +6224,21 @@ class ValidaFlowApp {
       execStudyLabel.textContent = `Estudios Analizados: ${studyLabel}${countryLabel} (${filteredAudits.length} auditorías)`;
     }
 
-    const executive = this.reportsSubtab === 'executive' || this.visualizationTab === 'committee';
-    const indicatorTarget = document.getElementById(executive ? 'indicators-executive' : 'indicators-operational');
-    const section = executive ? this.indicatorExecutiveSection : this.indicatorOperationalSection;
-    // Classic reports are hidden behind Detail in the integrated dashboard.
-    // Build them when visible, not on every visit to a summary tab.
-    if (!globalThis.PortalIndicators || !indicatorTarget || module === 'smart' || section === 'detail') {
+    const indicatorTarget = document.getElementById('indicators-operational');
+    const section = this.indicatorOperationalSection;
+    if (!globalThis.PortalIndicators || !indicatorTarget || section === 'detail') {
       this.renderClassicReports(filteredAudits);
     }
-    globalThis.PortalIndicators?.render(this, filteredAudits,
-      this.reportsSubtab === 'executive' || this.visualizationTab === 'committee' ? this.getCommitteeHistoryForReports() : null,
-      null, this.getFilteredAuditsForReports(['smart', 'blocking'].flatMap(item => this.getReportAuditSource(item, item))));
+    globalThis.PortalIndicators?.render(this,
+      this.getFilteredAuditsForReports(reportAudits, { ignoreMonth: true }), this.getCommitteeHistoryForReports(), null,
+      this.getFilteredAuditsForReports(['smart', 'blocking'].flatMap(item => this.getReportAuditSource(item, item)), { ignoreMonth: true }));
+    if (this.reportsSubtab === 'daily') this.renderDailyReportsView();
     this.ensureBenchmarkCountries(reportAudits);
   }
 
   renderClassicReports(audits) {
-    if (this.reportsSubtab === 'executive' || this.visualizationTab === 'committee') this.renderExecutiveMetrics(audits);
-    else this.renderOperationalMetrics(audits);
+    if (this.currentRole !== 'commercial') this.renderOperationalMetrics(audits);
+    this.renderExecutiveMetrics(audits);
   }
 
   renderOperationalMetrics(audits) {
@@ -7326,8 +7301,8 @@ class ValidaFlowApp {
     this.currentTab = targetTab;
     if (targetTab === 'reports') {
       this.moveReportsContent('private-supervisor-view');
-      document.getElementById('btn-subtab-operational')?.classList.remove('hidden');
-      document.getElementById('btn-subtab-executive')?.classList.add('hidden');
+      document.getElementById('btn-subtab-daily')?.classList.remove('hidden');
+      document.getElementById('btn-subtab-metrics')?.classList.remove('hidden');
       this.switchReportsSubtab('operational');
     }
     const tabBtns = document.querySelectorAll('#supervisor-nav-tabs .nav-tab-btn');
@@ -8126,7 +8101,7 @@ class ValidaFlowApp {
     if (dailyList.length === 0) {
       container.innerHTML = `
         <div class="empty-reasons-state">
-          <p>No hay auditorías registradas para los estudios seleccionados.</p>
+          <p>No hay auditorías para los filtros seleccionados.</p>
         </div>
       `;
       return;
@@ -8283,7 +8258,7 @@ class ValidaFlowApp {
     if (subtitleEl) subtitleEl.textContent = `Seguimiento de auditorías, validadores y avance de la operación.`;
 
     // Obtener auditorías del día usando getAuditOperationDate
-    const dayAudits = this.getReportAuditSource().filter(a => {
+    const dayAudits = this.getFilteredAuditsForReports().filter(a => {
       const aDate = this.getAuditOperationDate(a);
       const aStudy = this.getStudyForAudit(a);
       const dateMatch = aDate === dateKey || dateKey === 'Sin_Fecha';
@@ -8499,29 +8474,17 @@ class ValidaFlowApp {
   // MÉTODOS DE ACCIÓN RÁPIDA Y REPORTES
   // ==========================================
   switchReportsSubtab(subtab) {
-    this.reportsSubtab = subtab;
-    const btnOp = document.getElementById('btn-subtab-operational');
-    const btnExec = document.getElementById('btn-subtab-executive');
-    const viewOp = document.getElementById('metrics-view-operational');
-    const viewExec = document.getElementById('metrics-view-executive');
-    const titleEl = document.getElementById('reports-view-title');
-    const subtitleEl = document.getElementById('reports-view-subtitle');
-
-    if (subtab === 'operational') {
-      btnOp?.classList.add('active');
-      btnExec?.classList.remove('active');
-      viewOp?.classList.remove('hidden');
-      viewExec?.classList.add('hidden');
-      if (titleEl) titleEl.textContent = 'Métricas Operacionales de Supervisión';
-      if (subtitleEl) subtitleEl.textContent = 'Consulta todo el histórico de validación, tiempos por validador y descargas día a día.';
-    } else {
-      btnExec?.classList.add('active');
-      btnOp?.classList.remove('active');
-      viewExec?.classList.remove('hidden');
-      viewOp?.classList.add('hidden');
-      if (titleEl) titleEl.textContent = 'Informe Ejecutivo de Calidad y KPIs (Comité)';
-      if (subtitleEl) subtitleEl.textContent = 'Resultados del mes, avance de revisión, focos de atención y decisiones para la dirección regional.';
-    }
+    this.reportsSubtab = subtab === 'daily' && this.currentRole !== 'commercial' ? 'daily' : 'metrics';
+    const daily = this.reportsSubtab === 'daily';
+    document.getElementById('btn-subtab-daily')?.classList.toggle('active', daily);
+    document.getElementById('btn-subtab-metrics')?.classList.toggle('active', !daily);
+    document.getElementById('metrics-view-operational')?.classList.remove('hidden');
+    document.getElementById('metrics-view-daily')?.classList.toggle('hidden', !daily);
+    document.getElementById('metrics-view-executive')?.classList.add('hidden');
+    const title = document.getElementById('reports-view-title');
+    const subtitle = document.getElementById('reports-view-subtitle');
+    if (title) title.textContent = 'Centro de Métricas y Analítica';
+    if (subtitle) subtitle.textContent = 'Resultados, evolución y comparativas en una sola vista; consulta las notas y cada jornada desde sus accesos directos.';
     this.renderReportsView();
   }
 
