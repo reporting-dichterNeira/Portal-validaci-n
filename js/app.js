@@ -357,14 +357,12 @@ class ValidaFlowApp {
       if (source && target) target.appendChild(source);
     };
     move('admin-productivity-panel', 'visualization-pane-overview');
-    move('admin-alerts-analysis-sheet', 'visualization-pane-alerts');
     move('admin-editions-analysis-sheet', 'visualization-pane-editions');
     move('admin-score-changes-analysis-sheet', 'visualization-pane-score-changes');
     // These sheets were previously switched inside the administrator view
     // through the `hidden` utility. Once they live in independent panes, the
     // pane itself controls visibility, so the legacy class must not hide them.
     document.getElementById('admin-productivity-panel')?.classList.remove('hidden');
-    document.getElementById('admin-alerts-analysis-sheet')?.classList.remove('hidden');
     document.getElementById('admin-editions-analysis-sheet')?.classList.remove('hidden');
     document.getElementById('admin-score-changes-analysis-sheet')?.classList.remove('hidden');
     this.visualizationsMounted = true;
@@ -393,7 +391,7 @@ class ValidaFlowApp {
     if (roleEl) roleEl.textContent = roleLabel;
     if (subtitle) subtitle.textContent = isCommercial
       ? 'Consulta el Informe Ejecutivo de Calidad y KPIs preparado para Comité y Comercial.'
-      : 'Indicadores, cruces, ediciones y reportes en un solo espacio. El Export general se sincroniza desde Databricks; actualiza notas y ediciones con sus archivos mensuales.';
+      : 'Seguimiento diario, ediciones, cambios de nota y métricas en un solo espacio. Actualiza notas y ediciones con sus archivos mensuales.';
     document.getElementById('visualization-powerbi-link')?.classList.toggle('hidden', isCommercial);
 
     document.querySelectorAll('.visualization-tab').forEach(button => {
@@ -416,7 +414,7 @@ class ValidaFlowApp {
 
   async switchVisualizationTab(tabId) {
     const isCommercial = this.currentRole === 'commercial';
-    const allowedTabs = isCommercial ? ['committee'] : ['overview', 'alerts', 'editions', 'score-changes', 'metrics'];
+    const allowedTabs = isCommercial ? ['committee'] : ['overview', 'editions', 'score-changes', 'metrics'];
     const target = allowedTabs.includes(tabId) ? tabId : allowedTabs[0];
     this.visualizationTab = target;
     document.querySelectorAll('.visualization-tab').forEach(button => {
