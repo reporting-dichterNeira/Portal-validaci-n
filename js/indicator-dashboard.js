@@ -206,7 +206,7 @@
   function timingChart(items) {
     return groupedChart(items.map(r=>({month:r.month,intake:r.intake.meanDays,validation:r.validation.meanDays,
       samples:'Muestras: '+num(r.intake.measured)+' auditorías / '+num(r.validation.measured)+' alertas decididas'})),
-      [{key:'intake',label:'Auditoría → carga',tone:'blue'},{key:'validation',label:'Carga → decisión',tone:'purple'}],
+      [{key:'intake',label:'Tiempo auditoría → generación de alerta',tone:'blue'},{key:'validation',label:'Generación de alerta → decisión aplicada',tone:'purple'}],
       {label:r=>r.month,meta:r=>r.samples,format:decimal,unit:'días calendario',kind:'timing'})+
       '<p class="story-note">Las barras miden días calendario: 0 indica que ambos pasos ocurrieron el mismo día. La tabla conserva las horas exactas cuando están disponibles y el detalle de fechas faltantes o inválidas.</p>';
   }
@@ -363,10 +363,10 @@
       return panel('📈 Evolución mensual de alertas generadas','Comparativo de alertas generadas, válidas y no válidas. Hasta seis meses con datos del rango seleccionado.',
         monthlyChart(data.trend)+chartDetails(table(['Mes de jornada','Alertas generadas','Alertas válidas','Alertas no válidas','Pendientes','Cobertura','Cambio de volumen'],data.trend.map(r=>row([esc(r.month)+(r.partial?' · Parcial':''),num(r.total),num(r.applies),num(r.rejects),num(r.pending),pct(r.coverage),r.change==null?'No comparable':pct(r.change)]))))+'<p class="story-note">Solo se calcula cambio entre meses completos consecutivos. Los meses parciales se identifican y no se comparan como cierres completos.</p>')+
         panel('⏱️ Tiempos de la cohorte seleccionada','Promedios sin meta aprobada. Muestras y fechas faltantes se muestran para no confundir ausencia de información con rapidez.',cards([
-          ['Auditoría → carga',time(result.timing.intake),'Una muestra por auditoría','blue','📤'],
-          ['Carga → decisión',time(result.timing.validation),'Una muestra por alerta decidida','purple','⏱️']
+          ['Tiempo auditoría → generación de alerta',time(result.timing.intake),'Una muestra por auditoría','blue','📤'],
+          ['Generación de alerta → decisión aplicada',time(result.timing.validation),'Una muestra por alerta decidida','purple','⏱️']
         ],'timing')+'<p class="story-note">No es un SLA. La cohorte usa jornada; los intervalos usan las fechas reales de auditoría, carga y decisión.</p>')+
-        panel('⏱️ Evolución de los tiempos de respuesta','Promedio en días por mes real de carga. Las dos etapas usan muestras independientes.',timingChart(data.timing)+chartDetails(table(['Mes real de carga','Auditoría → carga','Carga → decisión'],data.timing.map(r=>row([esc(r.month),time(r.intake),time(r.validation)])))));
+        panel('⏱️ Evolución de los tiempos de respuesta','Promedio en días por mes real de carga. Las dos etapas usan muestras independientes.',timingChart(data.timing)+chartDetails(table(['Mes real de carga','Tiempo auditoría → generación de alerta','Generación de alerta → decisión aplicada'],data.timing.map(r=>row([esc(r.month),time(r.intake),time(r.validation)])))));
     }
     return '';
   }
@@ -419,8 +419,8 @@
     html+='<div class="committee-grid">'+panel('Qué variables concentran las alertas','Top 3 por volumen recibido. Una alerta no equivale a un error confirmado.','<ol class="committee-top">'+top(macro.variables,'total',c.total)+'</ol>'+link('findings','Explorar hallazgos'))+
       panel('Por qué se descartaron','Top 3 motivos de alertas no válidas; porcentaje sobre las descartadas. Los faltantes se identifican como Sin tipificación.','<ol class="committee-top">'+top(result.reasons,'count',c.rejects)+'</ol>'+link('findings','Ver motivos'))+'</div>';
     html+=panel('Tiempo de respuesta del mes','Cohorte: auditorías cargadas en el mes seleccionado. Promedios, no plazos comprometidos. Se excluyen intervalos inválidos o sin fechas.',cards([
-      ['Auditoría → carga',time(result.timing.intake),'Una muestra por auditoría','blue','📤'],
-      ['Carga → decisión',time(result.timing.validation),'Una muestra por alerta decidida','purple','⏱️']
+      ['Tiempo auditoría → generación de alerta',time(result.timing.intake),'Una muestra por auditoría','blue','📤'],
+      ['Generación de alerta → decisión aplicada',time(result.timing.validation),'Una muestra por alerta decidida','purple','⏱️']
     ],'timing')+link('timing','Ver detalle de tiempos'));
     return html;
   }
@@ -544,8 +544,8 @@
       html+=panel('Auditores con alertas recurrentes','Auditor de campo: nombre_usuario del Export de Databricks, cruzado por ID de auditoría; no es el validador. Últimas ocho semanas dentro del filtro, desde '+result.startWeek+'. '+num(result.alertsWithoutAuditor)+' alertas sin auditor identificado se excluyen de este ranking. Recurrencia no es productividad ni error confirmado.',groupedChart(result.recurrence.slice(0,20),[{key:'weeks',label:'Semanas con alertas',tone:'purple'}],{label:r=>r.auditor,meta:r=>studyLabel(r.study)+' · '+num(r.total)+' Alertas generadas · '+r.weeks+' / 8 semanas',unit:'semanas',kind:'recurrence'})+chartDetails(table(['Auditor','Estudio','Semanas con alertas','Alertas'],result.recurrence.slice(0,20).map(r=>row([esc(r.auditor),esc(studyLabel(r.study)),num(r.weeks)+' / 8',num(r.total)])))));
     }
     if(section==='timing') {
-      html+=panel('Tiempo entre cada paso','Bases separadas: una muestra por auditoría para auditoría → carga; una por alerta decidida para carga → decisión. Horas solo con timestamps completos.',cards([['Auditoría → carga',time(result.timing.intake),'','blue','📤'],['Carga → decisión',time(result.timing.validation),'','purple','⏱️']],'timing'));
-      html+=panel('Evolución de tiempos por mes de carga','Promedios en días. Fechas sin hora se miden en días calendario; no se estima una hora inexistente.',timingChart(result.timing.monthly)+chartDetails(table(['Mes de carga','Auditoría → carga','Carga → decisión'],result.timing.monthly.map(r=>row([r.month,time(r.intake),time(r.validation)])))));
+      html+=panel('Tiempo entre cada paso','Bases separadas: una muestra por auditoría para auditoría → generación de alerta; una por alerta decidida para generación de alerta → decisión aplicada. Horas solo con timestamps completos.',cards([['Tiempo auditoría → generación de alerta',time(result.timing.intake),'','blue','📤'],['Generación de alerta → decisión aplicada',time(result.timing.validation),'','purple','⏱️']],'timing'));
+      html+=panel('Evolución de tiempos por mes de carga','Promedios en días. Fechas sin hora se miden en días calendario; no se estima una hora inexistente.',timingChart(result.timing.monthly)+chartDetails(table(['Mes de carga','Tiempo auditoría → generación de alerta','Generación de alerta → decisión aplicada'],result.timing.monthly.map(r=>row([r.month,time(r.intake),time(r.validation)])))));
       html+='<p class="story-note">Estos tiempos no son un SLA: aún no hay un plazo objetivo aprobado. Las fechas faltantes, inválidas o futuras se muestran aparte y no se convierten en cero.</p>';
     }
     if(section==='comparison') {

@@ -53,7 +53,7 @@
     const pdf = new JsPDF({unit:'mm',format:'a4',orientation:'landscape'});
     const width = pdf.internal.pageSize.getWidth(), height = pdf.internal.pageSize.getHeight(), margin = 14;
     const usable = width - margin * 2;
-    const clean = value => String(value ?? '').replace(/[•–—]/g,'-').replace(/\p{Extended_Pictographic}/gu,'').trim();
+    const clean = value => String(value ?? '').replace(/[•–—]/g,'-').replace(/→/g,'->').replace(/\p{Extended_Pictographic}/gu,'').trim();
     const write = (text,x,y,size=10,color='navy',bold=false,maxWidth=null) => {
       pdf.setFont('helvetica',bold?'bold':'normal');pdf.setFontSize(size);pdf.setTextColor(...palette[color]);
       pdf.text(maxWidth ? pdf.splitTextToSize(clean(text),maxWidth) : clean(text),x,y);
@@ -167,8 +167,8 @@
       bar(row.count,reasonMax,margin+125,y-3,usable-170,'pink',4);write(number(row.count)+' | '+percent(row.share),width-margin-40,y,9,'gray');
     });
     write('Tiempos promedio',margin,146,13,'navy',true);
-    [['Auditoría a carga',r.timing.intake],['Carga a decisión',r.timing.validation]].forEach(([label,item],i)=>{
-      write(label,margin+i*usable/2,158,10,'navy',true);
+    [['Tiempo auditoría → generación de alerta',r.timing.intake],['Generación de alerta → decisión aplicada',r.timing.validation]].forEach(([label,item],i)=>{
+      write(label,margin+i*usable/2,158,10,'navy',true,usable/2-8);
       write(item.meanDays==null?'Sin muestras':number(Math.round(item.meanDays*100)/100)+' días | '+number(item.measured)+' muestras',margin+i*usable/2,169,12,'blue');
       write('Sin fecha: '+item.missing+' | Inválidas: '+item.invalid+' | Futuras: '+item.future,margin+i*usable/2,179,8,'gray');
     });
