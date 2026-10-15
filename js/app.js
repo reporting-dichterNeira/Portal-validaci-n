@@ -6122,19 +6122,36 @@ class ValidaFlowApp {
   }
 
   getMetricsScopeOptions() {
-    // Keep choices available across modules and selections, using only the
-    // authorized historical data. This lets a user recover an empty selection.
+    // Studies stay available across selections. Countries depend on the study,
+    // using authorized history across months/modules so an empty period is recoverable.
     const source = ['smart', 'blocking'].flatMap(item => this.getReportAuditSource(item, item));
     const studies = [...new Set(source.map(audit => this.getStudyForAudit(audit)).filter(Boolean))].sort();
-    const countries = [...new Set(source.map(audit => this.getReportCountry(audit) || '__missing__'))]
+    const selectedStudies = this.selectedStudies || ['ALL'];
+    const allStudies = !selectedStudies.length || selectedStudies.includes('ALL');
+    const countrySource = allStudies ? source : source.filter(audit => selectedStudies.some(study =>
+      study.toUpperCase() === this.getStudyForAudit(audit).toUpperCase()));
+    const countryValues = countrySource.map(audit => this.getReportCountry(audit) || '__missing__');
+    if (!allStudies) for (const study of selectedStudies) {
+      if (study.toLowerCase() === 'chile') countryValues.push('Chile');
+      if (study.toLowerCase() === 'lindley') countryValues.push('Perú');
+    }
+    const countries = [...new Set(countryValues)]
       .sort((a, b) => a.localeCompare(b, 'es'));
     for (const study of this.selectedStudies || []) if (study !== 'ALL' && !studies.includes(study)) studies.push(study);
-    const selectedCountry = this.selectedMetricsCountry || 'all';
-    if (selectedCountry !== 'all' && !countries.includes(selectedCountry)) countries.push(selectedCountry);
     const months = [...new Set(source.map(audit => this.getAuditOperationDate(audit).slice(0, 7)).filter(value => /^\d{4}-\d{2}$/.test(value)))].sort().reverse();
     if (this.selectedMetricsMonth && this.selectedMetricsMonth !== 'all' && !months.includes(this.selectedMetricsMonth)) months.push(this.selectedMetricsMonth);
     return { months: months.map(value => ({ value, label: value })), studies: studies.map(value => ({ value, label: getStudyDisplayName(value) })),
       countries: countries.map(value => ({ value, label: value === '__missing__' ? 'Sin país identificado' : value })) };
+  }
+
+  reconcileMetricsCountry({ selectSingle = false } = {}) {
+    const countries = this.getMetricsScopeOptions().countries;
+    const current = this.selectedMetricsCountry || 'all';
+    if (selectSingle && countries.length === 1 && countries[0].value !== '__missing__') {
+      this.selectedMetricsCountry = countries[0].value;
+    } else if (current !== 'all' && !countries.some(option => option.value === current)) {
+      this.selectedMetricsCountry = 'all';
+    }
   }
 
   async setMetricsScopeFilter(key, value) {
@@ -6150,7 +6167,10 @@ class ValidaFlowApp {
       return;
     }
     if (key === 'month') this.selectedMetricsMonth = /^\d{4}-\d{2}$/.test(value) ? value : 'all';
-    else if (key === 'study') this.selectedStudies = value === 'all' ? ['ALL'] : [value];
+    else if (key === 'study') {
+      this.selectedStudies = value === 'all' ? ['ALL'] : [value];
+      this.reconcileMetricsCountry({ selectSingle: value !== 'all' });
+    }
     else if (key === 'country') this.selectedMetricsCountry = value || 'all';
     else return;
     // The visible country selector replaces any legacy geography selection.
@@ -6184,6 +6204,7 @@ class ValidaFlowApp {
   // VISTA DE REPORTES Y MÉTRICAS (OPERACIONALES + EJECUTIVAS)
   // ==========================================
   renderReportsView() {
+    if (this.selectedMetricsCountry && this.selectedMetricsCountry !== 'all') this.reconcileMetricsCountry();
     this.populateStudyPills();
     this.populateReportCountryFilter();
 

@@ -245,7 +245,8 @@ test('filtros de métricas combinan país real, estudio y módulo; conservan opc
   await a.setMetricsScopeFilter('country','Panamá');await a.setMetricsScopeFilter('study','Moderno');await a.setMetricsScopeFilter('module','smart');
   assert.deepEqual(Array.from(a.getFilteredAuditsForReports(),r=>r.id),['3']);
   assert.deepEqual(Array.from(a.getCommitteeHistoryForReports(),r=>r.id),['3']);
-  assert.ok(a.getMetricsScopeOptions().countries.some(r=>r.value==='Chile'));
+  assert.deepEqual(Array.from(a.getMetricsScopeOptions().countries,r=>r.value),['Costa Rica','Panamá']);
+  assert.ok(a.getMetricsScopeOptions().studies.some(r=>r.value==='Chile'));
   await a.setMetricsScopeFilter('study','Chile');await a.setMetricsScopeFilter('country','Chile');await a.setMetricsScopeFilter('module','blocking');
   assert.deepEqual(Array.from(a.getFilteredAuditsForReports(),r=>r.id),['1']);
   a.visualizationDateFrom='2026-10-01';assert.equal(a.getFilteredAuditsForReports().length,0);
@@ -279,6 +280,51 @@ test('mes y rango de fechas se combinan para jornadas y descargas; evolución co
   assert.equal(a.visualizationDateFrom, ''); assert.equal(a.visualizationDateTo, '');
   assert.equal(a.selectedMetricsMonth, '2026-08');
   assert.ok(dailyRenders >= 5);
+});
+
+test('país depende del estudio, selecciona Chile/Perú y elimina combinaciones incompatibles', async () => {
+  const { a } = app();
+  const rows = [
+    { estudio:'Chile', pais:'Chile', fecha:'2026-08-01', _module:'blocking' },
+    { estudio:'Lindley', pais:'Perú', fecha:'2026-09-01', _module:'blocking' },
+    { estudio:'Moderno', pais:'Panamá', fecha:'2026-10-01', _module:'blocking' },
+    { estudio:'Moderno', pais:'Costa Rica', fecha:'2026-10-01', _module:'smart' },
+    { estudio:'Tradicional', pais:'Panamá', fecha:'2026-10-01', _module:'blocking' },
+    { estudio:'Tradicional', pais:'Guatemala', fecha:'2026-10-01', _module:'blocking' }
+  ];
+  Object.assign(a,{selectedStudies:['ALL'],selectedMetricsCountry:'Panamá',selectedMetricsMonth:'2026-10',
+    getReportAuditSource:(_module,selectedModule)=>rows.filter(r=>r._module===selectedModule),
+    getStudyForAudit:r=>r.estudio,getReportCountry:r=>r.pais,getAuditOperationDate:r=>r.fecha,
+    renderReportsView(){},renderDailyReportsView(){} });
+  const countries=()=>Array.from(a.getMetricsScopeOptions().countries,r=>r.value);
+  await a.setMetricsScopeFilter('study','Chile');
+  assert.deepEqual(countries(),['Chile']);assert.equal(a.selectedMetricsCountry,'Chile');
+  await a.setMetricsScopeFilter('study','Lindley');
+  assert.deepEqual(countries(),['Perú']);assert.equal(a.selectedMetricsCountry,'Perú');
+  await a.setMetricsScopeFilter('study','Moderno');
+  assert.deepEqual(countries(),['Costa Rica','Panamá']);assert.equal(a.selectedMetricsCountry,'all');
+  await a.setMetricsScopeFilter('country','Panamá');
+  await a.setMetricsScopeFilter('study','Tradicional');
+  assert.deepEqual(countries(),['Guatemala','Panamá']);assert.equal(a.selectedMetricsCountry,'Panamá');
+  a.selectedStudies=['Chile','Lindley'];a.reconcileMetricsCountry();
+  assert.deepEqual(countries(),['Chile','Perú']);assert.equal(a.selectedMetricsCountry,'all');
+  await a.setMetricsScopeFilter('study','all');
+  assert.deepEqual(countries(),['Chile','Costa Rica','Guatemala','Panamá','Perú']);
+  assert.equal(a.selectedMetricsMonth,'2026-10');
+});
+
+test('estudios sin cargas conservan su país fijo y no agregan un país incompatible recordado', async () => {
+  const { a }=app();
+  Object.assign(a,{selectedStudies:['ALL'],selectedMetricsCountry:'Chile',getReportAuditSource:()=>[],
+    renderReportsView(){},renderDailyReportsView(){} });
+  await a.setMetricsScopeFilter('study','Lindley');
+  assert.deepEqual(Array.from(a.getMetricsScopeOptions().countries,r=>r.value),['Perú']);
+  assert.equal(a.selectedMetricsCountry,'Perú');
+  await a.setMetricsScopeFilter('study','Chile');
+  assert.deepEqual(Array.from(a.getMetricsScopeOptions().countries,r=>r.value),['Chile']);
+  await a.setMetricsScopeFilter('study','Moderno');
+  assert.deepEqual(Array.from(a.getMetricsScopeOptions().countries,r=>r.value),[]);
+  assert.equal(a.selectedMetricsCountry,'all');
 });
 
 test('accesos directo diario y métricas conservan restricciones comerciales', () => {
