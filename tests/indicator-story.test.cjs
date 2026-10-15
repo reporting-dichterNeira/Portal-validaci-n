@@ -65,7 +65,8 @@ test('new story escapes metadata and explains denominators',()=>{
  assert.equal(U.esc('<script>'), '&lt;script&gt;');
  assert.match(render('summary').html,/Recibidas = revisadas \+ pendientes/);
  assert.match(render('findings').html,/no sobre el total recibido/);
- assert.match(render('timing').html,/no son un SLA/);
+ assert.match(render('timing').html,/SLA de validación por auditoría/);
+ assert.match(render('timing').html,/No se calcula un porcentaje de cumplimiento sin un plazo objetivo/);
 });
 test('monthly macro reconciles study totals, counts audit IDs once and ranks received volume',()=>{
  const r=M.compute(M.normalizeAudits([

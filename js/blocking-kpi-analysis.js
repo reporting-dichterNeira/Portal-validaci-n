@@ -18,6 +18,7 @@ export function buildBlockingKpiRows(audits, describeAudit) {
     return {
       ...describeAudit(audit),
       auditId: String(audit.id), pdvId: String(audit.idPDV || ''),
+      validationSlaSeconds:globalThis.PortalIndicatorMetrics?.auditValidationSla(audit).seconds ?? null,
       kpi: kpi.kpiName || kpi.name, model: kpi.modelo || audit.modelo || '',
       decision: ['aplica', 'no_aplica'].includes(result.status) ? result.status : 'pendiente',
       previous, current,
@@ -59,7 +60,8 @@ export function blockingKpiRowsToCsv(rows) {
     ['Jornada', 'date'], ['KPI', 'kpi'], ['Modelo', 'model'], ['Decisión', 'decision'],
     ['Nota anterior (export)', 'previous'], ['Nota actual (export)', 'current'],
     ['Diferencia (puntos)', 'difference'], ['Variación del export (%)', 'variation'],
-    ['Criterio del export', 'criterion'], ['Tipificación', 'reason'], ['Observaciones', 'observations']
+    ['Criterio del export', 'criterion'], ['Tipificación', 'reason'], ['Observaciones', 'observations'],
+    ['SLA total de validación (seg)', 'validationSlaSeconds']
   ];
   const escape = value => {
     let text = String(value ?? '');

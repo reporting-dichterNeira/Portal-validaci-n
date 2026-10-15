@@ -69,7 +69,8 @@ export class ExcelParser {
     return {
       'Inicio de validación (Hora Nicaragua)': formatNicaraguaDateTime(audit.startedAt, 'Pendiente'),
       'Fin de validación (Hora Nicaragua)': formatNicaraguaDateTime(audit.completedAt, 'Pendiente'),
-      'Tiempo de revisión (seg)': Number.isFinite(audit.durationSeconds) ? audit.durationSeconds : '—'
+      'Tiempo de revisión (seg)': Number.isFinite(audit.durationSeconds) ? audit.durationSeconds : '—',
+      ...(globalThis.PortalIndicatorMetrics?.validationSlaExport(audit) || {'SLA total de validación (seg)':'','SLA total de validación (min)':'','Estado de medición SLA':'Sin datos de medición'})
     };
   }
 

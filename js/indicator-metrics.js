@@ -88,6 +88,48 @@
       missing:pairs.filter(p=>p.state==='missing').length, invalid:pairs.filter(p=>p.state==='invalid').length,
       future:pairs.filter(p=>p.state==='future').length, meanDays:average(valid,'days'), meanHours:average(exact,'hours') };
   }
+  function auditValidationSla(audit, asOf=eventDayFormat.format(new Date())) {
+    if (!['completada','completed'].includes(audit.validationStatus || audit.status)) return {state:'pending',seconds:null};
+    const rawStart=audit.startedAt,rawEnd=audit.completedAt;
+    const start=eventStamp(rawStart),end=eventStamp(rawEnd);
+    if ((rawStart && !start) || (rawEnd && !end)) return {state:'invalid',seconds:null};
+    if (!start || !end || start.ms===null || end.ms===null) return {state:'missing',seconds:null};
+    const span=interval(start,end,asOf);
+    return {state:span.state,seconds:span.state==='valid'?(end.ms-start.ms)/1000:null};
+  }
+  function formatSla(seconds) {
+    if (seconds==null || !Number.isFinite(seconds)) return 'Sin muestras';
+    const value=Math.round(seconds),hours=Math.floor(value/3600),minutes=Math.floor(value%3600/60);
+    return hours ? hours+' h '+minutes+' min' : minutes ? minutes+' min '+value%60+' s' : value+' s';
+  }
+  function validationSlaExport(audit,asOf) {
+    const sla=auditValidationSla(audit,asOf);
+    return {'SLA total de validación (seg)':sla.seconds ?? '',
+      'SLA total de validación (min)':sla.seconds==null?'':Math.round(sla.seconds/60*10000)/10000,
+      'Estado de medición SLA':({valid:'Medido',pending:'Sin completar',missing:'Sin inicio o cierre con hora',invalid:'Fechas inválidas',future:'Posterior al corte'})[sla.state]};
+  }
+  function validationSlaStatistics(audits,asOf) {
+    const completed=audits.filter(a=>['completada','completed'].includes(a.validationStatus || a.status));
+    const measurements=completed.map(a=>({audit:a,...auditValidationSla(a,asOf)}));
+    const summarize=items=>{
+      const values=items.filter(m=>m.state==='valid').map(m=>m.seconds).sort((a,b)=>a-b),n=values.length;
+      const totalSeconds=n?values.reduce((sum,value)=>sum+value,0):null;
+      return {completed:items.length,measured:n,missing:items.filter(m=>m.state==='missing').length,
+        invalid:items.filter(m=>m.state==='invalid').length,future:items.filter(m=>m.state==='future').length,
+        totalSeconds,meanSeconds:n?totalSeconds/n:null,
+        medianSeconds:n?(values[Math.floor((n-1)/2)]+values[Math.floor(n/2)])/2:null,
+        p90Seconds:n?values[Math.ceil(n*.9)-1]:null,minSeconds:n?values[0]:null,maxSeconds:n?values[n-1]:null};
+    };
+    const groups=new Map();
+    for(const item of measurements){
+      const a=item.audit,id=a.validatorId || '',name=a.validatorName || id || 'Sin validador identificado';
+      const key=id?'id:'+id:'name:'+name.toLocaleLowerCase('es');
+      if(!groups.has(key))groups.set(key,{id,name,code:a.validatorCode || '',items:[]});
+      groups.get(key).items.push(item);
+    }
+    return {...summarize(measurements),validators:[...groups.values()].map(({items,...v})=>({...v,...summarize(items)}))
+      .sort((a,b)=>b.completed-a.completed || b.measured-a.measured || a.name.localeCompare(b.name,'es'))};
+  }
   function timing(audits, asOf) {
     const months=new Map(), intake=[], validation=[];
     for (const a of audits) {
@@ -134,6 +176,8 @@
         pdv: text(row.pdv || row.idPDV),
         auditor: text(row.auditor || row.usuario), region:normalizeRegion(row.region), channel:text(row.channel || row.canal),
         subchannel:text(row.subchannel || row.subcanal), segment:text(row.segment ?? row.segmento), periodDate, auditDate, auditEvent,
+        startedAt:row.startedAt || '',completedAt:row.completedAt || '',validationStatus:row.validationStatus || row.status || '',
+        validatorId:text(row.validatorId || row.assignedValidatorId),validatorName:text(row.validatorName || row._validatorName || row.validadorNombre),validatorCode:text(row.validatorCode || row._validatorCode),
         alertUploadedAt:text(row.alertUploadedAt || row.alertUploadedDate || row._batchUploadedAt), alertUploadedEvent, month, kpis });
     }
     return [...records.values()];
@@ -259,12 +303,12 @@
     const performance=groups(monthlyAlerts,dimensionKeys).sort((a,b)=>b.total-a.total);
     const auditCountsByStudy={};for(const a of selected)auditCountsByStudy[a.study]=(auditCountsByStudy[a.study]||0)+1;
     return { counts, audits: selected.length, auditCountsByStudy, alerts, backlog, recurrence, startWeek, alertsWithoutAuditor, reasons, monthly, benchmark, rejectedTypes,
-      workload, performance, timing:timing(selected,asOf),
+      workload, performance, timing:timing(selected,asOf), sla:validationSlaStatistics(selected,asOf),
       missingRegions:selected.filter(a=>!a.region).length, missingSubchannels:selected.filter(a=>!a.subchannel).length,
       missingPeriodDates: undated, missingCountries: selected.filter(a => a.country === 'Sin país identificado').length,
       missingPdv: selected.filter(a => !a.pdv).length, monthlyCounts: totals(monthlyAlerts) };
   }
-  const api = { dateKey, weekKey, ratio, eventStamp, interval, normalizeRegion, normalizeAudits, parseCSV, readConsolidatedCSV, attachContext, compute, totals };
+  const api = { dateKey, weekKey, ratio, eventStamp, interval, normalizeRegion, normalizeAudits, parseCSV, readConsolidatedCSV, attachContext, compute, totals, auditValidationSla,validationSlaExport,validationSlaStatistics,formatSla };
   root.PortalIndicatorMetrics = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

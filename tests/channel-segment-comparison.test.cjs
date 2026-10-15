@@ -43,7 +43,7 @@ test('segmento travels from Databricks context through calculations and CSV with
   const inputs=U.adapt([raw],context,a=>a.pais,'all');
   assert.equal(inputs[0].segment,'Premium');assert.equal(U.adapt([raw],[],null,'all')[0].segment,'');
   assert.equal(M.compute(inputs,{asOf:'2026-10-15'}).alerts[0].segment,'Premium');
-  const out=U.alertExport([raw],context,a=>a.pais,'all');assert.equal(out.headers.at(-1),'Segmento');assert.equal(out.rows[0].at(-1),'Premium');
+  const out=U.alertExport([raw],context,a=>a.pais,'all');assert.equal(out.rows[0][out.headers.indexOf('Segmento')],'Premium');
 });
 
 test('source and receiver preserve the literal segmento column and filtered aggregate remains opt-in',()=>{

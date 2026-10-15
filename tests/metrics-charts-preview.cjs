@@ -11,8 +11,11 @@ const audits=Array.from({length:240},(_,i)=>{
  const country=study==='Chile'?'Chile':study==='Lindley'?'Perú':i%3?'Panamá':'Costa Rica';
  const kpis=['Precio','Disponibilidad','Exhibición','Portafolio'].slice(0,1+i%4).map(name=>({name,needsReview:true}));
  const validationResults=Object.fromEntries(kpis.filter((k,j)=>month!=='2026-10'||(i+j)%4).map((k,j)=>[k.name,{status:(i+j)%3?'aplica':'no_aplica',tipificacion:['Evidencia correcta','Fuera de alcance','Sin tipificación'][i%3],decisionAt:day+'T16:00:00Z'}]));
+ const completed=Object.keys(validationResults).length===kpis.length,startedAt=day+'T15:00:00Z',validatorIndex=Math.floor(i/4)%4;
  return {id:String(i+1),_module:module,_batchId:1,estudio:study,pais:country,fecha:day,fechaAuditoriaOriginal:month+'-01',_batchUploadedAt:day+'T12:00:00Z',
   canal:i%2?'Tradicional':'Moderno',subcanal:i%3?'Supermercado':'Tienda',region:study==='Chile'?'Norte':study==='Lindley'?'Lima':'',
+  startedAt,completedAt:completed?new Date(Date.parse(startedAt)+(40+i%8*45)*1000).toISOString():null,validationStatus:completed?'completada':'en_progreso',
+  assignedValidatorId:'val-'+validatorIndex,_validatorName:'Validador '+(validatorIndex+1),_validatorCode:'VAL-'+validatorIndex,
   databricksGeography:{segmento:['A','B','C'][i%3],auditor:'Auditor '+(i%6+1),auditorSource:'storeview.slv_sv_ceres_ag_export.nombre_usuario'},kpis,validationResults};
 });
 const app={currentView:'visualizations',currentProfile:{id:'preview'},reportsSubtab:'metrics',indicatorOperationalSection:'evolution',selectedMetricsMonth:'2026-10',selectedStudies:['ALL'],selectedReportCountry:'all',

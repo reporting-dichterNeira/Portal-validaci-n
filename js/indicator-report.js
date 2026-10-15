@@ -71,11 +71,13 @@
     };
     const c=snapshot.result.counts, r=snapshot.result;
     frame('Indicadores de validación');
-    const metrics=[['Auditorías con alertas',r.audits],['Alertas generadas',c.total],['Alertas válidas',c.applies],['Alertas no válidas',c.rejects],['Pendientes',c.pending]];
-    const cardWidth=(usable-8*4)/5;
-    metrics.forEach(([label,value],i)=>{
-      const x=margin+i*(cardWidth+8);pdf.setFillColor(245,247,250);pdf.roundedRect(x,59,cardWidth,27,3,3,'F');
-      write(label,x+5,68,9,'gray');write(number(value),x+5,80,20,'blue',true);
+    const metrics=[['Auditorías con alertas',r.audits],['Alertas generadas',c.total],['Alertas válidas',c.applies],['Alertas no válidas',c.rejects],['Pendientes',c.pending],
+      ['SLA promedio en validar',M.formatSla(r.sla.meanSeconds),number(r.sla.measured)+' medibles']];
+    const cardWidth=(usable-5*5)/6;
+    metrics.forEach(([label,value,hint],i)=>{
+      const x=margin+i*(cardWidth+5);pdf.setFillColor(245,247,250);pdf.roundedRect(x,59,cardWidth,32,3,3,'F');
+      write(label,x+4,67,8,'gray',false,cardWidth-8);write(typeof value==='number'?number(value):value,x+4,81,15,'blue',true);
+      if(hint)write(hint,x+4,87,7,'gray');
     });
     write('Semáforos de revisión',margin,99,13,'navy',true);
     snapshot.signals.forEach((signal,i)=>{
@@ -171,6 +173,31 @@
       write(label,margin+i*usable/2,158,10,'navy',true,usable/2-8);
       write(item.meanDays==null?'Sin muestras':number(Math.round(item.meanDays*100)/100)+' días | '+number(item.measured)+' muestras',margin+i*usable/2,169,12,'blue');
       write('Sin fecha: '+item.missing+' | Inválidas: '+item.invalid+' | Futuras: '+item.future,margin+i*usable/2,179,8,'gray');
+    });
+    let slaY;
+    const slaPage=()=>{
+      page('SLA de validación por validador');
+      [['SLA promedio en validar',r.sla.meanSeconds],['Mediana de validación',r.sla.medianSeconds],['P90 de validación',r.sla.p90Seconds]].forEach(([label,value],i)=>{
+        const x=margin+i*(usable/3+2),w=usable/3-4;
+        pdf.setFillColor(245,247,250);pdf.roundedRect(x,57,w,27,3,3,'F');
+        write(label,x+4,65,9,'gray');write(M.formatSla(value),x+4,77,17,'blue',true);
+      });
+      write('Inicio de revisión a cierre de auditoría; incluye pausas. Una muestra por auditoría y módulo, sin multiplicar por KPIs.',margin,91,9,'gray');
+      write(number(r.sla.measured)+' medibles de '+number(r.sla.completed)+' completadas. Sin hora: '+r.sla.missing+' | Inválidas: '+r.sla.invalid+' | Futuras: '+r.sla.future+'. P90: al menos 90% de las mediciones no supera ese tiempo.',margin,97,8,'gray',false,usable);
+      [['Validador',0],['Completadas',88],['Con SLA',117],['Promedio',146],['Mediana',186],['P90',226]].forEach(([label,x])=>write(label,margin+x,109,9,'navy',true));
+      slaY=119;
+    };
+    slaPage();
+    if(!r.sla.validators.length)write('Sin auditorías completadas en este alcance.',margin,slaY,11,'gray');
+    r.sla.validators.forEach(v=>{
+      const label=v.name+(v.code?' | '+v.code:'');
+      pdf.setFont('helvetica','normal');pdf.setFontSize(9);
+      const rowHeight=Math.max(12,pdf.splitTextToSize(clean(label),80).length*4+5);
+      if(slaY+rowHeight>height-18)slaPage();
+      write(label,margin,slaY,9,'navy',false,80);
+      [[v.completed,88],[v.measured,117],[M.formatSla(v.meanSeconds),146],[M.formatSla(v.medianSeconds),186],[M.formatSla(v.p90Seconds),226]].forEach(([value,x])=>write(typeof value==='number'?number(value):value,margin+x,slaY,9,'gray'));
+      pdf.setDrawColor(231,236,243);pdf.line(margin,slaY+rowHeight-5,width-margin,slaY+rowHeight-5);
+      slaY+=rowHeight;
     });
     const pages=pdf.internal.getNumberOfPages();
     for(let i=1;i<=pages;i++){

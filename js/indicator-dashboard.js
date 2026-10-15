@@ -75,6 +75,8 @@
       });
       const periodDate = a._originalOperationDate || a._batchOperationDate || a.fecha || '';
       return {id:a.id, _module:a._module || 'blocking', study:a.estudio, periodDate,
+        startedAt:a.startedAt,completedAt:a.completedAt,validationStatus:a.validationStatus,
+        validatorId:a.assignedValidatorId,validatorName:a._validatorName || a.validadorNombre || a.validatorName,validatorCode:a._validatorCode,
         auditDate:readField(a,['fechaAuditoriaOriginal','auditDate','Fecha_del_audito','FECHA_AUDITORIA','FECHA_AUDITO','FECHA_AU']) || fallback(['audit_date']),
         alertUploadedAt:a._originalUploadedAt || a._batchUploadedAt || a._createdAt,
         country:countryFor ? countryFor(a) : readField(a.databricksGeography || {},['country']) || readField(a,['pais','country']),
@@ -130,10 +132,12 @@
       const raw = source[i], decision = raw.validationResults?.[k.key] || {};
       return [a.module === 'smart' ? 'Smart' : 'Bloqueantes',a.id,a.pdv,a.periodDate,a.auditDate,a.alertUploadedAt,k.validatedAt,
         studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,raw._validatorName || raw.assignedValidatorId || '',
-        k.name,decisionLabel(k.decision),k.reason,decision.observaciones || '',raw.validationStatus || '',a.segment];
+        k.name,decisionLabel(k.decision),k.reason,decision.observaciones || '',raw.validationStatus || '',a.segment,
+        a.startedAt,a.completedAt,...Object.values(M.validationSlaExport(a))];
     })) : [];
     return {inputs,rows,headers:['Módulo','ID auditoría','ID PDV','Jornada','Fecha auditoría original','Fecha de carga','Fecha de decisión',
-      'Estudio','País','Región','Canal','Subcanal','Auditor','Validador','Sub-KPI','Decisión','Tipificación','Observaciones','Estado auditoría','Segmento'],
+      'Estudio','País','Región','Canal','Subcanal','Auditor','Validador','Sub-KPI','Decisión','Tipificación','Observaciones','Estado auditoría','Segmento',
+      'Inicio de validación','Fin de validación',...Object.keys(M.validationSlaExport({}))],
       counts:M.totals(inputs.flatMap(a=>a.kpis)),audits:inputs.filter(a=>a.kpis.length).length};
   }
   function signalPanel(result) {
@@ -145,6 +149,20 @@
   function time(t) { return (t.meanDays == null ? 'Sin muestras' : decimal(t.meanDays)+' días')+' · '+num(t.measured)+' muestras'+
     (t.exact ? '<br>'+decimal(t.meanHours)+' horas · '+num(t.exact)+' con hora exacta' : '')+
     '<br><small>Sin fecha: '+num(t.missing)+' · Inválidas: '+num(t.invalid)+' · Futuras: '+num(t.future)+'</small>'; }
+  const slaDefinition='SLA de validación = tiempo transcurrido desde que se inicia la revisión hasta que se completa la auditoría; incluye pausas. Una medición por auditoría y módulo, sin multiplicarla por sus KPIs. Solo se promedian completadas con inicio y cierre con hora válidos. No se sustituyen tiempos faltantes por cero ni por duraciones estimadas.';
+  function validationSlaPanel(result) {
+    const s=result.sla;
+    return panel('SLA de validación por auditoría',slaDefinition,cards([
+      ['SLA promedio en validar',esc(M.formatSla(s.meanSeconds)),num(s.measured)+' auditorías con tiempo medible','cyan','⏱️'],
+      ['Mediana de validación',esc(M.formatSla(s.medianSeconds)),'La mitad de las mediciones no supera este tiempo','blue','📊'],
+      ['P90 de validación',esc(M.formatSla(s.p90Seconds)),'El 90% de las mediciones no supera este tiempo','purple','📈']
+    ])+'<p class="story-note">'+num(s.completed)+' completadas · '+num(s.measured)+' medibles · '+num(s.missing)+' sin inicio o cierre con hora · '+num(s.invalid)+' con fechas inválidas · '+num(s.future)+' posteriores al corte.</p>')+
+      panel('SLA por validador','Ordenado por auditorías completadas. Mediana y P90 se calculan desde las auditorías individuales; el promedio general no promedia promedios de validadores.',
+        chartDetails(table(['Validador','Código','Auditorías completadas','Con SLA medible','Sin SLA medible','SLA promedio','Mediana','P90','Tiempo total de validación'],s.validators.map(v=>row([
+          esc(v.name),esc(v.code || v.id || 'Sin identificar'),num(v.completed),num(v.measured),num(v.completed-v.measured),
+          esc(M.formatSla(v.meanSeconds)),esc(M.formatSla(v.medianSeconds)),esc(M.formatSla(v.p90Seconds)),esc(M.formatSla(v.totalSeconds))
+        ]))),{collapsible:false}));
+  }
   const outcomeSeries = [
     {key:'total',label:'Alertas generadas',tone:'blue'},
     {key:'applies',label:'Alertas válidas',tone:'green'},
@@ -665,7 +683,8 @@
         ['Auditorías recibidas · sistema',num(result.audits),'IDs únicos cargados al portal','blue','🏬'],
         ['Alertas recibidas',num(c.total),'Sub-KPIs que requieren revisión','purple','📥'],
         ['Alertas revisadas',num(narrative.decided),pct(c.coverage)+' del total recibido','green','✅',c.coverage],
-        ['Alertas pendientes',num(c.pending),num(narrative.pendingAudits)+' auditorías con alguna alerta pendiente','orange','⏳']
+        ['Alertas pendientes',num(c.pending),num(narrative.pendingAudits)+' auditorías con alguna alerta pendiente','orange','⏳'],
+        ['SLA promedio en validar','<span class="sla-card-value">'+esc(M.formatSla(result.sla.meanSeconds)).replace(/ (h|min|s)\b/g,'&nbsp;$1')+'</span>',num(result.sla.measured)+' auditorías medibles','cyan','⏱️']
       ])+decisionDonut(c)+'<p class="story-note">Una auditoría puede contener varias alertas. Revisadas = Alertas válidas + Alertas no válidas. Recibidas = revisadas + pendientes.</p>');
     }
     if(section==='pending') {
@@ -683,9 +702,10 @@
       html+=auditorComparison(result,universe(app,state,{auditors:true}));
     }
     if(section==='timing') {
+      html+=validationSlaPanel(result);
       html+=panel('Tiempo entre cada paso','Bases separadas: una muestra por auditoría para auditoría → generación de alerta; una por alerta decidida para generación de alerta → decisión aplicada. Horas solo con timestamps completos.',cards([['Tiempo auditoría → generación de alerta',time(result.timing.intake),'','blue','📤'],['Generación de alerta → decisión aplicada',time(result.timing.validation),'','purple','⏱️']],'timing'));
       html+=panel('Evolución de tiempos por mes de carga','Promedios en días. Fechas sin hora se miden en días calendario; no se estima una hora inexistente.',timingChart(result.timing.monthly)+chartDetails(table(['Mes de carga','Tiempo auditoría → generación de alerta','Generación de alerta → decisión aplicada'],result.timing.monthly.map(r=>row([r.month,time(r.intake),time(r.validation)])))));
-      html+='<p class="story-note">Estos tiempos no son un SLA: aún no hay un plazo objetivo aprobado. Las fechas faltantes, inválidas o futuras se muestran aparte y no se convierten en cero.</p>';
+      html+='<p class="story-note">Los dos tramos entre eventos se presentan aparte del SLA de revisión. No se calcula un porcentaje de cumplimiento sin un plazo objetivo definido.</p>';
     }
     if(section==='comparison') {
       html+=territoryComparison(result,universe(app,state),scope);
@@ -722,11 +742,11 @@
       const modules=module==='all'?['blocking','smart']:[module || 'blocking'];
       const historyReady=!app.backend?.configured || modules.every(key=>Array.isArray(app.auditHistoryByModule?.[key]) && !app.auditHistoryErrors?.[key]);
       exportButton.disabled=!c.total || !historyReady;
-      exportButton.title=historyReady?'Una fila por alerta generada, según los filtros activos.':'Consultando el histórico de alertas…';
+      exportButton.title=historyReady?'Una fila por alerta generada, según los filtros activos. El SLA total de la auditoría se repite en sus alertas; no se suma por KPI.':'Consultando el histórico de alertas…';
     }
-    target.querySelector('[data-indicator-download]')?.addEventListener('click',()=>download(['Módulo','ID auditoría','Jornada','Fecha auditoría original','Fecha de carga','Fecha de decisión','Estudio','País','Región','Canal','Subcanal','Auditor','Sub-KPI','Decisión','Tipificación','Segmento'],result.alerts.map(a=>{
+    target.querySelector('[data-indicator-download]')?.addEventListener('click',()=>download(['Módulo','ID auditoría','Jornada','Fecha auditoría original','Fecha de carga','Fecha de decisión','Estudio','País','Región','Canal','Subcanal','Auditor','Sub-KPI','Decisión','Tipificación','Segmento','Validador','Código validador','Inicio de validación','Fin de validación',...Object.keys(M.validationSlaExport({}))],result.alerts.map(a=>{
       const source=auditIndex.get(JSON.stringify([a.module,a.id,a.study]));
-      return [a.module==='smart'?'Smart':'Bloqueantes',a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,decisionLabel(a.decision),a.reason,a.segment];
+      return [a.module==='smart'?'Smart':'Bloqueantes',a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,decisionLabel(a.decision),a.reason,a.segment,source?.validatorName || source?.validatorId,source?.validatorCode,source?.startedAt,source?.completedAt,...Object.values(M.validationSlaExport(source || {},asOf))];
     }),'Indicadores-'+(module || 'blocking')+'-'+asOf+'.csv'));
   }
   root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,receiptShare,auditorComparisonData,auditorComparison,territoryComparisonData,territoryComparison,channelSegmentComparisonData,channelSegmentComparison,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};

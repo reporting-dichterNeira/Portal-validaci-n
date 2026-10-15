@@ -178,3 +178,4 @@
 .summary-benchmark thead th { position:sticky; top:0; z-index:1; }
 .benchmark-scroll:has(.summary-benchmark) { max-height:560px; overflow:auto; }
 .summary-benchmark tr[hidden] { display:none; }
+.indicator-cards .sla-card-value { font-size:18px; line-height:1.3; overflow-wrap:normal; word-break:normal; }

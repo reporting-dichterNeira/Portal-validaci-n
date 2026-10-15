@@ -13,6 +13,7 @@ function loadExcelParser() {
   const downloads = [];
   const blobs = [];
   const context = vm.createContext({
+    PortalIndicatorMetrics: require('../js/indicator-metrics.js'),
     formatNicaraguaDateTime: value => value || 'Pendiente',
     getNicaraguaDateKey: value => value || '',
     Blob: class Blob { constructor(parts, options) { this.parts = parts; this.options = options; blobs.push(this); } },
@@ -70,6 +71,14 @@ test('CSV y Excel incluyen país recuperado y región sin sobreescribir la base 
   assert.equal(row['País'],'Perú');
   assert.equal(row['Región'],'REGION LIMA');
   assert.equal(audit.region,undefined);
+});
+
+test('las exportaciones diarias y consolidadas incluyen SLA real y no usan duraciones estimadas',()=>{
+  const {ExcelParser}=loadExcelParser();
+  const base={id:'1',kpis:[],validationStatus:'completada',startedAt:'2026-10-10T15:00:00Z',completedAt:'2026-10-10T15:02:05Z',durationSeconds:8};
+  const [row]=ExcelParser.buildConsolidatedExportRows([base],[]);
+  assert.equal(row['SLA total de validación (seg)'],125);
+  assert.equal(ExcelParser.getTimingExportFields({...base,startedAt:null})['SLA total de validación (seg)'],'');
 });
 
 test('el consolidado grande se genera como un único CSV con las columnas de auditoría', () => {
