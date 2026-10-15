@@ -202,7 +202,7 @@ Deno.serve(async (req) => {
             throw new Error('Databricks devolvió una fecha de auditoría no válida.');
           }
           const safeRecord: Record<string, string | null> = {};
-          for (const field of ['audit_status', 'pdv_id', 'country', 'audit_date', 'study', 'wave', 'city', 'channel', 'region', 'subchannel', 'auditor']) {
+          for (const field of ['audit_status', 'pdv_id', 'country', 'audit_date', 'study', 'wave', 'city', 'channel', 'region', 'subchannel', 'segmento', 'auditor']) {
             safeRecord[field] = record[field] == null ? null : String(record[field]).slice(0, 1000);
           }
           return { job_id: jobId, audit_external_id: auditId, record: safeRecord };

@@ -142,7 +142,7 @@ test('consulta contexto del export, pagina sin perder duplicados y rechaza IDs n
   const result = await backend.loadAuditCountryContext(['1', '1', 'Filtros aplicados']);
   assert.equal(result.length, 1001);
   assert.deepEqual(calls.map(call => call.from), [0, 1000]);
-  assert.equal(calls[0].columns, 'audit_external_id, country, study, region, subchannel, channel, auditor, audit_date, pdv_id');
+  assert.equal(calls[0].columns, 'audit_external_id, country, study, region, subchannel, channel, segmento, auditor, audit_date, pdv_id');
   assert.deepEqual(calls[0].ids, ['1']);
 });
 

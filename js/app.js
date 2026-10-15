@@ -9,7 +9,7 @@ import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
 import { ValidatorUI } from './validator-ui.js?v=37.1';
-import { SupabaseBackend } from './supabase-backend.js?v=64.0';
+import { SupabaseBackend } from './supabase-backend.js?v=65.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
 
@@ -5951,7 +5951,7 @@ class ValidaFlowApp {
     this.benchmarkCountryCheckedIds ||= new Set();
     const needsIndicatorContext = ['metrics','committee'].includes(this.visualizationTab) || this.currentTab === 'reports';
     const ids = [...new Set(audits.filter(audit =>
-      (needsIndicatorContext && (audit._module || this.currentModule) === 'blocking') ||
+      needsIndicatorContext ||
       (['Tradicional', 'Moderno', 'Chile', 'Lindley'].includes(this.getStudyForAudit(audit)) && !this.getReportGeography(audit))
     ).map(audit => this.normalizeAuditId(audit.id)))]
       .filter(id => /^\d+$/.test(id) && !this.benchmarkCountryCheckedIds.has(id));

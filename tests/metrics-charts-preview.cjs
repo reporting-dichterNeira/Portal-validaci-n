@@ -13,7 +13,7 @@ const audits=Array.from({length:240},(_,i)=>{
  const validationResults=Object.fromEntries(kpis.filter((k,j)=>month!=='2026-10'||(i+j)%4).map((k,j)=>[k.name,{status:(i+j)%3?'aplica':'no_aplica',tipificacion:['Evidencia correcta','Fuera de alcance','Sin tipificación'][i%3],decisionAt:day+'T16:00:00Z'}]));
  return {id:String(i+1),_module:module,_batchId:1,estudio:study,pais:country,fecha:day,fechaAuditoriaOriginal:month+'-01',_batchUploadedAt:day+'T12:00:00Z',
   canal:i%2?'Tradicional':'Moderno',subcanal:i%3?'Supermercado':'Tienda',region:study==='Chile'?'Norte':study==='Lindley'?'Lima':'',
-  databricksGeography:{auditor:'Auditor '+(i%6+1),auditorSource:'storeview.slv_sv_ceres_ag_export.nombre_usuario'},kpis,validationResults};
+  databricksGeography:{segmento:['A','B','C'][i%3],auditor:'Auditor '+(i%6+1),auditorSource:'storeview.slv_sv_ceres_ag_export.nombre_usuario'},kpis,validationResults};
 });
 const app={currentView:'visualizations',currentProfile:{id:'preview'},reportsSubtab:'metrics',indicatorOperationalSection:'evolution',selectedMetricsMonth:'2026-10',selectedStudies:['ALL'],selectedReportCountry:'all',
  visualizationDateFrom:'2026-08-01',visualizationDateTo:'2026-10-13',indicatorFilters:{region:'all',channel:'all',subchannel:'all',month:'2026-10'},
@@ -31,12 +31,14 @@ const app={currentView:'visualizations',currentProfile:{id:'preview'},reportsSub
  backend:{loadDatabricksAuditTotals:async(filters)=>{
   const inputs=PortalIndicators.adapt(audits,[],a=>a.pais,'all').filter(a=>(!filters.studies.length||filters.studies.includes(a.study))&&(!filters.month||a.month===filters.month));
   const filtered=PortalIndicatorMetrics.compute(inputs,{...filters,asOf:'2026-10-15'}).alerts;
-  const auditorIds=new Map(),territoryIds=new Map();
+  const auditorIds=new Map(),territoryIds=new Map(),segmentIds=new Map();
   for(const a of filtered){if(!auditorIds.has(a.auditor))auditorIds.set(a.auditor,new Set());auditorIds.get(a.auditor).add(a.study+':'+a.id);
-   const key=JSON.stringify([a.study,a.geography]);if(!territoryIds.has(key))territoryIds.set(key,new Set());territoryIds.get(key).add(a.id);}
+   const key=JSON.stringify([a.study,a.geography]);if(!territoryIds.has(key))territoryIds.set(key,new Set());territoryIds.get(key).add(a.id);
+   const segmentKey=JSON.stringify([a.study,a.channel,a.segment]);if(!segmentIds.has(segmentKey))segmentIds.set(segmentKey,new Set());segmentIds.get(segmentKey).add(a.id);}
   return {studies:['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'].map(study_name=>({study_name,databricks_total:1200})),
    territory_totals_ready:true,territories:[...territoryIds].map(([key,ids])=>{const [study_name,geography]=JSON.parse(key);return {study_name,geography,databricks_total:ids.size*3};}),
    auditor_totals_ready:!!filters.include_auditors,auditors:filters.include_auditors?[...auditorIds].map(([auditor,ids])=>({auditor,databricks_total:ids.size*3})).concat([{auditor:'Auditor sin alertas',databricks_total:25}]):[],
+   channel_segment_totals_ready:!!filters.include_channel_segments,channel_segments:filters.include_channel_segments?[...segmentIds].map(([key,ids])=>{const [study_name,channel,segmento]=JSON.parse(key);return {study_name,channel,segmento,databricks_total:ids.size*3};}):[],
    snapshots:[{month:'2026-10-01',source:'Databricks · Prueba local',refreshed_at:'2026-10-13'}]};
  }},
  renderReportsView(){const module=this.getVisualizationModuleFilter(),scoped=audits.filter(a=>(this.selectedStudies.includes('ALL')||this.selectedStudies.includes(a.estudio))&&(!this.selectedMetricsCountry||this.selectedMetricsCountry==='all'||a.pais===this.selectedMetricsCountry));PortalIndicators.render(this,scoped.filter(a=>module==='all'||a._module===module),scoped,null,scoped);}};

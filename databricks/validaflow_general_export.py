@@ -58,7 +58,7 @@ def sync_month(period_month, close_month=False):
     # The fixed table and a validated year/month prevent arbitrary SQL.
     query = f"""
     SELECT Estado, ID_de_audito, ID_de_PDV, Pais, Fecha_del_audito,
-           Survey, Ola, ciudad, canal, region,
+           Survey, Ola, ciudad, canal, region, segmento,
            subcanal_modelo AS subcanal, nombre_usuario AS auditor
     FROM storeview.slv_sv_ceres_ag_export
     WHERE (lower(Survey) LIKE '%ko_trad%'
@@ -112,6 +112,7 @@ def sync_month(period_month, close_month=False):
                 "channel": clean(row.get("canal")),
                 "region": clean(row.get("region")),
                 "subchannel": clean(row.get("subcanal")),
+                "segmento": clean(row.get("segmento")),
                 "auditor": clean(row.get("auditor")),
             })
             if len(batch) >= 250:

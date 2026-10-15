@@ -1056,8 +1056,8 @@ export class SupabaseBackend {
 
   async loadAdminExternalAnalysis({ includeAlerts = true, includeEdits = true } = {}) {
     this.ensureConfigured();
-    const alertColumns = 'audit_external_id, period_month, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, pdv_note, country, channel, city, auditor, audit_date, wave, study, region, subchannel';
-    const legacyAlertColumns = alertColumns.replace(', pdv_note', '').replace(', region, subchannel', '');
+    const alertColumns = 'audit_external_id, period_month, is_alert, audit_status, alert_status, alert_label, pdv_id, pdv_name, pdv_note, country, channel, city, auditor, audit_date, wave, study, region, subchannel, segmento';
+    const legacyAlertColumns = alertColumns.replace(', pdv_note', '').replace(', region, subchannel, segmento', '');
     const editColumns = 'audit_external_id, period_month, study, country, audit_status, wave, modifications_count, question_detail, status_changes_count, first_validation_started_at, first_validation_completed_at, first_validator, last_validation_started_at, last_validation_completed_at, last_validator';
     const legacyEditColumns = editColumns.replace(', question_detail', '');
     let imports;
@@ -1073,7 +1073,7 @@ export class SupabaseBackend {
       // The presentation remains usable while the one-time database migration
       // is being applied. New detail values become available automatically
       // after the column exists and the monthly file is uploaded again.
-      if (!/question_detail|pdv_note|region|subchannel|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
+      if (!/question_detail|pdv_note|region|subchannel|segmento|column .*does not exist|PGRST204/i.test(String(error?.message || error))) throw error;
       [imports, alertRecords, editRecords] = await Promise.all([
         this.loadAdminAnalysisImports(),
         includeAlerts ? this.loadAllAdminAnalysisRows('admin_alert_export_records', legacyAlertColumns) : Promise.resolve([]),
@@ -1096,7 +1096,7 @@ export class SupabaseBackend {
       const rows = [];
       for (let from = 0; ; from += 1000) {
         const { data, error } = await this.client.from('admin_alert_export_records')
-          .select('audit_external_id, country, study, region, subchannel, channel, auditor, audit_date, pdv_id').in('audit_external_id', chunk)
+          .select('audit_external_id, country, study, region, subchannel, channel, segmento, auditor, audit_date, pdv_id').in('audit_external_id', chunk)
           .order('id', { ascending: true }).range(from, from + 999);
         if (error) throw error;
         rows.push(...(data || []));

@@ -42,3 +42,19 @@ La implementación está en `databricks/validaflow_general_export.py`,
 `20260929205712_grant_databricks_publisher_tables.sql`. Esta última concede
 los permisos de escritura necesarios solo a `service_role` sobre las dos
 tablas del Export general; no expone los datos a visitantes anónimos.
+
+El comparativo por canal y segmento usa la columna literal `segmento` de
+Databricks, independiente de `subcanal_modelo`. El notebook, el receptor y el
+publicador conservan ese campo. `supabase/sql/channel-segment-comparison.sql`
+agrega la columna y habilita el desglose agregado mediante
+`include_channel_segments`, con los mismos permisos y filtros del total
+levantado. Las filas se agrupan por estudio, canal y segmento; incluyen los
+mismos indicadores de la comparación territorial y se pueden descargar en CSV.
+Sin segmento se muestra «Sin segmento identificado», sin inferirlo del canal
+o del subcanal.
+
+Para completar el segmento de los cortes anteriores se puede cruzar una
+consulta de metadatos por mes e ID de auditoría. Solo se aceptan cruces con un
+único segmento no vacío, conservando una copia privada del valor anterior.
+Este enriquecimiento modifica únicamente `segmento`: no vuelve a publicar el
+corte, no modifica cantidades o decisiones y no reabre meses cerrados.

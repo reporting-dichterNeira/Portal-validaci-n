@@ -36,7 +36,7 @@ test('unified dashboard applies month to cards and comparisons while evolution r
  assert.match(render('summary',true).html,/2 de 3 alertas/);
  assert.match(render('summary',false,'blocking','2026-09').html,/1 de 2 alertas/);
  const comparison=render('comparison',false,'blocking','2026-09').html;
- const territory=comparison.slice(comparison.indexOf('Comparativo por estudio y territorio'),comparison.indexOf('Distribución por región, canal y subcanal'));
+ const territory=comparison.slice(comparison.indexOf('Comparativo por estudio y territorio'),comparison.indexOf('Comparativo por canal y segmento'));
  assert.match(territory,/<td>2<\/td><td>2<\/td><td>0<\/td><td>Sin base<\/td><td>1,00<\/td><td>0%<\/td>/);
  assert.doesNotMatch(territory,/data-metric-chart|metric-chart-details/);
  const evolution=render('evolution',false,'blocking','2026-09').html;
@@ -146,11 +146,16 @@ test('charts preserve missing data, zero and escaped labels',()=>{
  assert.match(U.decisionDonut({total:0,applies:0,rejects:0,pending:0}),/Sin alertas generadas/);
 });
 
-test('metric sections show graphs and leave comparison tables collapsed',()=>{
- for(const [section,executive] of [['summary',false],['pending',false],['findings',false],['comparison',false],['timing',false],['comparison',true],['evolution',true]]) {
+test('metric sections show graphs and comparisons remain visible exportable tables',()=>{
+ for(const [section,executive] of [['summary',false],['pending',false],['findings',false],['timing',false],['evolution',true]]) {
   const html=render(section,executive).html;
   assert.match(html,/data-metric-chart=|Sin registros para graficar/);
   assert.doesNotMatch(html,/<details class="metric-chart-details" open/);
+ }
+ for(const executive of [false,true]){
+  const html=render('comparison',executive).html;
+  assert.match(html,/Comparativo por canal y segmento/);assert.match(html,/data-chart-table-export/);
+  assert.doesNotMatch(html,/data-metric-chart|metric-chart-details|Distribución por región, canal y subcanal/);
  }
  assert.match(render('evolution',true).html,/Evolución mensual de alertas generadas/);
  assert.doesNotMatch(render('evolution',true).html,/Volumen y avance de la revisión|committee-trend-bars/);

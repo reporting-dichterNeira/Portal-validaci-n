@@ -133,7 +133,7 @@
         geography: ['Chile','Lindley'].includes(study) ? normalizeRegion(row.region) || 'Sin región identificada' : country,
         pdv: text(row.pdv || row.idPDV),
         auditor: text(row.auditor || row.usuario), region:normalizeRegion(row.region), channel:text(row.channel || row.canal),
-        subchannel:text(row.subchannel || row.subcanal), periodDate, auditDate, auditEvent,
+        subchannel:text(row.subchannel || row.subcanal), segment:text(row.segment ?? row.segmento), periodDate, auditDate, auditEvent,
         alertUploadedAt:text(row.alertUploadedAt || row.alertUploadedDate || row._batchUploadedAt), alertUploadedEvent, month, kpis });
     }
     return [...records.values()];
@@ -224,7 +224,7 @@
     const undated = scoped.filter(a => !a.periodDate).length;
     const selected = scoped.filter(a => a.periodDate && (!from || a.periodDate >= from) && (!to || a.periodDate <= to) && a.periodDate <= asOf);
     const alerts = selected.flatMap(a => a.kpis.map(k => ({ ...k, id: a.id, module:a.module, study: a.study, country: a.country, geography:a.geography, auditor: a.auditor,
-      region:dimension(a.region,'región'),channel:dimension(a.channel,'canal'),subchannel:dimension(a.subchannel,'subcanal'), periodDate: a.periodDate, month: a.month })));
+      region:dimension(a.region,'región'),channel:dimension(a.channel,'canal'),subchannel:dimension(a.subchannel,'subcanal'),segment:a.segment, periodDate: a.periodDate, month: a.month })));
     const counts = totals(alerts);
     const backlog = { recent: [], week: [], old: [], missing: [], future: [] };
     for (const a of selected.filter(a => a.kpis.some(k => k.decision === 'pendiente'))) {
