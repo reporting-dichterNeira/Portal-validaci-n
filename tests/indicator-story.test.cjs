@@ -26,7 +26,7 @@ test('manager story distinguishes alerts from audits and empty data from complet
 test('all unified chapters render and legacy tables appear only under detail',()=>{
  assert.equal(U.journey.length,7);
  for(const [section] of U.journey){const {html,hidden}=render(section);assert.match(html,/aria-current="page"/);assert.equal(hidden.has('indicator-legacy-hidden'),section!=='detail');}
- assert.match(render('summary').html,/Universo de auditorías y casos en el portal/);
+ assert.match(render('summary').html,/Auditorías levantadas y recibidas/);
  assert.doesNotMatch(render('summary').html,/Reportes clásicos y exportaciones/);
  assert.match(render('detail').html,/data-indicator-download/);
  assert.match(render('pending').html,/data-indicator-bucket/);

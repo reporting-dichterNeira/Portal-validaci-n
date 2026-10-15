@@ -2,6 +2,7 @@
  * Módulo de la interfaz y flujo del Validador
  */
 
+import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 function escapeValidatorText(value) {
@@ -1209,7 +1210,7 @@ export class ValidatorUI {
     let html = '<option value="">-- O selecciona un validador de prueba --</option>';
 
     const flagMap = {
-      'Chile': '🇨🇱 Chile (Región Sur)',
+      'Chile': `🇨🇱 ${getStudyDisplayName('Chile')} (Región Sur)`,
       'Tradicional': '🏪 Canal Tradicional (Tiendas / Bodegas)',
       'Moderno': '🏬 Canal Moderno (Grandes Cadenas)',
       'Lindley': '🥤 Arca Continental Lindley'
@@ -1229,7 +1230,7 @@ export class ValidatorUI {
     if (others.length > 0) {
       html += '<optgroup label="Otros Estudios">';
       others.forEach(v => {
-        html += `<option value="${v.code}">${v.code} — ${v.name} (${v.estudio || 'General'})</option>`;
+        html += `<option value="${v.code}">${v.code} — ${v.name} (${getStudyDisplayName(v.estudio || 'General')})</option>`;
       });
       html += '</optgroup>';
     }

@@ -1,5 +1,6 @@
 (function (root) {
   const M = root.PortalIndicatorMetrics;
+  const studyLabel = value => root.PortalStudyLabels?.getStudyDisplayName(value) || value;
   const number = value => new Intl.NumberFormat('es-CO').format(value);
   const percent = value => value == null ? 'Sin base' : number(Math.round(value * 1000) / 10) + '%';
   const palette = { navy: [36,51,95], blue: [13,92,171], green: [20,168,59], red: [211,43,73], amber: [169,105,0], gray: [99,112,132], pink: [248,56,117] };
@@ -40,7 +41,7 @@
     const range = M.compute(rangeInputs,{...state,asOf,from:app.visualizationDateFrom || (first ? first.slice(0,7)+'-01' : ''),to:app.visualizationDateTo || asOf});
     const month = app.selectedMetricsMonth === 'all' ? '' : app.selectedMetricsMonth || '';
     const labels = [module === 'all' ? 'Bloqueantes + Smart' : module === 'smart' ? 'Smart' : 'Bloqueantes',
-      'Estudio: '+((app.selectedStudies || ['ALL']).includes('ALL') ? 'Todos' : app.selectedStudies.join(', ')),
+      'Estudio: '+((app.selectedStudies || ['ALL']).includes('ALL') ? 'Todos' : app.selectedStudies.map(studyLabel).join(', ')),
       'País: '+(app.selectedMetricsCountry === '__missing__' ? 'Sin país identificado' : app.selectedMetricsCountry || 'all').replace(/^all$/,'Todos'),
       'Mes: '+(month || 'Todos'), 'Desde: '+(app.visualizationDateFrom || 'Inicio del histórico'), 'Hasta: '+(app.visualizationDateTo || asOf),
       ...['region','channel','subchannel'].filter(k=>state[k]!=='all').map(k=>({region:'Región',channel:'Canal',subchannel:'Subcanal'}[k])+': '+state[k])];
@@ -111,13 +112,13 @@
 
     page('Comparativas por estudio y territorio');
     write('Composición de las alertas por territorio',margin,60,14,'navy',true);
-    write('Hasta 12 grupos con mayor volumen. País para KO; región para Chile y Lindley. Verde: Aplica; rosa: No aplica; amarillo: pendientes.',margin,68,9,'gray');
+    write('Hasta 12 grupos con mayor volumen. País para KO; región para KO Tradicional CHILE y Lindley. Verde: Aplica; rosa: No aplica; amarillo: pendientes.',margin,68,9,'gray');
     const groups=[...r.benchmark].sort((a,b)=>b.total-a.total||a.study.localeCompare(b.study)).slice(0,12);
     const groupMax=Math.max(1,...groups.map(row=>row.total));
     if(!groups.length)write('Sin registros para el alcance seleccionado.',margin,86,11,'gray');
     groups.forEach((row,i)=>{
       const y=80+i*9;
-      write(row.study+' | '+row.geography,margin,y,8,'navy',true,91);
+      write(studyLabel(row.study)+' | '+row.geography,margin,y,8,'navy',true,91);
       let x=margin+96;
       [['applies','green'],['rejects','pink'],['pending','amber']].forEach(([key,tone])=>{
         const w=(usable-151)*row[key]/groupMax;

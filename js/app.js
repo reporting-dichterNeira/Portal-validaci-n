@@ -4,11 +4,11 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=33.0';
-import { getStudyDisplayName } from './study-labels.js?v=1.0';
+import { ExcelParser } from './excel-parser.js?v=33.1';
+import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
-import { ValidatorUI } from './validator-ui.js?v=37.0';
+import { ValidatorUI } from './validator-ui.js?v=37.1';
 import { SupabaseBackend } from './supabase-backend.js?v=64.0';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.0';
@@ -668,7 +668,7 @@ class ValidaFlowApp {
       navTabs?.classList.remove('hidden');
 
       if (modeBadge) {
-        modeBadge.textContent = `${this.currentProject} • ${this.currentModule === 'smart' ? 'Smart' : 'Bloqueantes'}`;
+        modeBadge.textContent = `${getStudyDisplayName(this.currentProject)} • ${this.currentModule === 'smart' ? 'Smart' : 'Bloqueantes'}`;
         modeBadge.style.background = this.currentModule === 'smart' ? 'var(--dn-blue)' : 'var(--dn-magenta)';
         modeBadge.style.color = '#FFFFFF';
       }
@@ -678,7 +678,7 @@ class ValidaFlowApp {
       const modEl = document.getElementById('context-module-name');
       const projEl = document.getElementById('context-project-name');
       if (modEl) modEl.textContent = this.currentModule === 'smart' ? 'Validación Smart 🧠⚡' : 'Alertas Bloqueantes 🚫🚨';
-      if (projEl) projEl.textContent = this.currentProject;
+      if (projEl) projEl.textContent = getStudyDisplayName(this.currentProject);
 
       // Asegurar que la pestaña activa esté visible
       const targetTab = this.currentTab || 'admin';
@@ -1039,7 +1039,7 @@ class ValidaFlowApp {
         <label class="admin-study-check-option">
           <input type="checkbox" value="${item.id}" ${checkedStudyIds.has(item.id) ? 'checked' : ''} />
           <span class="admin-study-check-icon">${studyIcons[item.name] || '📚'}</span>
-          <span><strong>${escapeHtml(item.name)}</strong><small>Asignar este estudio</small></span>
+          <span><strong>${escapeHtml(getStudyDisplayName(item.name))}</strong><small>Asignar este estudio</small></span>
         </label>
       `).join('');
     }
@@ -1057,7 +1057,7 @@ class ValidaFlowApp {
         const studiesHtml = supervisorAssignments.length
           ? supervisorAssignments.map(assignment => {
               const study = studyById.get(assignment.study_id);
-              return `<span class="badge badge-secondary">${escapeHtml(study?.name || 'Sin asignar')}</span>`;
+              return `<span class="badge badge-secondary">${escapeHtml(getStudyDisplayName(study?.name || 'Sin asignar'))}</span>`;
             }).join(' ')
           : 'Sin asignar';
         const moduleLabels = [...new Set(supervisorAssignments.map(assignment =>
@@ -1206,7 +1206,7 @@ class ValidaFlowApp {
         const status = batch.status === 'active' ? 'activa' : 'histórica';
         const date = String(batch.operation_date || '').split('T')[0] || 'sin fecha';
         const filename = batch.source_filename || 'Carga sin archivo';
-        return `<option value="${batch.id}">#${batch.id} · ${escapeHtml(date)} · ${escapeHtml(study?.name || 'Sin estudio')} · ${module} · ${escapeHtml(filename)} (${number(batch.row_count)} registros, ${status})</option>`;
+        return `<option value="${batch.id}">#${batch.id} · ${escapeHtml(date)} · ${escapeHtml(getStudyDisplayName(study?.name || 'Sin estudio'))} · ${module} · ${escapeHtml(filename)} (${number(batch.row_count)} registros, ${status})</option>`;
       })
     ].join('');
     if (batches.some(batch => String(batch.id) === selectedId)) select.value = selectedId;
@@ -1875,7 +1875,7 @@ class ValidaFlowApp {
     this.adminAlertsStudyFilter = activeStudy;
     const studyFilter = getElement('admin-alerts-study-filter');
     if (studyFilter) {
-      studyFilter.innerHTML = `<option value="all">Todos los estudios</option>${availableStudies.map(study => `<option value="${escapeHtml(study)}">${escapeHtml(study)}</option>`).join('')}`;
+      studyFilter.innerHTML = `<option value="all">Todos los estudios</option>${availableStudies.map(study => `<option value="${escapeHtml(study)}">${escapeHtml(getStudyDisplayName(study))}</option>`).join('')}`;
       studyFilter.value = activeStudy;
       if (studyFilter.dataset.filterBound !== 'true') {
         studyFilter.addEventListener('change', event => this.setAdminAlertsStudyFilter(event.target.value));
@@ -1984,7 +1984,7 @@ class ValidaFlowApp {
         const detailsKey = encodeURIComponent(auditId);
         const valueOrDash = value => matched ? formatNumber(value) : '—';
         return `<tr>
-          <td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(record.period_month))}</td><td>${escapeHtml(record.study)}</td><td><strong>${valueOrDash(summary.total)}</strong></td><td><strong class="text-success">${valueOrDash(summary.applicableAlerts.length)}</strong></td><td><strong class="text-magenta">${valueOrDash(summary.noApplicableAlerts.length)}</strong></td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${matched ? 'badge-success' : 'badge-warning'}">${matched ? 'Encontrada' : 'No encontrada'}</span></td><td><button class="btn btn-outline btn-sm" type="button" ${matched ? `onclick="window.app?.showAlertAuditDetail(decodeURIComponent('${detailsKey}'))"` : 'disabled title="No se encontró esta auditoría en ValidaFlow"'}>Ver detalle</button></td>
+          <td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(record.period_month))}</td><td>${escapeHtml(getStudyDisplayName(record.study))}</td><td><strong>${valueOrDash(summary.total)}</strong></td><td><strong class="text-success">${valueOrDash(summary.applicableAlerts.length)}</strong></td><td><strong class="text-magenta">${valueOrDash(summary.noApplicableAlerts.length)}</strong></td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${matched ? 'badge-success' : 'badge-warning'}">${matched ? 'Encontrada' : 'No encontrada'}</span></td><td><button class="btn btn-outline btn-sm" type="button" ${matched ? `onclick="window.app?.showAlertAuditDetail(decodeURIComponent('${detailsKey}'))"` : 'disabled title="No se encontró esta auditoría en ValidaFlow"'}>Ver detalle</button></td>
         </tr>`;
       }).join('') : '<tr><td colspan="12" class="text-center text-muted">No hay auditorías que cumplan con los filtros seleccionados.</td></tr>';
     }
@@ -2180,7 +2180,7 @@ class ValidaFlowApp {
     this.adminScoreChangeStudyFilter = activeStudy;
     const studyFilter = document.getElementById('admin-score-changes-study-filter');
     if (studyFilter) {
-      studyFilter.innerHTML = `<option value="all">Todos los estudios</option>${availableStudies.map(study => `<option value="${escapeHtml(study)}">${escapeHtml(study)}</option>`).join('')}`;
+      studyFilter.innerHTML = `<option value="all">Todos los estudios</option>${availableStudies.map(study => `<option value="${escapeHtml(study)}">${escapeHtml(getStudyDisplayName(study))}</option>`).join('')}`;
       studyFilter.value = activeStudy;
       if (studyFilter.dataset.filterBound !== 'true') {
         studyFilter.addEventListener('change', event => this.setAdminScoreChangeStudyFilter(event.target.value));
@@ -2675,7 +2675,7 @@ class ValidaFlowApp {
             ? `Autor no disponible · Supervisor asignado a ${moduleLabel}: ${assignedSupervisor.display_name || assignedSupervisor.username || 'sin identificar'}`
             : 'Autor no disponible para esta carga histórica';
         return `<tr>
-          <td><strong>${escapeHtml(study?.name || 'Sin estudio')}</strong></td>
+          <td><strong>${escapeHtml(getStudyDisplayName(study?.name || 'Sin estudio'))}</strong></td>
           <td><span class="badge badge-info">${moduleLabel}</span></td>
           <td><strong>${escapeHtml(uploadedBy?.displayName || uploadedBy?.display_name || uploadedBy?.username || 'Autor no identificado')}</strong><small>${escapeHtml(responsibilityDetail)}</small></td>
           <td><span class="admin-file-name" title="${escapeHtml(batch.source_filename || '')}">${escapeHtml(batch.source_filename || 'Carga sin archivo')}</span><small>${number(batch.row_count)} registros · ${formatDateTime(batch.activated_at || batch.created_at)}</small></td>
@@ -2708,7 +2708,7 @@ class ValidaFlowApp {
         const stateClass = item.inProgress ? 'badge-info' : item.completed ? 'badge-success' : 'badge-secondary';
         return `<tr>
           <td><strong>${escapeHtml(item.validator?.name || item.validatorId)}</strong><small>${escapeHtml(item.validator?.code || 'Sin código')}</small></td>
-          <td>${escapeHtml(studyById.get(item.validator?.study_id)?.name || item.validator?.study || '—')}</td>
+          <td>${escapeHtml(getStudyDisplayName(studyById.get(item.validator?.study_id)?.name || item.validator?.study || '—'))}</td>
           <td><strong>${number(total)}</strong></td>
           <td>${number(item.completed)}</td>
           <td>${number(item.inProgress)}</td>
@@ -2882,7 +2882,7 @@ class ValidaFlowApp {
     if (catalog) {
       catalog.innerHTML = (Array.isArray(this.adminData.studies) ? this.adminData.studies : [])
         .filter(study => study.is_active !== false)
-        .map(study => `<label class="admin-study-check-option"><input type="checkbox" value="${study.id}" ${assignedStudyIds.has(study.id) ? 'checked' : ''} /><span><strong>${escapeHtml(study.name)}</strong></span></label>`)
+        .map(study => `<label class="admin-study-check-option"><input type="checkbox" value="${study.id}" ${assignedStudyIds.has(study.id) ? 'checked' : ''} /><span><strong>${escapeHtml(getStudyDisplayName(study.name))}</strong></span></label>`)
         .join('') || '<span class="text-muted">No hay estudios disponibles.</span>';
     }
     const assignedModules = new Set(assignments.map(item => item.module));
@@ -3304,11 +3304,11 @@ class ValidaFlowApp {
             <div class="module-icon-wrap icon-blue">${info.icon}</div>
             <div>
               <div class="module-tag">Operación asignada</div>
-              <h2 class="module-title">${escapeHtml(studyName)}</h2>
+              <h2 class="module-title">${escapeHtml(getStudyDisplayName(studyName))}</h2>
             </div>
           </div>
           <p class="module-desc">${escapeHtml(info.description)}</p>
-          <div class="supervisor-module-picker" aria-label="Módulos disponibles en ${escapeHtml(studyName)}">
+          <div class="supervisor-module-picker" aria-label="Módulos disponibles en ${escapeHtml(getStudyDisplayName(studyName))}">
             <div class="supervisor-module-picker-label">Selecciona el módulo</div>
             <div class="supervisor-module-options">${moduleButtons}</div>
           </div>
@@ -3356,7 +3356,7 @@ class ValidaFlowApp {
       await this.refreshFromBackend();
       this.startRealtimeSync();
       this.enterSupervisorModule(this.currentModule);
-      this.showToast(`Ahora trabajas en ${this.currentProject}. Sus validadores y auditorías están separados de los demás estudios.`, 'success');
+      this.showToast(`Ahora trabajas en ${getStudyDisplayName(this.currentProject)}. Sus validadores y auditorías están separados de los demás estudios.`, 'success');
     } catch (error) {
       this.showToast(error.message || 'No fue posible abrir el estudio seleccionado.', 'error');
       this.showView('supervisor-hub');
@@ -3371,7 +3371,7 @@ class ValidaFlowApp {
     if (window.currentNavState) window.currentNavState.module = assignedModule;
 
     const studyName = this.currentScope.study?.name || this.currentProject;
-    const message = `Trabajando en ${studyName} · ${moduleInfo.label}.`;
+    const message = `Trabajando en ${getStudyDisplayName(studyName)} · ${moduleInfo.label}.`;
     const contextMessage = document.getElementById('supervisor-assigned-module-message');
     const hubMessage = document.getElementById('supervisor-hub-assignment');
     if (contextMessage) contextMessage.textContent = message;
@@ -4440,10 +4440,10 @@ class ValidaFlowApp {
       this.currentProject = studyName;
       this.selectedStudies = [studyName];
       const projEl = document.getElementById('context-project-name');
-      if (projEl) projEl.textContent = studyName;
+      if (projEl) projEl.textContent = getStudyDisplayName(studyName);
       this.renderAdminView();
       this.renderReportsView();
-      this.showToast(`Estudio establecido en: ${studyName}`, 'info');
+      this.showToast(`Estudio establecido en: ${getStudyDisplayName(studyName)}`, 'info');
       return;
     }
 
@@ -4516,7 +4516,7 @@ class ValidaFlowApp {
     this.currentProject = studyName;
     this.selectedStudies = [studyName];
     const projEl = document.getElementById('context-project-name');
-    if (projEl) projEl.textContent = studyName;
+    if (projEl) projEl.textContent = getStudyDisplayName(studyName);
 
     // Distribuir entre validadores del estudio con balanceo simultáneo
     const projectVals = this.getValidatorsForCurrentProject();
@@ -4540,7 +4540,7 @@ class ValidaFlowApp {
         this.pendingUpload = null;
         await this.refreshFromBackend();
         const finalCount = Number(activatedBatch?.row_count || result.audits.length);
-        this.showToast(`¡Nueva jornada guardada con ${finalCount} auditorías para ${studyName} (${opDate})!`, 'success');
+        this.showToast(`¡Nueva jornada guardada con ${finalCount} auditorías para ${getStudyDisplayName(studyName)} (${opDate})!`, 'success');
         if (pendingCarryover) this.showToast('Las pendientes anteriores siguen disponibles en «Pendientes de jornadas anteriores» para decidir sobre ellas.', 'info');
         this.pendingCarryoverPreview = null;
       } catch (error) {
@@ -4592,7 +4592,7 @@ class ValidaFlowApp {
     this.renderReportsView();
     this.renderQueriesView();
     this.populateLookupQuickTags();
-    this.showToast(`¡${result.audits.length} auditorías acumuladas para ${studyName} (Jornada: ${opDate})!`, 'success');
+    this.showToast(`¡${result.audits.length} auditorías acumuladas para ${getStudyDisplayName(studyName)} (Jornada: ${opDate})!`, 'success');
     this.pendingUpload = null;
   }
 
@@ -4657,7 +4657,7 @@ class ValidaFlowApp {
 
     if (notify) {
       const modeName = isBlocking ? 'Alertas Bloqueantes' : 'Validación Smart';
-      this.showToast(`Datos de ejemplo cargados para ${modeName} (${this.audits.length} auditorías) - Estudio: ${studyName}.`, 'success');
+      this.showToast(`Datos de ejemplo cargados para ${modeName} (${this.audits.length} auditorías) - Estudio: ${getStudyDisplayName(studyName)}.`, 'success');
     }
   }
 
@@ -4681,7 +4681,7 @@ class ValidaFlowApp {
     const modal = document.getElementById('modal-reassign-study');
 
     if (countEl) countEl.textContent = `${projectAudits.length} auditorías`;
-    if (fromEl) fromEl.textContent = this.currentProject;
+    if (fromEl) fromEl.textContent = getStudyDisplayName(this.currentProject);
 
     // Seleccionar por defecto un estudio diferente al actual
     const otherStudies = ['Tradicional', 'Moderno', 'Chile', 'Lindley'].filter(s => s.toUpperCase() !== this.currentProject.toUpperCase());
@@ -5047,7 +5047,7 @@ class ValidaFlowApp {
     if (projectValidators.length === 0) {
       container.innerHTML = `
         <div class="empty-validators-state">
-          <p>No hay validadores registrados para el estudio <strong>${this.currentProject}</strong>. Haz clic en "+ Agregar Validador" para añadir uno.</p>
+          <p>No hay validadores registrados para el estudio <strong>${getStudyDisplayName(this.currentProject)}</strong>. Haz clic en "+ Agregar Validador" para añadir uno.</p>
         </div>
       `;
       return;
@@ -5056,7 +5056,7 @@ class ValidaFlowApp {
     const stats = Distributor.getValidatorStats(projectAudits, projectValidators, this.getDistributionOptions());
 
     const flagMap = {
-      'Chile': '🇨🇱 Chile',
+      'Chile': `🇨🇱 ${getStudyDisplayName('Chile')}`,
       'Tradicional': `🏪 ${getStudyDisplayName('Tradicional')}`,
       'Moderno': `🏬 ${getStudyDisplayName('Moderno')}`,
       'Lindley': '🥤 Lindley'
@@ -5064,7 +5064,7 @@ class ValidaFlowApp {
 
     const assignmentCountries = this.getDistributionOptions().restrictByCountry ? this.getSmartAssignmentCountries() : [];
     container.innerHTML = stats.map(val => {
-      const studyLabel = flagMap[val.estudio] || val.estudio || this.currentProject || 'Chile';
+      const studyLabel = flagMap[val.estudio] || getStudyDisplayName(val.estudio || this.currentProject || 'Chile');
       const isActive = val.isActive !== false;
       const escapeCountry = value => String(value || '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
       const selectedCountries = Distributor.getSmartCountries(val);
@@ -5245,7 +5245,7 @@ class ValidaFlowApp {
     const summary = document.getElementById('reassign-pending-summary');
     const targetsContainer = document.getElementById('reassign-pending-targets');
     if (summary) {
-      summary.textContent = `${source.name} tiene ${pendingAudits.length} auditoría${pendingAudits.length === 1 ? '' : 's'} pendiente${pendingAudits.length === 1 ? '' : 's'} en ${this.currentProject}.`;
+      summary.textContent = `${source.name} tiene ${pendingAudits.length} auditoría${pendingAudits.length === 1 ? '' : 's'} pendiente${pendingAudits.length === 1 ? '' : 's'} en ${getStudyDisplayName(this.currentProject)}.`;
     }
     if (targetsContainer) {
       targetsContainer.innerHTML = targets.map(target => {
@@ -5346,14 +5346,14 @@ class ValidaFlowApp {
 
     const projectAudits = this.getAuditsForCurrentProject();
 
-    if (countBadge) countBadge.textContent = `${projectAudits.length} registros (${this.currentProject})`;
+    if (countBadge) countBadge.textContent = `${projectAudits.length} registros (${getStudyDisplayName(this.currentProject)})`;
 
     if (projectAudits.length === 0) {
       tableThead.innerHTML = '';
       tableBody.innerHTML = `
         <tr>
           <td colspan="10" class="empty-table-msg">
-            No hay auditorías cargadas para el estudio <strong>${this.currentProject}</strong>. Arrastra un archivo Excel/CSV arriba o selecciona otro estudio.
+            No hay auditorías cargadas para el estudio <strong>${getStudyDisplayName(this.currentProject)}</strong>. Arrastra un archivo Excel/CSV arriba o selecciona otro estudio.
           </td>
         </tr>
       `;
@@ -5484,7 +5484,7 @@ class ValidaFlowApp {
       emailInput.value = '';
       codeInput.value = '';
 
-      this.showToast(`Validador "${name}" agregado al estudio ${estudio} con código ${code}.`, 'success');
+      this.showToast(`Validador "${name}" agregado al estudio ${getStudyDisplayName(estudio)} con código ${code}.`, 'success');
     });
   }
 
@@ -6018,7 +6018,7 @@ class ValidaFlowApp {
     }));
     select.value = this.selectedReportCountry;
     if (context) {
-      context.textContent = 'Todo el histórico · País para KO Tradicional y KO Moderno; región para Chile y Lindley.'
+      context.textContent = 'Todo el histórico · País para KO Tradicional y KO Moderno; región para KO Tradicional CHILE y Lindley.'
         + (counts.has('') ? ` ${counts.get('').toLocaleString('es-CO')} registros sin ubicación identificada.` : '');
     }
   }
@@ -6030,7 +6030,7 @@ class ValidaFlowApp {
 
     // Los 4 Estudios Oficiales
     const officialStudies = [
-      { key: 'Chile', label: '🇨🇱 Chile' },
+      { key: 'Chile', label: `🇨🇱 ${getStudyDisplayName('Chile')}` },
       { key: 'Tradicional', label: `🏪 ${getStudyDisplayName('Tradicional')}` },
       { key: 'Moderno', label: `🏬 ${getStudyDisplayName('Moderno')}` },
       { key: 'Lindley', label: '🥤 Lindley' }
@@ -6344,7 +6344,7 @@ class ValidaFlowApp {
     const allUniqueKpis = new Set();
 
     const officialStudies = [
-      { key: 'Chile', label: '🇨🇱 Chile' },
+      { key: 'Chile', label: `🇨🇱 ${getStudyDisplayName('Chile')}` },
       { key: 'Tradicional', label: `🏪 ${getStudyDisplayName('Tradicional')}` },
       { key: 'Moderno', label: `🏬 ${getStudyDisplayName('Moderno')}` },
       { key: 'Lindley', label: '🥤 Lindley' }
@@ -6678,7 +6678,7 @@ class ValidaFlowApp {
     const reasonsMap = {};
     const allUniqueKpis = new Set();
     const studyMap = {
-      'Chile': { name: '🇨🇱 Chile', audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
+      'Chile': { name: `🇨🇱 ${getStudyDisplayName('Chile')}`, audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
       'Tradicional': { name: `🏪 ${getStudyDisplayName('Tradicional')}`, audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
       'Moderno': { name: `🏬 ${getStudyDisplayName('Moderno')}`, audits: 0, alerts: 0, aplica: 0, noAplica: 0 },
       'Lindley': { name: '🥤 Lindley', audits: 0, alerts: 0, aplica: 0, noAplica: 0 }
@@ -7513,7 +7513,7 @@ class ValidaFlowApp {
             <div class="query-meta-badges">
               <span class="query-audit-badge">Auditoría #${q.auditId}</span>
               <span class="badge badge-info">PDV: ${q.idPDV}</span>
-              <span class="badge badge-purple">${q.study}</span>
+              <span class="badge badge-purple">${getStudyDisplayName(q.study)}</span>
               <span class="badge badge-neutral">Validador: <strong>${q.validatorName}</strong> (${q.validatorCode})</span>
             </div>
             <div>
@@ -8108,7 +8108,7 @@ class ValidaFlowApp {
     }
 
     const flagMap = {
-      'Chile': '🇨🇱 Chile',
+      'Chile': `🇨🇱 ${getStudyDisplayName('Chile')}`,
       'Tradicional': `🏪 ${getStudyDisplayName('Tradicional')}`,
       'Moderno': `🏬 ${getStudyDisplayName('Moderno')}`,
       'Lindley': '🥤 Lindley'
@@ -8318,7 +8318,7 @@ class ValidaFlowApp {
     this.currentDailyDetail = { dateKey, studyKey };
 
     const flagMap = {
-      'Chile': '🇨🇱 Chile',
+      'Chile': `🇨🇱 ${getStudyDisplayName('Chile')}`,
       'Tradicional': `🏪 ${getStudyDisplayName('Tradicional')}`,
       'Moderno': `🏬 ${getStudyDisplayName('Moderno')}`,
       'Lindley': '🥤 Lindley'
@@ -8530,7 +8530,7 @@ class ValidaFlowApp {
           <td>${i + 1}</td>
           <td><strong>#${a.id}</strong></td>
           <td>${a.idPDV || '-'}</td>
-          <td><span class="badge badge-purple">${a.estudio || a.canal || '-'}</span></td>
+          <td><span class="badge badge-purple">${getStudyDisplayName(a.estudio || a.canal || '-')}</span></td>
           <td>${a.ciudad || this.getReportCountry(a) || '-'}</td>
           <td>
             ${val ? `<span class="val-pill"><strong>${val.code}</strong> - ${val.name}</span>` : '<span class="text-muted">Sin asignar</span>'}

@@ -1,4 +1,4 @@
-import { getStudyDisplayName } from './study-labels.js?v=1.0';
+import { getStudyDisplayName } from './study-labels.js?v=1.1';
 
 /**
  * Módulo de procesamiento y exportación de archivos Excel / CSV

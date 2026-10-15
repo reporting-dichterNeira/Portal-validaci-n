@@ -18,7 +18,7 @@
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
   <link rel="stylesheet" href="css/styles.css?v=65.0" />
-  <link rel="stylesheet" href="css/indicators.css?v=5.3" />
+  <link rel="stylesheet" href="css/indicators.css?v=5.4" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -74,7 +74,7 @@
         if (workspaceView) workspaceView.classList.remove('hidden');
         if (navTabs) navTabs.classList.remove('hidden');
         if (modeBadge) {
-          modeBadge.textContent = window.currentNavState.project + ' • ' + (window.currentNavState.module === 'smart' ? 'Smart' : 'Bloqueantes');
+          modeBadge.textContent = (window.PortalStudyLabels?.getStudyDisplayName(window.currentNavState.project) || window.currentNavState.project) + ' • ' + (window.currentNavState.module === 'smart' ? 'Smart' : 'Bloqueantes');
           modeBadge.style.background = window.currentNavState.module === 'smart' ? 'var(--dn-blue)' : 'var(--dn-magenta)';
           modeBadge.style.color = '#FFFFFF';
         }
@@ -83,7 +83,7 @@
         var modEl = document.getElementById('context-module-name');
         var projEl = document.getElementById('context-project-name');
         if (modEl) modEl.textContent = window.currentNavState.module === 'smart' ? 'Validación Smart 🧠⚡' : 'Alertas Bloqueantes 🚫🚨';
-        if (projEl) projEl.textContent = window.currentNavState.project;
+        if (projEl) projEl.textContent = window.PortalStudyLabels?.getStudyDisplayName(window.currentNavState.project) || window.currentNavState.project;
 
         window.switchSupervisorTab(window.currentNavState.tab || 'admin');
       }
@@ -345,7 +345,7 @@
             </p>
             <div class="portal-card-features">
               <div class="feat-item">✓ Validación Smart & Alertas Bloqueantes</div>
-              <div class="feat-item">✓ Operaciones: Chile, Tradicional, Moderno, Lindley</div>
+              <div class="feat-item">✓ Operaciones: KO Tradicional CHILE, Tradicional, Moderno, Lindley</div>
               <div class="feat-item">✓ Descargas consolidadas y día por día</div>
             </div>
             <button class="btn btn-navy btn-glow btn-block" id="btn-enter-supervisor-portal" onclick="event.stopPropagation(); window.app ? window.app.handleSupervisorPortalClick() : document.getElementById('modal-supervisor-login').classList.remove('hidden')">
@@ -631,7 +631,7 @@
               <div id="admin-study-catalog" class="admin-study-checklist" role="group" aria-label="Estudios asignados">
                 <span class="text-muted">Cargando estudios...</span>
               </div>
-              <small class="form-help">Puedes seleccionar Tradicional, Moderno, Chile y Lindley simultáneamente.</small>
+              <small class="form-help">Puedes seleccionar Tradicional, Moderno, KO Tradicional CHILE y Lindley simultáneamente.</small>
             </div>
           </section>
         </div>
@@ -1012,7 +1012,7 @@
           <span class="bread-sep">/</span>
           <span class="bread-module" id="context-module-name">Validación Smart</span>
           <span class="bread-sep">/</span>
-          <strong class="bread-project" id="context-project-name">Chile</strong>
+          <strong class="bread-project" id="context-project-name">KO Tradicional CHILE</strong>
         </div>
 
         <div class="supervisor-assigned-module-message" id="supervisor-assigned-module-message" role="status">
@@ -1271,7 +1271,7 @@
             <span class="filter-group-label">Estudio:</span>
             <select class="form-select form-select-sm" id="query-study-filter" onchange="window.app?.setQueryStudyFilter(this.value)">
               <option value="ALL">Todos los Estudios</option>
-              <option value="Chile">🇨🇱 Chile</option>
+              <option value="Chile">🇨🇱 KO Tradicional CHILE</option>
               <option value="Tradicional">🏪 Tradicional</option>
               <option value="Moderno">🏬 Moderno</option>
               <option value="Lindley">🥤 Lindley</option>
@@ -1436,7 +1436,7 @@
             <select id="report-country-filter" aria-label="Filtrar métricas y descargas por país o región">
               <option value="all">Todos los países / regiones</option>
             </select>
-            <span id="report-country-context" class="text-muted">País para KO Tradicional y KO Moderno; región para Chile y Lindley.</span>
+            <span id="report-country-context" class="text-muted">País para KO Tradicional y KO Moderno; región para KO Tradicional CHILE y Lindley.</span>
           </div>
         </div>
 
@@ -1837,7 +1837,7 @@
             <div class="panel-header">
               <div>
                 <h3><span class="header-icon">🌐</span> Benchmark Comercial por Estudio, País y Región</h3>
-                <p class="panel-desc">Todo el histórico: KO Tradicional y KO Moderno por país; Chile y Lindley por región. Datos recuperados de Databricks por ID de auditoría y estudio, sin modificar las validaciones.</p>
+                <p class="panel-desc">Todo el histórico: KO Tradicional y KO Moderno por país; KO Tradicional CHILE y Lindley por región. Datos recuperados de Databricks por ID de auditoría y estudio, sin modificar las validaciones.</p>
               </div>
             </div>
             <div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Comparativa por estudio; desplaza horizontalmente para ver todas las columnas">
@@ -2108,7 +2108,7 @@
         <div class="form-group">
           <label for="modal-val-study">Estudio / Operación Asignada *</label>
           <select id="modal-val-study" class="form-select">
-            <option value="Chile">🇨🇱 Chile (Región Sur)</option>
+            <option value="Chile">🇨🇱 KO Tradicional CHILE (Región Sur)</option>
             <option value="Tradicional">🏪 Tradicional (Tiendas / Bodegas)</option>
             <option value="Moderno">🏬 Moderno (Grandes Cadenas)</option>
             <option value="Lindley">🥤 Lindley (Arca Continental)</option>
@@ -2278,7 +2278,7 @@
         <div class="study-selection-grid">
           <div class="study-option-card" data-reassign-study="Chile" onclick="window.selectReassignStudyOption('Chile')">
             <span class="study-option-flag">🇨🇱</span>
-            <span class="study-option-name">Chile</span>
+            <span class="study-option-name">KO Tradicional CHILE</span>
             <span class="study-option-sub">Región Sur</span>
           </div>
           <div class="study-option-card active" data-reassign-study="Tradicional" onclick="window.selectReassignStudyOption('Tradicional')">
@@ -2454,7 +2454,7 @@
               <div class="cert-badges">
                 <span class="badge badge-success">✓ 100% Data Auditada</span>
                 <span class="badge badge-purple">🛡️ Validación Smart</span>
-                <span class="badge badge-blue" id="dossier-study-scope-badge">Estudios: Chile, KO Tradicional CAM, KO Moderno CAM, Lindley</span>
+                <span class="badge badge-blue" id="dossier-study-scope-badge">Estudios: KO Tradicional CHILE, KO Tradicional CAM, KO Moderno CAM, Lindley</span>
               </div>
             </div>
           </div>
@@ -2695,7 +2695,7 @@
         <div class="print-doc-classification">
           <span class="doc-badge-confidential">🔒 INFORME EJECUTIVO CONFIDENCIAL</span>
           <span class="doc-meta-item"><strong>Fecha:</strong> <span id="print-meta-date">Agosto 2026</span></span>
-          <span class="doc-meta-item"><strong>Alcance:</strong> <span id="print-meta-scope">Chile, KO Tradicional CAM, KO Moderno CAM, Lindley</span></span>
+          <span class="doc-meta-item"><strong>Alcance:</strong> <span id="print-meta-scope">KO Tradicional CHILE, KO Tradicional CAM, KO Moderno CAM, Lindley</span></span>
         </div>
       </div>
 
@@ -2913,9 +2913,9 @@
   <!-- Scripts ES Modules -->
   <script src="js/indicator-metrics.js?v=1.4"></script>
   <script src="js/indicator-catalog.js?v=1.0"></script>
-  <script src="js/indicator-dashboard.js?v=5.1"></script>
-  <script src="js/indicator-report.js?v=1.1"></script>
+  <script src="js/indicator-dashboard.js?v=5.2"></script>
+  <script src="js/indicator-report.js?v=1.2"></script>
   <script src="js/pending-workspace.js?v=2.0"></script>
-  <script type="module" src="js/app.js?v=139.0"></script>
+  <script type="module" src="js/app.js?v=140.0"></script>
 </body>
 </html>

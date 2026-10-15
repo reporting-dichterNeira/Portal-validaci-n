@@ -1,3 +1,4 @@
+global.PortalStudyLabels=require('./study-labels-fixture.cjs');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 global.PortalIndicatorMetrics=require('../js/indicator-metrics.js');
