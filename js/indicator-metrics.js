@@ -255,6 +255,16 @@
     for (const a of alerts) { const key = JSON.stringify(keys.map(k => a[k])); if (!map.has(key)) map.set(key, []); map.get(key).push(a); }
     return [...map.values()].map(items => ({ ...Object.fromEntries(keys.map(k => [k, items[0][k]])), ...totals(items) }));
   }
+  function excludeUndatedPending(audits) {
+    // Apply after date enrichment. Keep decisions even on partially reviewed
+    // audits; never substitute the upload/jornada date for the original date.
+    return audits.flatMap(a => {
+      if (dateKey(a.auditDate)) return [a];
+      const kpis = a.kpis.filter(k => k.decision !== 'pendiente');
+      if (kpis.length === a.kpis.length) return [a];
+      return kpis.length ? [{...a,kpis}] : [];
+    });
+  }
   function compute(audits, filters) {
     const asOf = dateKey(filters.asOf);
     if (!asOf) throw new Error('El corte debe ser una fecha válida.');
@@ -262,7 +272,7 @@
     if ((from && !dateKey(from)) || (to && !dateKey(to)) || (from && to && from > to)) throw new Error('El rango de fechas no es válido.');
     const dimension=(value,label)=>value || `Sin ${label}`;
     const selectedRegion=region==='all'?'all':normalizeRegion(region)||'Sin región';
-    const scoped = audits.filter(a => (study === 'all' || a.study === study) && (country === 'all' || a.country === country)
+    const scoped = excludeUndatedPending(audits).filter(a => (study === 'all' || a.study === study) && (country === 'all' || a.country === country)
       && (selectedRegion==='all' || dimension(a.region,'región')===selectedRegion) && (channel==='all' || dimension(a.channel,'canal')===channel)
       && (subchannel==='all' || dimension(a.subchannel,'subcanal')===subchannel));
     const undated = scoped.filter(a => !a.periodDate).length;
@@ -308,7 +318,7 @@
       missingPeriodDates: undated, missingCountries: selected.filter(a => a.country === 'Sin país identificado').length,
       missingPdv: selected.filter(a => !a.pdv).length, monthlyCounts: totals(monthlyAlerts) };
   }
-  const api = { dateKey, weekKey, ratio, eventStamp, interval, normalizeRegion, normalizeAudits, parseCSV, readConsolidatedCSV, attachContext, compute, totals, auditValidationSla,validationSlaExport,validationSlaStatistics,formatSla };
+  const api = { dateKey, weekKey, ratio, eventStamp, interval, normalizeRegion, normalizeAudits, parseCSV, readConsolidatedCSV, attachContext, excludeUndatedPending, compute, totals, auditValidationSla,validationSlaExport,validationSlaStatistics,formatSla };
   root.PortalIndicatorMetrics = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

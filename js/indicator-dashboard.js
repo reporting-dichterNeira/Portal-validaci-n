@@ -127,9 +127,11 @@
   const decisionLabel = value => ({aplica:'Alertas válidas',no_aplica:'Alertas no válidas',pendiente:'Pendiente'}[value] || value);
   function alertExport(audits, context = [], countryFor = null, sourceModule = 'all', {includeRows = true} = {}) {
     const source = canonical(audits).filter(a => (sourceModule === 'all' || (a._module || 'blocking') === sourceModule) && /^\d+$/.test(String(a.id)));
-    const inputs = adapt(source, context, countryFor, sourceModule);
-    const rows = includeRows ? inputs.flatMap((a,i) => a.kpis.map(k => {
-      const raw = source[i], decision = raw.validationResults?.[k.key] || {};
+    const adapted = adapt(source, context, countryFor, sourceModule);
+    const inputs = M.excludeUndatedPending(adapted);
+    const sourceById = new Map(adapted.map((a,i)=>[JSON.stringify([a.module,a.study,a.id]),source[i]]));
+    const rows = includeRows ? inputs.flatMap(a => a.kpis.map(k => {
+      const raw = sourceById.get(JSON.stringify([a.module,a.study,a.id])), decision = raw.validationResults?.[k.key] || {};
       return [a.module === 'smart' ? 'Smart' : 'Bloqueantes',a.id,a.pdv,a.periodDate,a.auditDate,a.alertUploadedAt,k.validatedAt,
         studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,raw._validatorName || raw.assignedValidatorId || '',
         k.name,decisionLabel(k.decision),k.reason,decision.observaciones || '',raw.validationStatus || '',a.segment,
@@ -490,7 +492,7 @@
   }
   function inheritedPanel(data, month, asOf) {
     const r=data.inherited,s=story(r);
-    return '<aside class="glass-panel committee-carryover"><div><span class="corporate-badge">⏳ PENDIENTES HEREDADOS · FUERA DEL TOTAL DEL MES</span><h3>'+num(r.counts.pending)+' alertas en '+num(s.pendingAudits)+' auditorías</h3><p>Jornadas anteriores a '+esc(month || 'la selección')+' que siguen pendientes al '+esc(asOf)+'. Respeta estudio, país / región y filtros adicionales; ignora el rango de fechas para no ocultar el rezago.</p><small>Estado actual, no una fotografía del cierre histórico. '+num(r.backlog.old.length)+' auditorías con 15 días o más; '+num(r.backlog.missing.length)+' sin fecha original.</small></div></aside>';
+    return '<aside class="glass-panel committee-carryover"><div><span class="corporate-badge">⏳ PENDIENTES HEREDADOS · FUERA DEL TOTAL DEL MES</span><h3>'+num(r.counts.pending)+' alertas en '+num(s.pendingAudits)+' auditorías</h3><p>Jornadas anteriores a '+esc(month || 'la selección')+' que siguen pendientes al '+esc(asOf)+'. Respeta estudio, país / región y filtros adicionales; ignora el rango de fechas para no ocultar el rezago.</p><small>Estado actual, no una fotografía del cierre histórico. '+num(r.backlog.old.length)+' auditorías con 15 días o más.</small></div></aside>';
   }
   function committeeSection(section,result,data,month,partial) {
     const c=result.counts,s=story(result),macro=macroData(result);
@@ -568,7 +570,7 @@
     ],'macro');
     html+='<div class="committee-grid">'+panel('Resultado global del mes','Base: todas las alertas recibidas del mes y filtros seleccionados.',decisionBar(c)+'<p class="story-note">Alertas válidas + Alertas no válidas + pendientes = recibidas. La confirmación de la tarjeta superior usa solo las revisadas. Las alertas no válidas no requieren edición.</p>')+
       panel('Prioridad para el comité','Focos derivados del mes seleccionado, sin metas ni semáforos arbitrarios.',
-        '<div class="committee-priority"><strong>'+(focus?esc(studyLabel(focus.study))+' concentra '+pct(focus.pending/c.pending)+' de los pendientes':c.total?'Sin alertas pendientes en este alcance':'Sin datos para establecer una prioridad')+'</strong><p>'+(focus?num(focus.pending)+' de '+num(c.pending)+' alertas pendientes del mes.':'')+'</p><p><b>'+num(result.backlog.old.length)+'</b> auditorías pendientes con 15 días o más desde su fecha original.<br><b>'+num(result.backlog.missing.length)+'</b> sin fecha original para medir antigüedad.</p>'+link('pending','Revisar pendientes')+'</div>')+'</div>';
+        '<div class="committee-priority"><strong>'+(focus?esc(studyLabel(focus.study))+' concentra '+pct(focus.pending/c.pending)+' de los pendientes':c.total?'Sin alertas pendientes en este alcance':'Sin datos para establecer una prioridad')+'</strong><p>'+(focus?num(focus.pending)+' de '+num(c.pending)+' alertas pendientes del mes.':'')+'</p><p><b>'+num(result.backlog.old.length)+'</b> auditorías pendientes con 15 días o más desde su fecha original.</p>'+link('pending','Revisar pendientes')+'</div>')+'</div>';
     html+=panel('Comparativa macro por estudio','Mismo mes y filtros. Las barras muestran la composición de cada estudio; los totales permiten comparar volumen. Auditorías: IDs que tienen al menos una alerta.',
       '<div class="committee-studies">'+(macro.studies.length?macro.studies.map(r=>'<article><div class="committee-study-title"><h4>'+esc(studyLabel(r.study))+'</h4><span>'+num(r.total)+' alertas · '+num(r.audits)+' auditorías</span></div>'+decisionBar(r)+'<small>Cobertura: <b>'+pct(r.coverage)+'</b> · Participación en las alertas del mes: <b>'+pct(r.total/c.total)+'</b></small></article>').join(''):'<p class="indicator-empty">Sin estudios con alertas en este mes.</p>')+'</div>'+link('comparison','Ver países, regiones y canales'));
     const top=(items,countKey,total)=>items.slice(0,3).map((r,i)=>'<li><span class="committee-rank">'+(i+1)+'</span><div><strong>'+esc(r.name)+'</strong><small>'+num(r[countKey])+' alertas · '+pct(total?r[countKey]/total:null)+'</small></div></li>').join('') || '<li class="indicator-empty">Sin registros para este mes.</li>';
@@ -688,10 +690,10 @@
       ])+decisionDonut(c)+'<p class="story-note">Una auditoría puede contener varias alertas. Revisadas = Alertas válidas + Alertas no válidas. Recibidas = revisadas + pendientes.</p>');
     }
     if(section==='pending') {
-      html+=panel('Qué falta por revisar',num(c.pending)+' alertas pendientes en '+num(narrative.pendingAudits)+' auditorías. Consulta su distribución y los IDs pendientes por antigüedad.','<p class="story-note">Las cargas reemplazadas y los registros retirados se excluyen. La gestión de descargar, reasignar o retirar pendientes se conserva en el panel de supervisión.</p>');
-      const labels={recent:['0–6 días','blue','📅'],week:['7–14 días','orange','⏳'],old:['15 días o más','magenta','🚩'],missing:['Sin fecha original','purple','❔'],future:['Fecha futura','cyan','🗓️']};
+      html+=panel('Qué falta por revisar',num(c.pending)+' alertas pendientes en '+num(narrative.pendingAudits)+' auditorías. Consulta su distribución y los IDs pendientes por antigüedad.','<p class="story-note">Se excluyen las alertas pendientes sin fecha original válida, las cargas reemplazadas y los registros retirados. La gestión de descargar, reasignar o retirar pendientes se conserva en el panel de supervisión.</p>');
+      const labels={recent:['0–6 días','blue','📅'],week:['7–14 días','orange','⏳'],old:['15 días o más','magenta','🚩'],future:['Fecha futura','cyan','🗓️']};
       const backlogRows=Object.entries(labels).map(([key,[name]])=>({name,count:result.backlog[key].length,total:result.backlog[key].reduce((sum,a)=>sum+a.pending,0)})).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
-      html+=panel('Distribución del rezago','Grupos ordenados de mayor a menor por alertas pendientes; antigüedad desde la fecha original.',groupedChart(backlogRows,[{key:'total',label:'Alertas pendientes',tone:'orange'}],{meta:r=>num(r.count)+' auditorías',unit:'alertas',kind:'backlog'})+chartDetails(table(['Antigüedad','Auditorías con pendientes','Alertas pendientes'],backlogRows.map(r=>row([r.name,num(r.count),num(r.total)])))));
+      html+=panel('Distribución del rezago','Grupos ordenados de mayor a menor por alertas pendientes con fecha original válida; antigüedad desde esa fecha.',groupedChart(backlogRows,[{key:'total',label:'Alertas pendientes',tone:'orange'}],{meta:r=>num(r.count)+' auditorías',unit:'alertas',kind:'backlog'})+chartDetails(table(['Antigüedad','Auditorías con pendientes','Alertas pendientes'],backlogRows.map(r=>row([r.name,num(r.count),num(r.total)])))));
       html+=panel('Pendientes por antigüedad','Días calendario desde la fecha original de auditoría, no desde la jornada de carga. Pulsa un grupo para consultar sus IDs.',
         '<div class="indicator-cards indicator-cards--backlog">'+Object.entries(labels).map(([k,[label,tone,symbol]],i)=>'<button type="button" class="stat-card indicator-card indicator-bucket indicator-tone-'+tone+'" style="--indicator-order:'+i+'" data-indicator-bucket="'+k+'" aria-pressed="false"><span class="indicator-card-main"><span class="stat-icon-wrapper indicator-card-icon" aria-hidden="true">'+symbol+'</span><span class="stat-details"><span class="stat-label">'+label+'</span><strong class="stat-value">'+num(result.backlog[k].length)+'</strong><small>Auditorías pendientes</small></span></span><span class="indicator-bucket-link">Ver detalle <span aria-hidden="true">→</span></span></button>').join('')+'</div><div data-indicator-backlog></div>');
     }

@@ -4,9 +4,9 @@ const M=global.PortalIndicatorMetrics=require('../js/indicator-metrics.js');
 const U=require('../js/indicator-dashboard.js');
 
 const inputs=()=>M.normalizeAudits([
-  {id:'1',study:'Moderno',country:'Panamá',periodDate:'2026-10-08',auditor:'Zeta',region:'Sur',kpis:Array.from({length:7},(_,i)=>({name:'Volumen alto',needsReview:true,decision:i?'aplica':'no_aplica'}))},
-  {id:'2',study:'Moderno',country:'Colombia',periodDate:'2026-10-01',auditor:'Alfa',region:'Norte',kpis:[{name:'Rechazo alto',needsReview:true,decision:'no_aplica'},{name:'Pendiente',needsReview:true}]},
-  {id:'3',study:'Moderno',country:'Colombia',periodDate:'2026-10-08',auditor:'Alfa',region:'Norte',kpis:[{name:'Pendiente',needsReview:true}]}
+  {id:'1',study:'Moderno',country:'Panamá',periodDate:'2026-10-08',auditDate:'2026-10-08',auditor:'Zeta',region:'Sur',kpis:Array.from({length:7},(_,i)=>({name:'Volumen alto',needsReview:true,decision:i?'aplica':'no_aplica'}))},
+  {id:'2',study:'Moderno',country:'Colombia',periodDate:'2026-10-01',auditDate:'2026-10-01',auditor:'Alfa',region:'Norte',kpis:[{name:'Rechazo alto',needsReview:true,decision:'no_aplica'},{name:'Pendiente',needsReview:true}]},
+  {id:'3',study:'Moderno',country:'Colombia',periodDate:'2026-10-08',auditDate:'2026-10-08',auditor:'Alfa',region:'Norte',kpis:[{name:'Pendiente',needsReview:true}]}
 ]);
 
 test('rankings prioritize generated alerts over rejection, pending counts, weeks or alphabet',()=>{

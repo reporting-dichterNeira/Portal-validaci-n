@@ -20,14 +20,14 @@ test('semáforos respetan límites y no muestran una base vacía o sin fechas co
 });
 const audit=(id,module,fecha,status)=>({id:String(id),_module:module,_batchId:1,estudio:'Moderno',pais:'Panamá',fecha,
   fechaAuditoriaOriginal:fecha,idPDV:'99',kpis:[{name:'K',needsReview:true}],validationResults:status?{K:{status,tipificacion:'Motivo',observaciones:'=dato; "comillas"'}}:{}});
-test('CSV histórico mantiene módulos, decisiones, fechas faltantes y observaciones con escape seguro',()=>{
+test('CSV histórico excluye pendientes sin fecha y mantiene módulos, decisiones y observaciones con escape seguro',()=>{
   const audits=[audit(1,'blocking','2026-09-01','aplica'),audit(1,'smart','2026-10-01','no_aplica'),audit(2,'smart','',null)];
   const before=JSON.stringify(audits),data=U.alertExport(audits);
-  assert.equal(data.rows.length,3);assert.equal(data.audits,3);
-  assert.deepEqual(data.rows.map(row=>row[0]),['Bloqueantes','Smart','Smart']);
-  assert.deepEqual(data.rows.map(row=>row[15]),['Alertas válidas','Alertas no válidas','Pendiente']);
-  assert.equal(data.rows[2][3],null);assert.equal(data.counts.total,3);
-  assert.equal(data.counts.applies+data.counts.rejects+data.counts.pending,3);
+  assert.equal(data.rows.length,2);assert.equal(data.audits,2);
+  assert.deepEqual(data.rows.map(row=>row[0]),['Bloqueantes','Smart']);
+  assert.deepEqual(data.rows.map(row=>row[15]),['Alertas válidas','Alertas no válidas']);
+  assert.equal(data.counts.pending,0);assert.equal(data.counts.total,2);
+  assert.equal(data.counts.applies+data.counts.rejects+data.counts.pending,2);
   assert.match(U.csv(data.headers,data.rows),/"'=dato; ""comillas"""/);
   assert.equal(JSON.stringify(audits),before);
 });
@@ -56,9 +56,9 @@ test('resumen muestra semáforos con textos y PDF está disponible desde todas l
 
 test('desglose ordena por frecuencia recibida y reconcilia Alertas válidas, Alertas no válidas y pendientes de ambos módulos',()=>{
   const rows=[
-    {id:'1',_module:'blocking',study:'Moderno',periodDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true,decision:'aplica'},{name:'Disponibilidad',needsReview:true,decision:'no_aplica'}]},
-    {id:'1',_module:'smart',study:'Moderno',periodDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true,decision:'no_aplica'},{name:'Exhibición',needsReview:true}]},
-    {id:'2',_module:'smart',study:'Moderno',periodDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true}]}
+    {id:'1',_module:'blocking',study:'Moderno',periodDate:'2026-10-01',auditDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true,decision:'aplica'},{name:'Disponibilidad',needsReview:true,decision:'no_aplica'}]},
+    {id:'1',_module:'smart',study:'Moderno',periodDate:'2026-10-01',auditDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true,decision:'no_aplica'},{name:'Exhibición',needsReview:true}]},
+    {id:'2',_module:'smart',study:'Moderno',periodDate:'2026-10-01',auditDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true}]}
   ];
   const result=M.compute(M.normalizeAudits(rows),{asOf:'2026-10-14'}),before=JSON.stringify(result.rejectedTypes);
   const groups=R.alertBreakdown(result);
@@ -79,7 +79,7 @@ class PdfRecorder {
   text(text,x,y){assert.ok(x>=0&&x<297&&y>=0&&y<210,'Texto fuera de página');this.pages[this.current].push(Array.isArray(text)?text.join(' '):text);}
 }
 test('PDF pagina todos los tipos de alerta y mantiene ranking y columnas incluso con nombres largos',()=>{
-  const audits=M.normalizeAudits(Array.from({length:35},(_,i)=>({id:String(i+1),study:'Moderno',periodDate:'2026-10-01',
+  const audits=M.normalizeAudits(Array.from({length:35},(_,i)=>({id:String(i+1),study:'Moderno',periodDate:'2026-10-01',auditDate:'2026-10-01',
     kpis:[{name:'Tipo '+String(i+1).padStart(2,'0')+' - '+('Nombre largo de alerta '.repeat(3)),needsReview:true,decision:i%3===0?'aplica':i%3===1?'no_aplica':'pendiente'}]})));
   const result=M.compute(audits,{asOf:'2026-10-14'});
   const pdf=R.buildPdf(PdfRecorder,{asOf:'2026-10-14',scope:'Todos los estudios',result,trend:[],signals:R.signals(result)});

@@ -70,9 +70,9 @@ test('new story escapes metadata and explains denominators',()=>{
 });
 test('monthly macro reconciles study totals, counts audit IDs once and ranks received volume',()=>{
  const r=M.compute(M.normalizeAudits([
-  {id:'1',study:'Moderno',periodDate:'2026-09-01',kpis:[{name:'A',needsReview:true,decision:'aplica'},{name:'B',needsReview:true,decision:'pendiente'}]},
-  {id:'2',study:'Moderno',periodDate:'2026-09-02',kpis:[{name:'A',needsReview:true,decision:'no_aplica'}]},
-  {id:'1',study:'Lindley',periodDate:'2026-09-02',kpis:[{name:'A',needsReview:true,decision:'pendiente'}]}
+  {id:'1',study:'Moderno',periodDate:'2026-09-01',auditDate:'2026-09-01',kpis:[{name:'A',needsReview:true,decision:'aplica'},{name:'B',needsReview:true,decision:'pendiente'}]},
+  {id:'2',study:'Moderno',periodDate:'2026-09-02',auditDate:'2026-09-02',kpis:[{name:'A',needsReview:true,decision:'no_aplica'}]},
+  {id:'1',study:'Lindley',periodDate:'2026-09-02',auditDate:'2026-09-02',kpis:[{name:'A',needsReview:true,decision:'pendiente'}]}
  ]),{asOf:'2026-10-10'});
  const macro=U.macroData(r);
  assert.equal(macro.studies.reduce((n,s)=>n+s.total,0),r.counts.total);
@@ -102,10 +102,10 @@ test('all entry points share one journey and monthly carryover stays separate',(
 
 test('carryover ignores date bounds, respects dimensions and never inflates month counts',()=>{
  const audits=M.normalizeAudits([
-  {id:'1',study:'Moderno',periodDate:'2026-08-01',channel:'A',kpis:[{name:'X',needsReview:true}]},
-  {id:'2',study:'Moderno',periodDate:'2026-08-01',channel:'B',kpis:[{name:'X',needsReview:true}]},
-  {id:'3',study:'Moderno',periodDate:'2026-09-01',channel:'A',kpis:[{name:'X',needsReview:true,decision:'aplica'}]},
-  {id:'4',study:'Moderno',periodDate:'2026-10-01',channel:'A',kpis:[{name:'X',needsReview:true}]}
+  {id:'1',study:'Moderno',periodDate:'2026-08-01',auditDate:'2026-08-01',channel:'A',kpis:[{name:'X',needsReview:true}]},
+  {id:'2',study:'Moderno',periodDate:'2026-08-01',auditDate:'2026-08-01',channel:'B',kpis:[{name:'X',needsReview:true}]},
+  {id:'3',study:'Moderno',periodDate:'2026-09-01',auditDate:'2026-09-01',channel:'A',kpis:[{name:'X',needsReview:true,decision:'aplica'}]},
+  {id:'4',study:'Moderno',periodDate:'2026-10-01',auditDate:'2026-10-01',channel:'A',kpis:[{name:'X',needsReview:true}]}
  ]);
  const filters={asOf:'2026-10-10',from:'2026-09-01',to:'2026-09-30',channel:'A'};
  const r=M.compute(audits,filters),d=U.committeeData(r,r,audits,'2026-09',filters);
@@ -115,7 +115,7 @@ test('carryover ignores date bounds, respects dimensions and never inflates mont
 });
 
 test('evolution combines studies, distinguishes no decisions, and refuses partial or nonconsecutive comparisons',()=>{
- const audits=M.normalizeAudits(['2026-07-01','2026-09-01','2026-10-01'].map((periodDate,i)=>({id:String(i+1),study:'Moderno',periodDate,kpis:[{name:'K',needsReview:true}]})));
+ const audits=M.normalizeAudits(['2026-07-01','2026-09-01','2026-10-01'].map((periodDate,i)=>({id:String(i+1),study:'Moderno',periodDate,auditDate:periodDate,kpis:[{name:'K',needsReview:true}]})));
  const f={asOf:'2026-10-10',from:'2026-07-01',to:'2026-10-10'};
  const r=M.compute(audits,f),d=U.committeeData(r,r,audits,'2026-10',f);
  assert.ok(d.trend.every(r=>r.change===null));assert.ok(d.trend.every(r=>r.confirmation===null));assert.equal(d.trend.at(-1).partial,true);
@@ -126,9 +126,9 @@ test('evolution combines studies, distinguishes no decisions, and refuses partia
 
 test('monthly chart counts alert KPIs rather than audits and separates Alertas válidas, Alertas no válidas and pending',()=>{
  const audits=M.normalizeAudits([
-  {id:'1',study:'Moderno',periodDate:'2026-08-01',kpis:[{name:'A',needsReview:true,decision:'aplica'},{name:'B',needsReview:true,decision:'no_aplica'},{name:'C',needsReview:true}]},
-  {id:'2',study:'Chile',periodDate:'2026-08-02',kpis:[{name:'A',needsReview:true,decision:'aplica'}]},
-  {id:'3',study:'Moderno',periodDate:'2026-09-01',kpis:[{name:'A',needsReview:true,decision:'no_aplica'}]}
+  {id:'1',study:'Moderno',periodDate:'2026-08-01',auditDate:'2026-08-01',kpis:[{name:'A',needsReview:true,decision:'aplica'},{name:'B',needsReview:true,decision:'no_aplica'},{name:'C',needsReview:true}]},
+  {id:'2',study:'Chile',periodDate:'2026-08-02',auditDate:'2026-08-02',kpis:[{name:'A',needsReview:true,decision:'aplica'}]},
+  {id:'3',study:'Moderno',periodDate:'2026-09-01',auditDate:'2026-09-01',kpis:[{name:'A',needsReview:true,decision:'no_aplica'}]}
  ]);
  const result=M.compute(audits,{asOf:'2026-10-13'}),trend=U.monthlyTrend(result);
  assert.deepEqual(trend.map(r=>[r.total,r.applies,r.rejects,r.pending]),[[4,2,1,1],[1,0,1,0]]);

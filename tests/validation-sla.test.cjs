@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 global.PortalIndicatorMetrics=require('../js/indicator-metrics.js');
 const M=global.PortalIndicatorMetrics,U=require('../js/indicator-dashboard.js'),R=require('../js/indicator-report.js');
 const asOf='2026-10-15';
-const audit=(id,seconds=60,extra={})=>({id:String(id),_module:'blocking',_batchId:1,estudio:'Tradicional',pais:'Panamá',fecha:'2026-10-10',
+const audit=(id,seconds=60,extra={})=>({id:String(id),_module:'blocking',_batchId:1,estudio:'Tradicional',pais:'Panamá',fecha:'2026-10-10',fechaAuditoriaOriginal:'2026-10-10',
   assignedValidatorId:'v1',_validatorName:'Validador Uno',_validatorCode:'VAL-1',validationStatus:'completada',
   startedAt:'2026-10-10T15:00:00Z',completedAt:new Date(Date.parse('2026-10-10T15:00:00Z')+seconds*1000).toISOString(),durationSeconds:8,
   kpis:[{name:'K',needsReview:true}],validationResults:{K:{status:'aplica'}},...extra});

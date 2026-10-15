@@ -50,10 +50,10 @@ test('coverage and rejection use all alerts, not just decisions',()=>{
  assert.equal(r.counts.rejection,.25);assert.equal(r.counts.application,.25);
  assert.equal(compute([]).counts.rejection,null);
 });
-test('backlog boundaries count audits once and keep missing/future dates separate',()=>{
+test('backlog boundaries count audits once, exclude missing dates and keep future dates separate',()=>{
  const r=compute(['2026-10-02','2026-10-01','2026-09-24','2026-09-23',null,'2026-10-09'].map((auditDate,i)=>sample(i+1,['pendiente','pendiente'],{auditDate})));
  assert.equal(r.backlog.recent.length,1);assert.equal(r.backlog.week.length,2);assert.equal(r.backlog.old.length,1);
- assert.equal(r.backlog.missing.length,1);assert.equal(r.backlog.future.length,1);assert.equal(r.counts.pending,12);
+ assert.equal(r.backlog.missing.length,0);assert.equal(r.backlog.future.length,1);assert.equal(r.counts.pending,10);
 });
 test('monthly comparison only uses consecutive complete months',()=>{
  const r=compute([sample(1,['aplica'],{periodDate:'2026-08-02'}),sample(2,['aplica','pendiente'],{periodDate:'2026-09-02'}),sample(3,['pendiente'],{periodDate:'2026-10-02'})]);
