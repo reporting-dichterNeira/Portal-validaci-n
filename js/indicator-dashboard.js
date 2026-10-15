@@ -213,10 +213,13 @@
     const studyName=s=>M.normalizeAudits([{id:'1',study:s,kpis:[]}])[0]?.study;
     const studies=(app.selectedStudies||['ALL']).includes('ALL')?[]:(app.selectedStudies||[]).map(studyName);
     const filters={studies,month:state.month||'',from:app.visualizationDateFrom||'',to:app.visualizationDateTo||'',country:app.selectedMetricsCountry||'all',geography:app.selectedReportCountry||'all',region:state.region,channel:state.channel,subchannel:state.subchannel};
-    const key=JSON.stringify([app.currentProfile?.id,filters]);
+    const canQuery=!app.backend?.configured || ['admin','supervisor','visualizer','commercial'].includes(app.currentRole);
+    const key=JSON.stringify([app.currentProfile?.id || app.currentProfile?.username || null,app.currentRole,filters]);
     app.databricksTotalsCache ||= new Map();
-    let entry=app.databricksTotalsCache.get(key);
-    if(!entry||Date.now()-entry.loadedAt>5*60*1000) {
+    // Reports also render while init restores auth. Do not cache an anonymous
+    // permission error and reuse it after the staff session becomes available.
+    let entry=canQuery?app.databricksTotalsCache.get(key):{loading:true,data:null,error:''};
+    if(canQuery && (!entry||Date.now()-entry.loadedAt>5*60*1000)) {
       entry={loading:true,data:null,error:'',loadedAt:Date.now()};app.databricksTotalsCache.set(key,entry);
       if(app.databricksTotalsCache.size>12)app.databricksTotalsCache.delete(app.databricksTotalsCache.keys().next().value);
       if(app.backend?.loadDatabricksAuditTotals)app.backend.loadDatabricksAuditTotals(filters).then(data=>entry.data=data).catch(error=>entry.error=error.message).finally(()=>{entry.loading=false;if(app.currentView==='visualizations')app.renderReportsView();});

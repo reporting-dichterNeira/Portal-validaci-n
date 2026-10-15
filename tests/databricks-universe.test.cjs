@@ -42,6 +42,25 @@ test('un fallo de acceso no se presenta como ausencia de datos y se puede reinte
  try {app.renderReportsView();await new Promise(resolve=>setImmediate(resolve));assert.match(target.innerHTML,/Error al consultar/);assert.doesNotMatch(target.innerHTML,/Sin datos|Histórico Excel/);retry();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,2);assert.match(target.innerHTML,/2\.702/);assert.doesNotMatch(target.innerHTML,/VISUALIZATION_ACCESS_REQUIRED/);}finally{delete global.document;}
 });
 
+test('espera la restauración de sesión y separa la caché entre usuarios sin id de perfil',async()=>{
+ let calls=0;
+ const target={innerHTML:'',parentElement:{children:[]},querySelectorAll:()=>[],querySelector:()=>null};target.parentElement.children=[target];
+ global.document={getElementById:()=>target};
+ const rows=[{id:'10',_module:'blocking',estudio:'Chile',fecha:'2026-10-01',kpis:[]}];
+ const app={currentProfile:null,currentRole:null,currentView:'visualizations',reportsSubtab:'metrics',getVisualizationModuleFilter:()=> 'all',getReportCountry:()=> 'Chile',
+  backend:{configured:true,async loadDatabricksAuditTotals(){calls++;return {studies:[{study_name:'Chile',databricks_total:100}],snapshots:[{month:'2026-10-01',source:'Databricks'}]};}},renderReportsView(){U.render(app,rows);}};
+ try {
+  app.renderReportsView();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls,0);assert.equal(app.databricksTotalsCache.size,0);assert.doesNotMatch(target.innerHTML,/Error al consultar/);
+  app.currentRole='visualizer';app.currentProfile={username:'primero'};app.currentView='visualizations';
+  app.renderReportsView();await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(calls,1);assert.match(target.innerHTML,/Total levantado/);assert.doesNotMatch(target.innerHTML,/Error al consultar/);
+  app.renderReportsView();assert.equal(calls,1);
+  app.currentProfile={username:'segundo'};app.renderReportsView();await new Promise(resolve=>setImmediate(resolve));assert.equal(calls,2);
+  app.currentRole='validator';app.renderReportsView();assert.equal(calls,2);
+ }finally{delete global.document;}
+});
+
 test('Smart pendiente de consulta o con error no muestra cero y Actualizar vuelve a consultar ambos históricos',async()=>{
  let refresh;
  const target={innerHTML:'',parentElement:{children:[]},querySelectorAll:()=>[],querySelector:s=>s==='[data-universe-refresh]'?{addEventListener:(_event,fn)=>refresh=fn}:null};
