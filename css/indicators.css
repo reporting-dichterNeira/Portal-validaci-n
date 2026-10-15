@@ -168,3 +168,11 @@
 .metric-signal small { display:block; color:var(--text-secondary); line-height:1.6; }.metric-signal-rule { margin-top:12px; padding-top:12px; border-top:1px solid var(--border-color); }
 [data-theme="dark"] .metric-signal--green { --signal-ink:#64d992; }[data-theme="dark"] .metric-signal--amber { --signal-ink:#ffcb76; }[data-theme="dark"] .metric-signal--red { --signal-ink:#ff8298; }
 @media(max-width:700px) { .metric-signals { grid-template-columns:1fr; }.metric-download-actions { width:100%; }.metric-consolidated-header > .btn { white-space:normal; } }
+
+/* The summary keeps territory comparisons readable on narrow screens. */
+.summary-benchmark { min-width:1320px; table-layout:auto; }
+.summary-benchmark th, .summary-benchmark td { width:auto!important; padding:14px 12px; }
+.summary-benchmark th:first-child, .summary-benchmark td:first-child { min-width:240px; }
+.summary-benchmark thead th { position:sticky; top:0; z-index:1; }
+.benchmark-scroll:has(.summary-benchmark) { max-height:560px; overflow:auto; }
+.summary-benchmark tr[hidden] { display:none; }

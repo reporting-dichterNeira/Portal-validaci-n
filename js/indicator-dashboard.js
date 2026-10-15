@@ -236,6 +236,57 @@
     return typeof received==='number' && Number.isFinite(received) && received>=0
       && typeof lifted==='number' && Number.isFinite(lifted) && lifted>0 ? received/lifted : null;
   }
+  function summaryBenchmarkData(result,u) {
+    const studies=new Map();
+    const create=()=>({ids:new Set(),total:0,applies:0,rejects:0});
+    for(const name of u.names)studies.set(name,{...create(),study:name,territories:new Map()});
+    for(const alert of result.alerts) {
+      if(!studies.has(alert.study))studies.set(alert.study,{...create(),study:alert.study,territories:new Map()});
+      const study=studies.get(alert.study),geography=alert.geography;
+      if(!study.territories.has(geography))study.territories.set(geography,{...create(),geography});
+      for(const group of [study,study.territories.get(geography)]) {
+        group.ids.add(String(alert.id).replace(/^0+/,''));group.total++;
+        if(alert.decision==='aplica')group.applies++;
+        if(alert.decision==='no_aplica')group.rejects++;
+      }
+    }
+    const ready=!u.entry.loading && !u.entry.error && u.verified;
+    const base=(rows,key,territory=false)=>{
+      const match=rows.filter(key);
+      if(!ready || territory && !u.entry.data?.territory_totals_ready)return null;
+      if(!territory && !match.length)return 0;
+      return match.length?match.reduce((sum,r)=>sum+Number(r.databricks_total||0),0):null;
+    };
+    return [...studies.values()].map(study=>{
+      const lifted=base(u.rows,r=>r.study_name===study.study);
+      const finish=(group,total)=>({...group,audits:group.ids.size,lifted:total,alertedShare:receiptShare(group.ids.size,total)});
+      const territories=[...study.territories.values()].sort((a,b)=>a.geography.localeCompare(b.geography,'es')).map(group=>
+        finish(group,base(u.entry.data?.territories||[],r=>r.study_name===study.study && r.geography===group.geography,true)));
+      return {...finish(study,lifted),territories};
+    });
+  }
+  function summaryBenchmark(result,u,app) {
+    const modules=app.currentScope?.module?[app.currentScope.module]:['blocking','smart'];
+    const failed=modules.some(module=>app.auditHistoryErrors?.[module]);
+    const loading=app.backend?.configured && modules.some(module=>!Array.isArray(app.auditHistoryByModule?.[module]));
+    if(failed || loading)return panel('Resumen por estudio, país y región','Auditorías alertadas / total de auditorías levantadas × 100.', '<p class="story-note">'+(failed?'No se pudo consultar el histórico de alertas. Actualiza para reintentar.':'Consultando el histórico de alertas…')+'</p>');
+    const groups=summaryBenchmarkData(result,u);
+    app.expandedSummaryStudies ||= new Set();
+    const metricCells=group=>{
+      const decided=group.applies+group.rejects,confirmation=receiptShare(group.applies,decided);
+      // Preserve the existing commercial estimate when moving its table.
+      const execution=group.audits?Math.max(10,Math.min(100,Math.round(100-group.applies/(group.audits*3)*50))):null;
+      return '<td><strong>'+num(group.audits)+'</strong></td><td>'+(group.lifted===null?(u.entry.loading?'Consultando…':'Sin base'):num(group.lifted))+'</td><td><strong>'+pct(group.alertedShare)+'</strong></td><td><span class="badge badge-purple">'+num(group.total)+' alertas</span></td><td><strong class="text-success">'+num(group.applies)+'</strong></td><td><strong class="text-magenta">'+num(group.rejects)+'</strong></td><td>'+pct(confirmation)+'</td><td><span class="badge badge-success">'+(execution===null?'—':execution+'% en PDV')+'</span></td>';
+    };
+    const rows=groups.map((group,i)=>{
+      const expanded=app.expandedSummaryStudies.has(group.study),isRegion=['Chile','Lindley'].includes(group.study),unit=isRegion?(group.territories.length===1?'región':'regiones'):(group.territories.length===1?'país':'países');
+      const ids=group.territories.map((_,j)=>'summary-territory-'+i+'-'+j).join(' ');
+      const button='<button type="button" class="benchmark-expand-toggle" data-summary-study="'+esc(group.study)+'" aria-expanded="'+expanded+'" aria-controls="'+ids+'"><span class="benchmark-expand-chevron" aria-hidden="true">▶</span><span class="benchmark-badge-flag">'+esc(studyLabel(group.study))+'</span><small>'+group.territories.length+' '+unit+'</small></button>';
+      return '<tr class="benchmark-study-parent"><td>'+(group.territories.length?button:esc(studyLabel(group.study)))+'</td>'+metricCells(group)+'</tr>'+group.territories.map((territory,j)=>'<tr id="summary-territory-'+i+'-'+j+'" class="benchmark-country-row" data-summary-parent="'+esc(group.study)+'" '+(expanded?'':'hidden')+'><td><span class="benchmark-country-label">↳ '+esc(territory.geography)+'</span></td>'+metricCells(territory)+'</tr>').join('');
+    }).join('');
+    return panel('Resumen por estudio, país y región','Auditorías alertadas / total de auditorías levantadas × 100. Despliega cada estudio para consultar su detalle.',
+      '<div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Resumen por estudio, país y región"><table class="data-table benchmark-table summary-benchmark"><thead><tr>'+['Estudio / País / Región','Auditorías alertadas','Total de auditorías','% de auditorías alertadas','Total alertas','Confirmadas · Aplica','Descartadas · No aplica','Tasa de confirmación','Efectividad · Ejecución en PDV'].map(label=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div><p class="story-note">El total de auditorías proviene del levantamiento de Databricks. En Consolidado, los IDs alertados se cuentan una sola vez por estudio; las alertas y sus decisiones conservan cada módulo. La tasa de confirmación usa solo alertas revisadas. Efectividad conserva la estimación del panel anterior. Los filtros de mes y fecha usan los mismos cortes que el consolidado superior.</p>');
+  }
   function universePanel(u,result,smart,app) {
     const unavailable=u.entry.error?'Error al consultar':'Sin corte conectado';
     const receipt=(module,count)=> {
@@ -472,6 +523,7 @@
         '<button type="button" class="btn btn-outline btn-sm" data-committee-inherited '+(!committee.inherited.counts.pending?'disabled':'')+'>📥 Descargar pendientes heredados (CSV)</button>'+table(['ID','Jornada original','Estudio','País / región','Alertas pendientes'],Object.values(committee.inherited.backlog).flat().slice(0,100).map(a=>row([esc(a.id),esc(a.periodDate),esc(studyLabel(a.study)),esc(a.geography),num(a.pending)]))));
     }
     if(section==='summary') {
+      html+=summaryBenchmark(result,universe(app,state),app);
       html+=signalPanel(result);
       html+=panel('La operación en una mirada',esc(narrative.headline),cards([
         ['Auditorías recibidas · sistema',num(result.audits),'IDs únicos cargados al portal','blue','🏬'],
@@ -511,6 +563,12 @@
     html=html.replace(/· BLOQUEANTES/g,'· '+moduleLabel).replace('No incluye Smart.','Módulo: '+moduleLabel+'. En Consolidado, cada caso y alerta se cuenta por módulo.').replace('resumen de Bloqueantes','resumen de esta lectura').replace(jump('decisions','Preparar decisiones'),'');
     target.innerHTML=html;
     bindScopeControls();
+    target.querySelectorAll('[data-summary-study]').forEach(button=>button.addEventListener('click',()=>{
+      const study=button.dataset.summaryStudy,expanded=button.getAttribute('aria-expanded')!=='true';
+      button.setAttribute('aria-expanded',String(expanded));
+      if(expanded)app.expandedSummaryStudies.add(study);else app.expandedSummaryStudies.delete(study);
+      target.querySelectorAll('[data-summary-parent]').forEach(row=>{if(row.dataset.summaryParent===study)row.hidden=!expanded;});
+    }));
     target.querySelector('[data-universe-refresh]')?.addEventListener('click',async()=>{
       app.databricksTotalsCache?.clear();app.renderReportsView();
       try {await app.ensureIndicatorHistoriesLoaded?.({force:true});}
@@ -530,6 +588,6 @@
       return [a.module==='smart'?'Smart':'Bloqueantes',a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,a.decision,a.reason];
     }),'Indicadores-'+(module || 'blocking')+'-'+asOf+'.csv'));
   }
-  root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,receiptShare,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart};
+  root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,receiptShare,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart};
   if(typeof module!=='undefined')module.exports=root.PortalIndicators;
 })(typeof globalThis!=='undefined'?globalThis:this);

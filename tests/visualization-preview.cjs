@@ -62,7 +62,7 @@ export class SupabaseBackend {
   const rows=['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'].filter(study=>!filters.studies?.length || filters.studies.includes(study))
     .filter(study=>!filters.country || filters.country==='all' || (study==='Chile'?'Chile':study==='Lindley'?'Perú':'Panamá')===filters.country)
     .map(study_name=>({study_name,databricks_total:2000,export_total:2000,verified:true}));
-  return {studies:rows,snapshots:[{month:'2026-10-01',source:'Databricks · Reporting Cluster (datos ficticios)',refreshed_at:'2026-10-12T10:00:00Z'}]};
+  return {studies:rows,territory_totals_ready:true,territories:rows.map(r=>({...r,geography:r.study_name==='Chile'?'ARICA':r.study_name==='Lindley'?'REGION LIMA':'Panamá'})),snapshots:[{month:'2026-10-01',source:'Databricks · Reporting Cluster (datos ficticios)',refreshed_at:'2026-10-12T10:00:00Z'}]};
  }
  async loadAdminExternalAnalysis({includeAlerts=true,includeEdits=true}={}){
   if(includeAlerts)count('alerts');if(includeEdits)count('editions');
