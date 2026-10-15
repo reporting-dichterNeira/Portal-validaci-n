@@ -31,9 +31,11 @@ const app={currentView:'visualizations',currentProfile:{id:'preview'},reportsSub
  backend:{loadDatabricksAuditTotals:async(filters)=>{
   const inputs=PortalIndicators.adapt(audits,[],a=>a.pais,'all').filter(a=>(!filters.studies.length||filters.studies.includes(a.study))&&(!filters.month||a.month===filters.month));
   const filtered=PortalIndicatorMetrics.compute(inputs,{...filters,asOf:'2026-10-15'}).alerts;
-  const auditorIds=new Map();
-  for(const a of filtered){if(!auditorIds.has(a.auditor))auditorIds.set(a.auditor,new Set());auditorIds.get(a.auditor).add(a.study+':'+a.id);}
+  const auditorIds=new Map(),territoryIds=new Map();
+  for(const a of filtered){if(!auditorIds.has(a.auditor))auditorIds.set(a.auditor,new Set());auditorIds.get(a.auditor).add(a.study+':'+a.id);
+   const key=JSON.stringify([a.study,a.geography]);if(!territoryIds.has(key))territoryIds.set(key,new Set());territoryIds.get(key).add(a.id);}
   return {studies:['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'].map(study_name=>({study_name,databricks_total:1200})),
+   territory_totals_ready:true,territories:[...territoryIds].map(([key,ids])=>{const [study_name,geography]=JSON.parse(key);return {study_name,geography,databricks_total:ids.size*3};}),
    auditor_totals_ready:!!filters.include_auditors,auditors:filters.include_auditors?[...auditorIds].map(([auditor,ids])=>({auditor,databricks_total:ids.size*3})).concat([{auditor:'Auditor sin alertas',databricks_total:25}]):[],
    snapshots:[{month:'2026-10-01',source:'Databricks · Prueba local',refreshed_at:'2026-10-13'}]};
  }},

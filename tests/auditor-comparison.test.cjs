@@ -14,8 +14,11 @@ test('auditor comparison separates audits from KPIs and deduplicates IDs across 
   assert.deepEqual(data.rows.map(r=>[r.auditor,r.audits,r.alertedAudits,r.total,r.applies,r.alertedShare]),[
     ['campo.uno',20,3,4,2,.15],['campo.dos',10,1,1,1,.1],['sin.alertas',30,0,0,0,0]
   ]);
+  assert.equal(data.rows[0].meanAlerts,4/3);assert.equal(data.rows[0].validShare,2/3);
+  assert.equal(data.rows[2].meanAlerts,null);assert.equal(data.rows[2].validShare,null);
   const html=U.auditorComparison(result,universe());
   assert.match(html,/Auditorías con alerta/);assert.match(html,/KPIs aplican/);assert.match(html,/15%/);
+  assert.match(html,/Promedio de alertas por auditoría alertada/);assert.match(html,/1,33/);assert.match(html,/66,7%/);
   assert.match(html,/data-chart-table-export/);assert.doesNotMatch(html,/data-metric-chart|metric-chart-details|Semanas con alertas/);
 });
 

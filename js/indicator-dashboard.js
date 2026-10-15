@@ -268,13 +268,22 @@
     return typeof received==='number' && Number.isFinite(received) && received>=0
       && typeof lifted==='number' && Number.isFinite(lifted) && lifted>0 ? received/lifted : null;
   }
+  const comparisonHeaders=['Auditorías','Auditorías con alerta','KPIs con alerta','KPIs aplican','% de auditorías alertadas','Promedio de alertas por auditoría alertada','% de alertas válidas entre revisadas'];
+  const comparisonDefinitions='Auditorías = total levantado, incluidas las que no generaron alertas. Los IDs alertados se cuentan una vez por estudio, incluso si están en ambos módulos. KPIs con alerta cuenta cada alerta generada; KPIs aplican son alertas válidas. % de auditorías alertadas = auditorías con alerta / total levantado × 100. Promedio = KPIs con alerta / auditorías con alerta. % de alertas válidas entre revisadas = válidas / (válidas + no válidas) × 100; excluye pendientes. Sin denominador se muestra «Sin base». El total levantado usa el mes de Ola y la fecha original; las alertas usan la jornada de carga.';
+  function comparisonStatistics(total,applies,rejects,alertedAudits) {
+    return {meanAlerts:receiptShare(total,alertedAudits),validShare:receiptShare(applies,applies+rejects)};
+  }
+  function comparisonCells(r,baseStatus) {
+    const average=r.meanAlerts==null?'Sin base':r.meanAlerts.toLocaleString('es-CO',{minimumFractionDigits:2,maximumFractionDigits:2});
+    return [r.audits===null?baseStatus:num(r.audits),num(r.alertedAudits),num(r.total),num(r.applies),pct(r.alertedShare),average,pct(r.validShare)];
+  }
   function auditorComparisonData(result,u) {
     const key=value=>String(value||'').trim().replace(/\s+/g,' ').toLowerCase();
     const identified=value=>value && !/^(sin (auditor|identificar)|n\/?a|null)$|^auditor\s*\([^)]*\)$|^\d+$/i.test(value);
     const ready=!u.entry.loading && !u.entry.error && u.verified && u.entry.data?.auditor_totals_ready===true;
     const groups=new Map();
     const groupFor=auditor=>{
-      if(!groups.has(auditor))groups.set(auditor,{auditor,audits:null,ids:new Set(),total:0,applies:0});
+      if(!groups.has(auditor))groups.set(auditor,{auditor,audits:null,ids:new Set(),total:0,applies:0,rejects:0});
       return groups.get(auditor);
     };
     if(ready)for(const base of u.entry.data.auditors || []) {
@@ -290,8 +299,9 @@
       group.ids.add(JSON.stringify([alert.study,String(alert.id).replace(/^0+/,'') || '0']));
       group.total++;
       if(alert.decision==='aplica')group.applies++;
+      if(alert.decision==='no_aplica')group.rejects++;
     }
-    const rows=[...groups.values()].map(({ids,...group})=>({...group,alertedAudits:ids.size,alertedShare:receiptShare(ids.size,group.audits)}))
+    const rows=[...groups.values()].map(({ids,...group})=>({...group,alertedAudits:ids.size,alertedShare:receiptShare(ids.size,group.audits),...comparisonStatistics(group.total,group.applies,group.rejects,ids.size)}))
       .sort((a,b)=>b.total-a.total || b.applies-a.applies || a.auditor.localeCompare(b.auditor,'es'));
     return {rows,unidentified,ready};
   }
@@ -299,10 +309,31 @@
     const data=auditorComparisonData(result,u);
     const baseStatus=u.entry.loading?'Consultando…':u.entry.error?'Error al consultar':'Sin base';
     return panel('Comparativo por auditor','De mayor a menor por KPIs con alerta; en empate, por KPIs que aplican. Incluye todo el período y los filtros seleccionados.',
-      chartDetails(table(['Auditor','Auditorías','Auditorías con alerta','KPIs con alerta','KPIs aplican','% de auditorías alertadas'],data.rows.map(r=>row([
-        esc(r.auditor),r.audits===null?baseStatus:num(r.audits),num(r.alertedAudits),num(r.total),num(r.applies),pct(r.alertedShare)
-      ]))),{collapsible:false})+'<p class="story-note">Auditor de campo del Export de Databricks. Auditorías = total levantado por el auditor, incluidas las que no generaron alertas. Auditorías con alerta cuenta cada ID una vez por estudio, incluso si está en ambos módulos. KPIs con alerta cuenta cada alerta generada; KPIs aplican son alertas válidas. Porcentaje = auditorías con alerta / auditorías × 100. El total levantado usa el mes de Ola y la fecha original; las alertas usan la jornada de carga. '+num(data.unidentified)+' alertas sin auditor identificado se excluyen de la comparación.</p>'+
+      chartDetails(table(['Auditor',...comparisonHeaders],data.rows.map(r=>row([esc(r.auditor),...comparisonCells(r,baseStatus)]))),{collapsible:false})+'<p class="story-note">Auditor de campo del Export de Databricks. '+comparisonDefinitions+' '+num(data.unidentified)+' alertas sin auditor identificado se excluyen de la comparación.</p>'+
       (u.entry.error?'<p role="alert">No fue posible consultar el total de auditorías por auditor: '+esc(u.entry.error)+'</p>':''));
+  }
+  function territoryComparisonData(result,u) {
+    const groups=new Map();
+    const key=(study,geography)=>JSON.stringify([study,geography]);
+    for(const study of summaryBenchmarkData(result,u))for(const territory of study.territories) {
+      groups.set(key(study.study,territory.geography),{study:study.study,geography:territory.geography,audits:territory.lifted,alertedAudits:territory.audits,
+        total:territory.total,applies:territory.applies,rejects:territory.rejects,alertedShare:territory.alertedShare});
+    }
+    const ready=!u.entry.loading && !u.entry.error && u.verified && u.entry.data?.territory_totals_ready===true;
+    if(ready)for(const base of u.entry.data.territories || []) {
+      const id=key(base.study_name,base.geography),audits=Number(base.databricks_total);
+      if(groups.has(id) || base.databricks_total==null || !Number.isFinite(audits) || audits<0)continue;
+      groups.set(id,{study:base.study_name,geography:base.geography,audits,alertedAudits:0,total:0,applies:0,rejects:0,alertedShare:receiptShare(0,audits)});
+    }
+    return [...groups.values()].map(r=>({...r,...comparisonStatistics(r.total,r.applies,r.rejects,r.alertedAudits)}))
+      .sort((a,b)=>b.total-a.total || b.applies-a.applies || a.study.localeCompare(b.study,'es') || a.geography.localeCompare(b.geography,'es'));
+  }
+  function territoryComparison(result,u,scope) {
+    const rows=territoryComparisonData(result,u),baseStatus=u.entry.loading?'Consultando…':u.entry.error?'Error al consultar':'Sin base';
+    return panel('Comparativo por estudio y territorio',esc(scope)+'. País para KO; región para KO Tradicional CHILE y Lindley. De mayor a menor por KPIs con alerta; en empate, por KPIs que aplican.',
+      chartDetails(table(['Estudio','País / región',...comparisonHeaders],rows.map(r=>row([esc(studyLabel(r.study)),esc(r.geography),...comparisonCells(r,baseStatus)]))),{collapsible:false})+
+      '<p class="story-note">'+comparisonDefinitions+'</p>'+
+      (u.entry.error?'<p role="alert">No fue posible consultar el total de auditorías por territorio: '+esc(u.entry.error)+'</p>':''));
   }
   function summaryBenchmarkData(result,u) {
     const studies=new Map();
@@ -621,7 +652,7 @@
       html+='<p class="story-note">Estos tiempos no son un SLA: aún no hay un plazo objetivo aprobado. Las fechas faltantes, inválidas o futuras se muestran aparte y no se convierten en cero.</p>';
     }
     if(section==='comparison') {
-      html+=panel('Benchmark por estudio y territorio',esc(scope)+'. País para KO; región para KO Tradicional CHILE y Lindley. Barras apiladas en una misma escala de volumen.',outcomeChart(result.benchmark,{label:r=>studyLabel(r.study)+' · '+r.geography,meta:r=>'Cobertura: '+pct(r.coverage)+' · Rechazo: '+pct(r.rejection)})+chartDetails(table(['Estudio','País / región','Alertas','Alertas válidas','Alertas no válidas','Pendientes','Cobertura','Rechazo'],result.benchmark.map(r=>row([esc(studyLabel(r.study)),esc(r.geography),num(r.total),num(r.applies),num(r.rejects),num(r.pending),pct(r.coverage),pct(r.rejection)])))));
+      html+=territoryComparison(result,universe(app,state),scope);
 
       html+=panel('Distribución por región, canal y subcanal','Gráfico de los 12 grupos con más alertas generadas. La tabla y su CSV incluyen todos los grupos del filtro, en el mismo orden descendente. Los faltantes se muestran sin inferirlos.',outcomeChart(result.workload.slice(0,12),{label:r=>studyLabel(r.study)+' · '+r.country,meta:r=>[r.region,r.channel,r.subchannel].filter(Boolean).join(' · ')})+chartDetails(table(['Estudio','País','Región','Canal','Subcanal','Alertas generadas','Pendientes','Cobertura','Rechazo'],result.workload.map(r=>row([esc(studyLabel(r.study)),esc(r.country),esc(r.region),esc(r.channel),esc(r.subchannel),num(r.total),num(r.pending),pct(r.coverage),pct(r.rejection)])))));
     }
@@ -662,6 +693,6 @@
       return [a.module==='smart'?'Smart':'Bloqueantes',a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,decisionLabel(a.decision),a.reason];
     }),'Indicadores-'+(module || 'blocking')+'-'+asOf+'.csv'));
   }
-  root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,receiptShare,auditorComparisonData,auditorComparison,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};
+  root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,receiptShare,auditorComparisonData,auditorComparison,territoryComparisonData,territoryComparison,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};
   if(typeof module!=='undefined')module.exports=root.PortalIndicators;
 })(typeof globalThis!=='undefined'?globalThis:this);

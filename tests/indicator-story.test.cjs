@@ -35,7 +35,10 @@ test('unified dashboard applies month to cards and comparisons while evolution r
  assert.match(render('summary').html,/2 de 3 alertas/);
  assert.match(render('summary',true).html,/2 de 3 alertas/);
  assert.match(render('summary',false,'blocking','2026-09').html,/1 de 2 alertas/);
- assert.match(render('comparison',false,'blocking','2026-09').html,/<td>2<\/td><td>0<\/td><td>1<\/td><td>1<\/td>/);
+ const comparison=render('comparison',false,'blocking','2026-09').html;
+ const territory=comparison.slice(comparison.indexOf('Comparativo por estudio y territorio'),comparison.indexOf('Distribución por región, canal y subcanal'));
+ assert.match(territory,/<td>2<\/td><td>2<\/td><td>0<\/td><td>Sin base<\/td><td>1,00<\/td><td>0%<\/td>/);
+ assert.doesNotMatch(territory,/data-metric-chart|metric-chart-details/);
  const evolution=render('evolution',false,'blocking','2026-09').html;
  assert.match(evolution,/2026-08/);assert.match(evolution,/2026-09/);
  assert.match(evolution,/Alertas generadas/);assert.match(evolution,/Alertas no válidas/);
