@@ -6223,8 +6223,7 @@ class ValidaFlowApp {
     }
 
     const indicatorTarget = document.getElementById('indicators-operational');
-    const section = this.indicatorOperationalSection;
-    if (!globalThis.PortalIndicators || !indicatorTarget || section === 'detail') {
+    if (!globalThis.PortalIndicators || !indicatorTarget) {
       this.renderClassicReports(filteredAudits);
     }
     globalThis.PortalIndicators?.render(this,

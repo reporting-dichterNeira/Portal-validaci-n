@@ -23,12 +23,12 @@ test('manager story distinguishes alerts from audits and empty data from complet
  assert.match(U.story(M.compute([],{asOf:'2026-10-10'})).headline,/Sin alertas/);
  assert.doesNotMatch(U.decisionBar({total:0}),/NaN|Infinity/);
 });
-test('all unified chapters render and retained downloads appear only under detail',()=>{
- assert.equal(U.journey.length,7);
- for(const [section] of U.journey){const {html,hidden}=render(section);assert.match(html,/aria-current="page"/);assert.equal(hidden.has('indicator-legacy-hidden'),section!=='detail');}
+test('all six chapters render with filtered alert downloads and hide legacy panels',()=>{
+ assert.equal(U.journey.length,6);
+ for(const [section] of U.journey){const {html,hidden}=render(section);assert.match(html,/aria-current="page"/);assert.equal(hidden.has('indicator-legacy-hidden'),true);}
  assert.match(render('summary').html,/Auditorías levantadas y recibidas/);
  assert.doesNotMatch(render('summary').html,/Reportes clásicos y exportaciones/);
- assert.match(render('detail').html,/data-indicator-download/);
+ assert.match(render('summary').html,/data-indicator-download/);
  assert.match(render('pending').html,/data-indicator-bucket/);
 });
 test('unified dashboard applies month to cards and comparisons while evolution retains context',()=>{
@@ -89,8 +89,8 @@ test('committee macro keeps month selector visible and empty data honest',()=>{
 });
 
 test('all entry points share one journey and monthly carryover stays separate',()=>{
- assert.deepEqual(U.journey.map(r=>r[0]),['summary','evolution','pending','findings','comparison','timing','detail']);
- for(const [section] of U.journey){const {html,hidden}=render(section,true);assert.match(html,/aria-current="page"/);assert.equal(hidden.has('indicator-legacy-hidden'),section!=='detail');assert.doesNotMatch(html,/NaN|Infinity/);}
+ assert.deepEqual(U.journey.map(r=>r[0]),['summary','evolution','pending','findings','comparison','timing']);
+ for(const [section] of U.journey){const {html,hidden}=render(section,true);assert.match(html,/aria-current="page"/);assert.equal(hidden.has('indicator-legacy-hidden'),true);assert.doesNotMatch(html,/NaN|Infinity/);}
  assert.doesNotMatch(render('summary').html,/PENDIENTES HEREDADOS/);
  assert.match(render('pending',true,'blocking','2026-09').html,/PENDIENTES HEREDADOS/);
  assert.doesNotMatch(render('summary',true).html,/Reportes y exportaciones/);
@@ -154,7 +154,7 @@ test('metric sections show graphs and leave comparison tables collapsed',()=>{
 });
 
 test('committee carries history through month and tab callbacks',()=>{
- const events=[]; const element={dataset:{storySection:'detail'},addEventListener:(name,fn)=>events.push(fn)};
+ const events=[]; const element={dataset:{storySection:'pending'},addEventListener:(name,fn)=>events.push(fn)};
  const target={innerHTML:'',querySelectorAll:selector=>selector==='[data-story-section]'?[element]:[],querySelector:()=>null};
  target.parentElement={children:[target]};global.document={getElementById:()=>target};
  const app={currentView:'visualizations',selectedMetricsMonth:'2026-09',reportsSubtab:'metrics',getVisualizationModuleFilter:()=> 'blocking',getReportCountry:a=>a.pais,indicatorFilters:{region:'all',channel:'all',subchannel:'all',month:'2026-09'},visualizationDateFrom:'2026-09-01',visualizationDateTo:'2026-09-30'};
@@ -168,7 +168,7 @@ test('chapter navigation reuses calculations, filters recalculate, and fresh ren
  const actions={};let computations=0,classic=0;
  const original=M.compute;M.compute=(...args)=>{computations++;return original(...args);};
  const target={innerHTML:'',querySelector:()=>null,querySelectorAll:selector=>{
-  if(selector==='[data-story-section]')return ['comparison','evolution','detail'].map(id=>({dataset:{storySection:id},addEventListener:(_,fn)=>actions[id]=fn}));
+  if(selector==='[data-story-section]')return ['comparison','evolution','timing'].map(id=>({dataset:{storySection:id},addEventListener:(_,fn)=>actions[id]=fn}));
   if(selector==='[data-metric-scope-filter]')return [{dataset:{metricScopeFilter:'month'},value:'2026-08',addEventListener:(_,fn)=>actions.month=fn}];
   return [];
  }};
@@ -180,8 +180,8 @@ test('chapter navigation reuses calculations, filters recalculate, and fresh ren
   actions.comparison();actions.evolution();assert.equal(computations,first);
   app.setMetricsScopeFilter=(key,value)=>{app.selectedMetricsMonth=value;U.render(app,records,records);};
   actions.month();assert.ok(computations>first);assert.equal(app.indicatorFilters.month,'2026-08');
-  actions.detail();assert.equal(classic,1);const detailCount=computations;
-  actions.detail();assert.equal(classic,1);assert.equal(computations,detailCount);
+  actions.timing();assert.equal(classic,0);const detailCount=computations;
+  actions.timing();assert.equal(classic,0);assert.equal(computations,detailCount);
   records[0].validationResults.K={status:'aplica'};
   app.indicatorOperationalSection='summary';U.render(app,records,records);
   assert.ok(computations>detailCount);assert.match(target.innerHTML,/Todas las 1 alertas/);

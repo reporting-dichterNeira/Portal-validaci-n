@@ -18,7 +18,7 @@
 
   <link rel="icon" type="image/webp" href="assets/dn-icon-blue.webp" />
   <link rel="stylesheet" href="css/styles.css?v=65.0" />
-  <link rel="stylesheet" href="css/indicators.css?v=5.6" />
+  <link rel="stylesheet" href="css/indicators.css?v=5.7" />
 
   <script>
     // Navigation & UI State Engine (Instant Zero-Latency Response)
@@ -1445,7 +1445,7 @@
         <!-- ======================================================== -->
         <div id="metrics-view-operational" class="metrics-subview active-subview">
           <div id="indicators-operational"></div>
-          <div class="operational-actions-bar" data-indicator-detail-keep>
+          <div class="operational-actions-bar">
             <div class="op-label-wrap">
               <span class="badge badge-info">Vista Operativa de Supervisión</span>
               <span class="text-muted" style="font-size:0.85rem;" id="op-filtered-count-label">Mostrando todas las auditorías</span>
@@ -1513,8 +1513,23 @@
             </div>
           </div>
 
+
+        </div>
+
+        <div id="metrics-view-daily" class="metrics-subview hidden">
+          <section class="glass-panel indicator-panel daily-consolidated-panel" aria-labelledby="daily-consolidated-title">
+            <div class="panel-header metric-consolidated-header">
+              <div>
+                <h3 id="daily-consolidated-title">📚 Consolidado histórico de alertas</h3>
+                <p class="panel-desc">Todo el histórico disponible para tu usuario: Bloqueantes y Smart, revisadas y pendientes. Una fila por KPI con alerta en el CSV. Esta descarga incluye todos los meses y no se limita por los filtros del detalle diario.</p>
+              </div>
+              <button type="button" class="btn btn-success" id="btn-export-historical-alerts-csv">📥 Descargar todo el histórico (CSV)</button>
+            </div>
+            <p id="daily-consolidated-context" class="story-note" role="status">Consultando histórico…</p>
+            <div id="daily-consolidated-summary"></div>
+          </section>
           <!-- Consulta histórica agregada: una fila por validador y jornada -->
-          <div class="glass-panel validator-history-panel" data-indicator-detail-keep style="margin-top: 1.75rem;">
+          <div class="glass-panel validator-history-panel" style="margin-top: 1.75rem;">
             <div class="panel-header validator-history-header">
               <div>
                 <h3><span class="header-icon">🧭</span> Histórico completo por validador</h3>
@@ -1590,20 +1605,6 @@
             </div>
           </div>
 
-        </div>
-
-        <div id="metrics-view-daily" class="metrics-subview hidden">
-          <section class="glass-panel indicator-panel daily-consolidated-panel" aria-labelledby="daily-consolidated-title">
-            <div class="panel-header metric-consolidated-header">
-              <div>
-                <h3 id="daily-consolidated-title">📚 Consolidado histórico de alertas</h3>
-                <p class="panel-desc">Todo el histórico disponible para tu usuario: Bloqueantes y Smart, revisadas y pendientes. Una fila por KPI con alerta en el CSV. Esta descarga incluye todos los meses y no se limita por los filtros del detalle diario.</p>
-              </div>
-              <button type="button" class="btn btn-success" id="btn-export-historical-alerts-csv">📥 Descargar todo el histórico (CSV)</button>
-            </div>
-            <p id="daily-consolidated-context" class="story-note" role="status">Consultando histórico…</p>
-            <div id="daily-consolidated-summary"></div>
-          </section>
           <!-- Panel de Desglose y Descarga Día por Día -->
           <div class="glass-panel daily-breakdown-panel" style="margin-top: 1.75rem;">
             <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
@@ -1659,7 +1660,7 @@
         <!-- ======================================================== -->
         <div id="metrics-view-executive" class="metrics-subview hidden">
           <!-- Barra de Acciones Ejecutivas -->
-          <div class="executive-actions-bar glass-panel" data-indicator-detail-keep>
+          <div class="executive-actions-bar glass-panel">
             <div class="exec-badge-wrap">
               <span class="corporate-badge corporate-badge-purple">👔 Vista de Comité Directivo & Comercial</span>
               <span class="text-muted" style="font-size:0.9rem;" id="exec-study-selected-label">Estudios: Todos los seleccionados</span>
@@ -2885,9 +2886,9 @@
   <!-- Scripts ES Modules -->
   <script src="js/indicator-metrics.js?v=1.4"></script>
   <script src="js/indicator-catalog.js?v=1.0"></script>
-  <script src="js/indicator-dashboard.js?v=5.5"></script>
+  <script src="js/indicator-dashboard.js?v=5.6"></script>
   <script src="js/indicator-report.js?v=1.2"></script>
   <script src="js/pending-workspace.js?v=2.0"></script>
-  <script type="module" src="js/app.js?v=140.0"></script>
+  <script type="module" src="js/app.js?v=141.0"></script>
 </body>
 </html>
