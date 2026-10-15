@@ -170,7 +170,7 @@
 @media(max-width:700px) { .metric-signals { grid-template-columns:1fr; }.metric-download-actions { width:100%; }.metric-consolidated-header > .btn { white-space:normal; } }
 
 /* The summary keeps territory comparisons readable on narrow screens. */
-.summary-benchmark { min-width:1320px; table-layout:auto; }
+.summary-benchmark { min-width:1180px; table-layout:auto; }
 .summary-benchmark th, .summary-benchmark td { width:auto!important; padding:14px 12px; }
 .summary-benchmark th:first-child, .summary-benchmark td:first-child { min-width:240px; }
 .summary-benchmark thead th { position:sticky; top:0; z-index:1; }

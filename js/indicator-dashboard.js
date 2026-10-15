@@ -274,9 +274,7 @@
     app.expandedSummaryStudies ||= new Set();
     const metricCells=group=>{
       const decided=group.applies+group.rejects,confirmation=receiptShare(group.applies,decided);
-      // Preserve the existing commercial estimate when moving its table.
-      const execution=group.audits?Math.max(10,Math.min(100,Math.round(100-group.applies/(group.audits*3)*50))):null;
-      return '<td><strong>'+num(group.audits)+'</strong></td><td>'+(group.lifted===null?(u.entry.loading?'Consultando…':'Sin base'):num(group.lifted))+'</td><td><strong>'+pct(group.alertedShare)+'</strong></td><td><span class="badge badge-purple">'+num(group.total)+' alertas</span></td><td><strong class="text-success">'+num(group.applies)+'</strong></td><td><strong class="text-magenta">'+num(group.rejects)+'</strong></td><td>'+pct(confirmation)+'</td><td><span class="badge badge-success">'+(execution===null?'—':execution+'% en PDV')+'</span></td>';
+      return '<td><strong>'+num(group.audits)+'</strong></td><td>'+(group.lifted===null?(u.entry.loading?'Consultando…':'Sin base'):num(group.lifted))+'</td><td><strong>'+pct(group.alertedShare)+'</strong></td><td><span class="badge badge-purple">'+num(group.total)+' alertas</span></td><td><strong class="text-success">'+num(group.applies)+'</strong></td><td><strong class="text-magenta">'+num(group.rejects)+'</strong></td><td>'+pct(confirmation)+'</td>';
     };
     const rows=groups.map((group,i)=>{
       const expanded=app.expandedSummaryStudies.has(group.study),isRegion=['Chile','Lindley'].includes(group.study),unit=isRegion?(group.territories.length===1?'región':'regiones'):(group.territories.length===1?'país':'países');
@@ -285,7 +283,7 @@
       return '<tr class="benchmark-study-parent"><td>'+(group.territories.length?button:esc(studyLabel(group.study)))+'</td>'+metricCells(group)+'</tr>'+group.territories.map((territory,j)=>'<tr id="summary-territory-'+i+'-'+j+'" class="benchmark-country-row" data-summary-parent="'+esc(group.study)+'" '+(expanded?'':'hidden')+'><td><span class="benchmark-country-label">↳ '+esc(territory.geography)+'</span></td>'+metricCells(territory)+'</tr>').join('');
     }).join('');
     return panel('Resumen por estudio, país y región','Auditorías alertadas / total de auditorías levantadas × 100. Despliega cada estudio para consultar su detalle.',
-      '<div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Resumen por estudio, país y región"><table class="data-table benchmark-table summary-benchmark"><thead><tr>'+['Estudio / País / Región','Auditorías alertadas','Total de auditorías','% de auditorías alertadas','Total alertas','Confirmadas · Aplica','Descartadas · No aplica','Tasa de confirmación','Efectividad · Ejecución en PDV'].map(label=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div><p class="story-note">El total de auditorías proviene del levantamiento de Databricks. En Consolidado, los IDs alertados se cuentan una sola vez por estudio; las alertas y sus decisiones conservan cada módulo. La tasa de confirmación usa solo alertas revisadas. Efectividad conserva la estimación del panel anterior. Los filtros de mes y fecha usan los mismos cortes que el consolidado superior.</p>');
+      '<div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Resumen por estudio, país y región"><table class="data-table benchmark-table summary-benchmark"><thead><tr>'+['Estudio / País / Región','Auditorías alertadas','Total de auditorías','% de auditorías alertadas','Total alertas','Confirmadas · Aplica','Descartadas · No aplica','Tasa de confirmación'].map(label=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div><p class="story-note">El total de auditorías proviene del levantamiento de Databricks. En Consolidado, los IDs alertados se cuentan una sola vez por estudio; las alertas y sus decisiones conservan cada módulo. La tasa de confirmación usa solo alertas revisadas. Los filtros de mes y fecha usan los mismos cortes que el consolidado superior.</p>');
   }
   function universePanel(u,result,smart,app) {
     const unavailable=u.entry.error?'Error al consultar':'Sin corte conectado';
@@ -502,8 +500,12 @@
     const sectionKey='indicatorOperationalSection';
     const navigation=journey;
     const section=navigation.some(([id])=>id===app[sectionKey])?app[sectionKey]:'summary';
-    legacy.forEach(el=>el.classList.toggle('indicator-legacy-hidden',daily || section!=='detail' || app.currentRole==='commercial'));
-    document.getElementById('metrics-view-executive')?.classList?.toggle('hidden',daily || section!=='detail');
+    // Detail keeps the existing download handlers and validator history, while
+    // its KPI totals come from the same filtered calculation as the chapters.
+    legacy.forEach(el=>el.classList.toggle('indicator-legacy-hidden',daily || section!=='detail' || app.currentRole==='commercial' || !el.hasAttribute?.('data-indicator-detail-keep')));
+    const executive=document.getElementById('metrics-view-executive');
+    executive?.classList?.toggle('hidden',daily || section!=='detail');
+    Array.from(executive?.children || []).forEach(el=>el.classList.toggle('indicator-legacy-hidden',!el.hasAttribute('data-indicator-detail-keep')));
     const scope=(state.month?'Mes: '+state.month+' · ':'')+'Jornadas: '+(from || 'Sin fecha')+' a '+to;
     const jump=(id,text)=>'<button type="button" class="btn btn-outline btn-sm" data-story-section="'+id+'">'+text+' →</button>';
     let html='<section class="glass-panel story-header"><div><span class="corporate-badge">'+'MÉTRICAS DE VALIDACIÓN'+' · BLOQUEANTES</span><h2>'+ 'Métricas de validación'+'</h2><p>'+'Estado general, evolución mensual y comparativas de las alertas recibidas y sus decisiones.'+'</p></div><div class="story-scope">'+esc(scope)+'<small>Estudios, país / región y fechas según los filtros del portal. No incluye Smart.</small></div></section>'+
@@ -556,8 +558,13 @@
       html+=panel('Distribución por región, canal y subcanal','Gráfico de los 12 grupos con más pendientes; la tabla permite consultar hasta 40. Los faltantes se muestran sin inferirlos.',outcomeChart(result.workload.slice(0,12),{label:r=>studyLabel(r.study)+' · '+r.country,meta:r=>[r.region,r.channel,r.subchannel].filter(Boolean).join(' · ')})+chartDetails(table(['Estudio','País','Región','Canal','Subcanal','Alertas','Pendientes','Cobertura','Rechazo'],result.workload.slice(0,40).map(r=>row([esc(studyLabel(r.study)),esc(r.country),esc(r.region),esc(r.channel),esc(r.subchannel),num(r.total),num(r.pending),pct(r.coverage),pct(r.rejection)])))));
     }
     if(section==='detail') {
-    html+=panel('Detalle de esta lectura','El CSV corresponde al alcance, mes y filtros adicionales de estos indicadores. Una fila por alerta.', '<button type="button" class="btn btn-success" data-indicator-download '+(!c.total?'disabled':'')+'>📥 Descargar alertas de esta lectura (CSV)</button>');
-    html+=panel('Reportes y exportaciones','Las descargas usan Estudio, País, Módulo, Mes, Desde y Hasta. El CSV también aplica Región, Canal y Subcanal. El detalle por jornada está en el botón Detalle de operación diaria.', '<p class="story-note">Una auditoría puede contener varias alertas. Revisa la unidad de cada indicador al comparar las cifras.</p>');
+      html+=panel('Indicadores de esta descarga','KPIs con alerta del alcance seleccionado y su estado de revisión.',cards([
+        ['KPIs con alerta',num(c.total),'Aplica + No aplica + pendientes','blue','📥'],
+        ['KPIs Aplica',num(c.applies),pct(c.application)+' de los KPIs con alerta','green','✅'],
+        ['KPIs No aplica',num(c.rejects),pct(c.rejection)+' de los KPIs con alerta','magenta','✕'],
+        ['KPIs pendientes',num(c.pending),'Sin decisión registrada','orange','⏳']
+      ]));
+      html+=panel('Descargar alertas de esta lectura','Una fila por alerta. El CSV aplica Estudio, País, Módulo, Mes, Desde, Hasta, Región, Canal y Subcanal.', '<button type="button" class="btn btn-success" data-indicator-download '+(!c.total?'disabled':'')+'>📥 Descargar alertas de esta lectura (CSV)</button><p class="story-note">Los formatos de consolidado y los informes se conservan debajo. Consulta cada jornada en Detalle de operación diaria.</p>');
     }
     const moduleLabel=module==='smart'?'SMART':module==='all'?'BLOQUEANTES + SMART':'BLOQUEANTES';
     html=html.replace(/· BLOQUEANTES/g,'· '+moduleLabel).replace('No incluye Smart.','Módulo: '+moduleLabel+'. En Consolidado, cada caso y alerta se cuenta por módulo.').replace('resumen de Bloqueantes','resumen de esta lectura').replace(jump('decisions','Preparar decisiones'),'');

@@ -7,7 +7,7 @@ const source=(id,date,status)=>({id:String(id),_batchId:1,_module:'blocking',est
 const rows=[source(1,'2026-08-01','aplica'),source(2,'2026-09-01','no_aplica'),source(3,'2026-09-01',null)];
 function render(section='summary',executive=false,module='blocking',month='all'){
  const hidden=new Set();
- const legacy={classList:{toggle:(k,on)=>on?hidden.add(k):hidden.delete(k),remove:k=>hidden.delete(k)}};
+ const legacy={hasAttribute:k=>k==='data-indicator-detail-keep',classList:{toggle:(k,on)=>on?hidden.add(k):hidden.delete(k),remove:k=>hidden.delete(k)}};
  const target={innerHTML:'',querySelectorAll:()=>[],querySelector:()=>null};
  target.parentElement={children:[target,legacy]};
  global.document={getElementById:()=>target};
@@ -23,7 +23,7 @@ test('manager story distinguishes alerts from audits and empty data from complet
  assert.match(U.story(M.compute([],{asOf:'2026-10-10'})).headline,/Sin alertas/);
  assert.doesNotMatch(U.decisionBar({total:0}),/NaN|Infinity/);
 });
-test('all unified chapters render and legacy tables appear only under detail',()=>{
+test('all unified chapters render and retained downloads appear only under detail',()=>{
  assert.equal(U.journey.length,7);
  for(const [section] of U.journey){const {html,hidden}=render(section);assert.match(html,/aria-current="page"/);assert.equal(hidden.has('indicator-legacy-hidden'),section!=='detail');}
  assert.match(render('summary').html,/Auditorías levantadas y recibidas/);
