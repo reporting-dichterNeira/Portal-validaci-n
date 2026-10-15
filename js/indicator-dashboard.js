@@ -240,10 +240,11 @@
       {label:r=>r.month,meta:r=>r.samples,format:decimal,unit:'días calendario',kind:'timing'})+
       '<p class="story-note">Las barras miden días calendario: 0 indica que ambos pasos ocurrieron el mismo día. La tabla conserva las horas exactas cuando están disponibles y el detalle de fechas faltantes o inválidas.</p>';
   }
-  function universe(app,state) {
+  function universe(app,state,{auditors=false}={}) {
     const studyName=s=>M.normalizeAudits([{id:'1',study:s,kpis:[]}])[0]?.study;
     const studies=(app.selectedStudies||['ALL']).includes('ALL')?[]:(app.selectedStudies||[]).map(studyName);
     const filters={studies,month:state.month||'',from:app.visualizationDateFrom||'',to:app.visualizationDateTo||'',country:app.selectedMetricsCountry||'all',geography:app.selectedReportCountry||'all',region:state.region,channel:state.channel,subchannel:state.subchannel};
+    if(auditors)filters.include_auditors=true;
     const canQuery=!app.backend?.configured || ['admin','supervisor','visualizer','commercial'].includes(app.currentRole);
     const key=JSON.stringify([app.currentProfile?.id || app.currentProfile?.username || null,app.currentRole,filters]);
     app.databricksTotalsCache ||= new Map();
@@ -266,6 +267,42 @@
   function receiptShare(received, lifted) {
     return typeof received==='number' && Number.isFinite(received) && received>=0
       && typeof lifted==='number' && Number.isFinite(lifted) && lifted>0 ? received/lifted : null;
+  }
+  function auditorComparisonData(result,u) {
+    const key=value=>String(value||'').trim().replace(/\s+/g,' ').toLowerCase();
+    const identified=value=>value && !/^(sin (auditor|identificar)|n\/?a|null)$|^auditor\s*\([^)]*\)$|^\d+$/i.test(value);
+    const ready=!u.entry.loading && !u.entry.error && u.verified && u.entry.data?.auditor_totals_ready===true;
+    const groups=new Map();
+    const groupFor=auditor=>{
+      if(!groups.has(auditor))groups.set(auditor,{auditor,audits:null,ids:new Set(),total:0,applies:0});
+      return groups.get(auditor);
+    };
+    if(ready)for(const base of u.entry.data.auditors || []) {
+      const auditor=key(base.auditor),count=Number(base.databricks_total);
+      if(!identified(auditor) || !Number.isFinite(count) || count<0)continue;
+      groupFor(auditor).audits=count;
+    }
+    let unidentified=0;
+    for(const alert of result.alerts) {
+      const auditor=key(alert.auditor);
+      if(!identified(auditor)){unidentified++;continue;}
+      const group=groupFor(auditor);
+      group.ids.add(JSON.stringify([alert.study,String(alert.id).replace(/^0+/,'') || '0']));
+      group.total++;
+      if(alert.decision==='aplica')group.applies++;
+    }
+    const rows=[...groups.values()].map(({ids,...group})=>({...group,alertedAudits:ids.size,alertedShare:receiptShare(ids.size,group.audits)}))
+      .sort((a,b)=>b.total-a.total || b.applies-a.applies || a.auditor.localeCompare(b.auditor,'es'));
+    return {rows,unidentified,ready};
+  }
+  function auditorComparison(result,u) {
+    const data=auditorComparisonData(result,u);
+    const baseStatus=u.entry.loading?'Consultando…':u.entry.error?'Error al consultar':'Sin base';
+    return panel('Comparativo por auditor','De mayor a menor por KPIs con alerta; en empate, por KPIs que aplican. Incluye todo el período y los filtros seleccionados.',
+      chartDetails(table(['Auditor','Auditorías','Auditorías con alerta','KPIs con alerta','KPIs aplican','% de auditorías alertadas'],data.rows.map(r=>row([
+        esc(r.auditor),r.audits===null?baseStatus:num(r.audits),num(r.alertedAudits),num(r.total),num(r.applies),pct(r.alertedShare)
+      ]))),{collapsible:false})+'<p class="story-note">Auditor de campo del Export de Databricks. Auditorías = total levantado por el auditor, incluidas las que no generaron alertas. Auditorías con alerta cuenta cada ID una vez por estudio, incluso si está en ambos módulos. KPIs con alerta cuenta cada alerta generada; KPIs aplican son alertas válidas. Porcentaje = auditorías con alerta / auditorías × 100. El total levantado usa el mes de Ola y la fecha original; las alertas usan la jornada de carga. '+num(data.unidentified)+' alertas sin auditor identificado se excluyen de la comparación.</p>'+
+      (u.entry.error?'<p role="alert">No fue posible consultar el total de auditorías por auditor: '+esc(u.entry.error)+'</p>':''));
   }
   function summaryBenchmarkData(result,u) {
     const studies=new Map();
@@ -576,7 +613,7 @@
       html+=panel('Qué confirmó la revisión','Porcentajes sobre todas las alertas recibidas en este alcance; los pendientes no se interpretan como descartados.',decisionDonut(c));
       html+=panel('Motivos de alertas no válidas','Ordenados por cantidad de alertas descartadas. Participación sobre las descartadas, no sobre el total recibido. La gráfica muestra hasta 15 motivos; la tabla y su CSV incluyen todos los motivos del filtro.',groupedChart(result.reasons.slice(0,15),[{key:'count',label:'Alertas no válidas',tone:'magenta'}],{meta:r=>pct(r.share)+' de las descartadas',unit:'alertas',kind:'ranking'})+chartDetails(table(['Motivo','Alertas descartadas','% de descartadas'],result.reasons.map(r=>row([esc(r.name),num(r.count),pct(r.share)])))));
       html+=panel('Alertas que más se generan','De mayor a menor por alertas generadas. La gráfica muestra las primeras 20 variables; la tabla y su CSV incluyen todas las variables del filtro.',outcomeChart(result.rejectedTypes.slice(0,20),{meta:r=>'Rechazo: '+pct(r.rejection)+' · Cobertura: '+pct(r.coverage)})+chartDetails(table(['Variable','Alertas generadas','Alertas válidas','Alertas no válidas','Pendientes','Rechazo','Cobertura'],result.rejectedTypes.map(r=>row([esc(r.name),num(r.total),num(r.applies),num(r.rejects),num(r.pending),pct(r.rejection),pct(r.coverage)])))));
-      html+=panel('Auditores con alertas recurrentes','Ordenados por alertas generadas en las últimas ocho semanas del filtro, desde '+result.startWeek+'. La gráfica muestra los primeros 20; la tabla y su CSV incluyen todos. Auditor de campo: nombre_usuario del Export de Databricks, cruzado por ID; no es el validador. '+num(result.alertsWithoutAuditor)+' alertas sin auditor identificado se excluyen. Recurrencia no es productividad ni error confirmado.',groupedChart(result.recurrence.slice(0,20),[{key:'total',label:'Alertas generadas',tone:'purple'}],{label:r=>r.auditor,meta:r=>studyLabel(r.study)+' · '+r.weeks+' / 8 semanas con alertas',unit:'alertas',kind:'recurrence'})+chartDetails(table(['Auditor','Estudio','Semanas con alertas','Alertas generadas'],result.recurrence.map(r=>row([esc(r.auditor),esc(studyLabel(r.study)),num(r.weeks)+' / 8',num(r.total)])))));
+      html+=auditorComparison(result,universe(app,state,{auditors:true}));
     }
     if(section==='timing') {
       html+=panel('Tiempo entre cada paso','Bases separadas: una muestra por auditoría para auditoría → generación de alerta; una por alerta decidida para generación de alerta → decisión aplicada. Horas solo con timestamps completos.',cards([['Tiempo auditoría → generación de alerta',time(result.timing.intake),'','blue','📤'],['Generación de alerta → decisión aplicada',time(result.timing.validation),'','purple','⏱️']],'timing'));
@@ -625,6 +662,6 @@
       return [a.module==='smart'?'Smart':'Bloqueantes',a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,decisionLabel(a.decision),a.reason];
     }),'Indicadores-'+(module || 'blocking')+'-'+asOf+'.csv'));
   }
-  root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,receiptShare,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};
+  root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,receiptShare,auditorComparisonData,auditorComparison,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};
   if(typeof module!=='undefined')module.exports=root.PortalIndicators;
 })(typeof globalThis!=='undefined'?globalThis:this);

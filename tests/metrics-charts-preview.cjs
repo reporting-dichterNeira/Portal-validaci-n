@@ -28,7 +28,15 @@ const app={currentView:'visualizations',currentProfile:{id:'preview'},reportsSub
   else if(key==='to')this.visualizationDateTo=value;
   else if(key==='dates-clear'){this.visualizationDateFrom='';this.visualizationDateTo='';}
   this.renderReportsView();},
- backend:{loadDatabricksAuditTotals:async()=>({studies:['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'].map(study_name=>({study_name,databricks_total:1200})),snapshots:[{month:'2026-10-01',source:'Databricks · Prueba local',refreshed_at:'2026-10-13'}]})},
+ backend:{loadDatabricksAuditTotals:async(filters)=>{
+  const inputs=PortalIndicators.adapt(audits,[],a=>a.pais,'all').filter(a=>(!filters.studies.length||filters.studies.includes(a.study))&&(!filters.month||a.month===filters.month));
+  const filtered=PortalIndicatorMetrics.compute(inputs,{...filters,asOf:'2026-10-15'}).alerts;
+  const auditorIds=new Map();
+  for(const a of filtered){if(!auditorIds.has(a.auditor))auditorIds.set(a.auditor,new Set());auditorIds.get(a.auditor).add(a.study+':'+a.id);}
+  return {studies:['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'].map(study_name=>({study_name,databricks_total:1200})),
+   auditor_totals_ready:!!filters.include_auditors,auditors:filters.include_auditors?[...auditorIds].map(([auditor,ids])=>({auditor,databricks_total:ids.size*3})).concat([{auditor:'Auditor sin alertas',databricks_total:25}]):[],
+   snapshots:[{month:'2026-10-01',source:'Databricks · Prueba local',refreshed_at:'2026-10-13'}]};
+ }},
  renderReportsView(){const module=this.getVisualizationModuleFilter(),scoped=audits.filter(a=>(this.selectedStudies.includes('ALL')||this.selectedStudies.includes(a.estudio))&&(!this.selectedMetricsCountry||this.selectedMetricsCountry==='all'||a.pais===this.selectedMetricsCountry));PortalIndicators.render(this,scoped.filter(a=>module==='all'||a._module===module),scoped,null,scoped);}};
 
 document.getElementById('preview-module').onchange=()=>app.renderReportsView();
