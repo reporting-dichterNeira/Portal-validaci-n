@@ -8176,11 +8176,11 @@ class ValidaFlowApp {
             </div>
             <div class="day-stat-box">
               <span class="day-stat-num text-success">${item.aplica}</span>
-              <span class="day-stat-label">KPIs Aplica</span>
+              <span class="day-stat-label">Alertas válidas</span>
             </div>
             <div class="day-stat-box">
               <span class="day-stat-num text-magenta">${item.noAplica}</span>
-              <span class="day-stat-label">KPIs No Aplica</span>
+              <span class="day-stat-label">Alertas no válidas</span>
             </div>
             <div class="day-stat-box">
               <span class="day-stat-num text-purple">${avgDuration}s</span>
@@ -8260,10 +8260,10 @@ class ValidaFlowApp {
     const data = this.getHistoricalAlertsExport({includeRows:false}), c = data.counts;
     const dates = data.inputs.map(audit => audit.periodDate).filter(Boolean).sort();
     const format = number => new Intl.NumberFormat('es-CO').format(number);
-    if (context) context.textContent = `${format(data.audits)} auditorías con alertas · ${format(c.total)} KPIs con alerta · ${dates.length ? `${dates[0]} a ${dates.at(-1)}` : 'Sin jornadas fechadas'} · ${modules.map(module => module === 'smart' ? 'Smart' : 'Bloqueantes').join(' + ')}`;
+    if (context) context.textContent = `${format(data.audits)} auditorías con alertas · ${format(c.total)} alertas generadas · ${dates.length ? `${dates[0]} a ${dates.at(-1)}` : 'Sin jornadas fechadas'} · ${modules.map(module => module === 'smart' ? 'Smart' : 'Bloqueantes').join(' + ')}`;
     if (button) button.disabled = !c.total || !!this.historicalAlertsExporting;
     target.innerHTML = '<div class="indicator-cards">'+[
-      ['KPIs con alerta', c.total, 'blue'], ['Aplica', c.applies, 'green'], ['No aplica', c.rejects, 'magenta'], ['Pendientes', c.pending, 'orange']
+      ['Alertas generadas', c.total, 'blue'], ['Alertas válidas', c.applies, 'green'], ['Alertas no válidas', c.rejects, 'magenta'], ['Pendientes', c.pending, 'orange']
     ].map(([label,value,tone])=>`<div class="stat-card indicator-card indicator-tone-${tone}"><span class="stat-label">${label}</span><strong class="stat-value">${format(value)}</strong></div>`).join('')+'</div>'+U.decisionDonut(c);
   }
 

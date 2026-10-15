@@ -25,7 +25,7 @@ test('CSV histórico mantiene módulos, decisiones, fechas faltantes y observaci
   const before=JSON.stringify(audits),data=U.alertExport(audits);
   assert.equal(data.rows.length,3);assert.equal(data.audits,3);
   assert.deepEqual(data.rows.map(row=>row[0]),['Bloqueantes','Smart','Smart']);
-  assert.deepEqual(data.rows.map(row=>row[15]),['aplica','no_aplica','pendiente']);
+  assert.deepEqual(data.rows.map(row=>row[15]),['Alertas válidas','Alertas no válidas','Pendiente']);
   assert.equal(data.rows[2][3],null);assert.equal(data.counts.total,3);
   assert.equal(data.counts.applies+data.counts.rejects+data.counts.pending,3);
   assert.match(U.csv(data.headers,data.rows),/"'=dato; ""comillas"""/);
@@ -54,7 +54,7 @@ test('resumen muestra semáforos con textos y PDF está disponible desde todas l
   } finally {delete global.document;}
 });
 
-test('desglose ordena por frecuencia recibida y reconcilia Aplica, No aplica y pendientes de ambos módulos',()=>{
+test('desglose ordena por frecuencia recibida y reconcilia Alertas válidas, Alertas no válidas y pendientes de ambos módulos',()=>{
   const rows=[
     {id:'1',_module:'blocking',study:'Moderno',periodDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true,decision:'aplica'},{name:'Disponibilidad',needsReview:true,decision:'no_aplica'}]},
     {id:'1',_module:'smart',study:'Moderno',periodDate:'2026-10-01',kpis:[{name:'Precio',needsReview:true,decision:'no_aplica'},{name:'Exhibición',needsReview:true}]},
@@ -87,7 +87,7 @@ test('PDF pagina todos los tipos de alerta y mantiene ranking y columnas incluso
   assert.ok(pages.length>1);
   const all=pages.flat().join('\n');
   for(let i=1;i<=35;i++)assert.ok(all.includes('Tipo '+String(i).padStart(2,'0')),String(i));
-  for(const page of pages)for(const label of ['Recibidas','Aplica','No aplica','Pendientes'])assert.ok(page.includes(label),label);
+  for(const page of pages)for(const label of ['Recibidas','Alertas válidas','Alertas no válidas','Pendientes'])assert.ok(page.join(' ').replace(/\s/g,'').includes(label.replace(/\s/g,'')),label);
   assert.ok(all.indexOf('Tipo 01')<all.indexOf('Tipo 35'));
 });
 test('PDF sin alertas muestra ausencia de datos en el desglose',()=>{

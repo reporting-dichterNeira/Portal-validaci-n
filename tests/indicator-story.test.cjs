@@ -38,7 +38,7 @@ test('unified dashboard applies month to cards and comparisons while evolution r
  assert.match(render('comparison',false,'blocking','2026-09').html,/<td>2<\/td><td>0<\/td><td>1<\/td><td>1<\/td>/);
  const evolution=render('evolution',false,'blocking','2026-09').html;
  assert.match(evolution,/2026-08/);assert.match(evolution,/2026-09/);
- assert.match(evolution,/KPIs con alerta/);assert.match(evolution,/No aplica/);
+ assert.match(evolution,/Alertas generadas/);assert.match(evolution,/Alertas no válidas/);
 });
 
 test('Smart has integrated indicators and module-specific scope',()=>{
@@ -120,7 +120,7 @@ test('evolution combines studies, distinguishes no decisions, and refuses partia
  for(const [section] of U.committeeJourney)assert.doesNotMatch(U.committeeSection(section,empty,e,'2026-10',true),/NaN|Infinity/);
 });
 
-test('monthly chart counts alert KPIs rather than audits and separates Aplica, No aplica and pending',()=>{
+test('monthly chart counts alert KPIs rather than audits and separates Alertas válidas, Alertas no válidas and pending',()=>{
  const audits=M.normalizeAudits([
   {id:'1',study:'Moderno',periodDate:'2026-08-01',kpis:[{name:'A',needsReview:true,decision:'aplica'},{name:'B',needsReview:true,decision:'no_aplica'},{name:'C',needsReview:true}]},
   {id:'2',study:'Chile',periodDate:'2026-08-02',kpis:[{name:'A',needsReview:true,decision:'aplica'}]},
@@ -130,7 +130,7 @@ test('monthly chart counts alert KPIs rather than audits and separates Aplica, N
  assert.deepEqual(trend.map(r=>[r.total,r.applies,r.rejects,r.pending]),[[4,2,1,1],[1,0,1,0]]);
  for(const r of trend)assert.equal(r.total,r.applies+r.rejects+r.pending);
  const html=U.monthlyChart(trend);
- assert.match(html,/data-metric-chart="monthly"/);assert.match(html,/KPIs con alerta/);assert.match(html,/No aplica/);
+ assert.match(html,/data-metric-chart="monthly"/);assert.match(html,/Alertas generadas/);assert.match(html,/Alertas no válidas/);
  assert.match(html,/width:100%/);assert.match(html,/width:50%/);assert.match(html,/1 pendientes/);
  assert.doesNotMatch(html,/revisadas|NaN|Infinity/);
 });
@@ -140,7 +140,7 @@ test('charts preserve missing data, zero and escaped labels',()=>{
   [{key:'total',label:'<b>Tiempo</b>',tone:'blue'}]);
  assert.match(html,/Sin muestras/);assert.match(html,/&lt;script&gt;/);assert.match(html,/&lt;b&gt;/);
  assert.doesNotMatch(html,/<script>|<b>Tiempo|NaN|Infinity/);
- assert.match(U.decisionDonut({total:0,applies:0,rejects:0,pending:0}),/Sin KPIs/);
+ assert.match(U.decisionDonut({total:0,applies:0,rejects:0,pending:0}),/Sin alertas generadas/);
 });
 
 test('metric sections show graphs and leave comparison tables collapsed',()=>{
@@ -149,7 +149,7 @@ test('metric sections show graphs and leave comparison tables collapsed',()=>{
   assert.match(html,/data-metric-chart=|Sin registros para graficar/);
   assert.doesNotMatch(html,/<details class="metric-chart-details" open/);
  }
- assert.match(render('evolution',true).html,/Evolución mensual de KPIs con alerta/);
+ assert.match(render('evolution',true).html,/Evolución mensual de alertas generadas/);
  assert.doesNotMatch(render('evolution',true).html,/Volumen y avance de la revisión|committee-trend-bars/);
 });
 

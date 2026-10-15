@@ -71,7 +71,7 @@
     };
     const c=snapshot.result.counts, r=snapshot.result;
     frame('Indicadores de validación');
-    const metrics=[['Auditorías con alertas',r.audits],['KPIs con alerta',c.total],['Aplica',c.applies],['No aplica',c.rejects],['Pendientes',c.pending]];
+    const metrics=[['Auditorías con alertas',r.audits],['Alertas generadas',c.total],['Alertas válidas',c.applies],['Alertas no válidas',c.rejects],['Pendientes',c.pending]];
     const cardWidth=(usable-8*4)/5;
     metrics.forEach(([label,value],i)=>{
       const x=margin+i*(cardWidth+8);pdf.setFillColor(245,247,250);pdf.roundedRect(x,59,cardWidth,27,3,3,'F');
@@ -86,17 +86,17 @@
       write(signal.detail,x+5,131,8,'gray',false,w-10);write(signal.rule,x+5,141,8,'gray',false,w-10);
     });
     write('Composición de alertas recibidas',margin,161,12,'navy',true);
-    const segments=[['Aplica',c.applies,'green'],['No aplica',c.rejects,'pink'],['Pendientes',c.pending,'amber']];
+    const segments=[['Alertas válidas',c.applies,'green'],['Alertas no válidas',c.rejects,'pink'],['Pendientes',c.pending,'amber']];
     let offset=margin;
     segments.forEach(([label,value,tone],i)=>{
       const w=c.total?usable*value/c.total:0;
       if(w){pdf.setFillColor(...palette[tone]);pdf.rect(offset,166,w,7,'F');offset+=w;}
       write(label+': '+number(value)+' ('+percent(M.ratio(value,c.total))+')',margin+i*usable/3,181,10,tone,true);
     });
-    write('Revisadas = Aplica + No aplica. Recibidas = revisadas + pendientes. Criterios de semáforo orientativos.',margin,190,8,'gray');
+    write('Revisadas = Alertas válidas + Alertas no válidas. Recibidas = revisadas + pendientes. Criterios de semáforo orientativos.',margin,190,8,'gray');
 
     page('Evolución mensual');
-    write('KPIs con alerta, Aplica y No aplica',margin,60,14,'navy',true);
+    write('Alertas generadas, válidas y no válidas',margin,60,14,'navy',true);
     write('Hasta seis meses dentro del rango, hasta el mes seleccionado. Se conserva el contexto de meses anteriores.',margin,68,9,'gray');
     const max=Math.max(1,...snapshot.trend.map(row=>row.total));
     if(!snapshot.trend.length)write('Sin registros para el alcance seleccionado.',margin,85,11,'gray');
@@ -104,15 +104,15 @@
       const y=81+i*17;
       write(row.month+(row.partial?' (parcial)':''),margin,y+4,10,'navy',true);
       write(number(row.pending)+' pendientes',margin,y+9,8,'gray');
-      [['Recibidas',row.total,'blue'],['Aplica',row.applies,'green'],['No aplica',row.rejects,'pink']].forEach(([label,value,tone],j)=>{
-        const yy=y+j*4.5;write(label,margin+47,yy+3,8,'gray');bar(value,max,margin+72,yy,usable-91,tone,3);write(number(value),width-margin-14,yy+3,8,tone,true);
+      [['Recibidas',row.total,'blue'],['Alertas válidas',row.applies,'green'],['Alertas no válidas',row.rejects,'pink']].forEach(([label,value,tone],j)=>{
+        const yy=y+j*4.5;write(label,margin+47,yy+3,8,'gray',false,37);bar(value,max,margin+86,yy,usable-105,tone,3);write(number(value),width-margin-14,yy+3,8,tone,true);
       });
     });
     write('No se interpretan meses sin datos como cero. Son cohortes de jornada con decisiones actuales, no cierres históricos.',margin,190,8,'gray');
 
     page('Comparativas por estudio y territorio');
     write('Composición de las alertas por territorio',margin,60,14,'navy',true);
-    write('Hasta 12 grupos con mayor volumen. País para KO; región para KO Tradicional CHILE y Lindley. Verde: Aplica; rosa: No aplica; amarillo: pendientes.',margin,68,9,'gray');
+    write('Hasta 12 grupos con mayor volumen. País para KO; región para KO Tradicional CHILE y Lindley. Verde: Alertas válidas; rosa: Alertas no válidas; amarillo: pendientes.',margin,68,9,'gray',false,usable);
     const groups=[...r.benchmark].sort((a,b)=>b.total-a.total||a.study.localeCompare(b.study)).slice(0,12);
     const groupMax=Math.max(1,...groups.map(row=>row.total));
     if(!groups.length)write('Sin registros para el alcance seleccionado.',margin,86,11,'gray');
@@ -134,10 +134,10 @@
       page('Desglose por tipo de alerta');
       write('¿Qué alertas se reciben con mayor frecuencia?',margin,60,14,'navy',true);
       write('Ordenadas de mayor a menor cantidad recibida. Se incluyen todos los tipos del alcance seleccionado.',margin,68,9,'gray');
-      write('Recibidas = Aplica + No aplica + pendientes. Escala común de barras: 0 a '+number(alertMax)+' KPIs con alerta.',margin,73,8,'gray');
+      write('Recibidas = Alertas válidas + Alertas no válidas + pendientes. Escala común de barras: 0 a '+number(alertMax)+' Alertas generadas.',margin,73,8,'gray');
       write('Tipo de alerta / Sub-KPI',margin,78,9,'navy',true);
-      write('Aplica | No aplica | Pendientes',margin+86,78,8,'gray');
-      [['Recibidas',174,'blue'],['Aplica',199,'green'],['No aplica',224,'pink'],['Pendientes',249,'amber']].forEach(([label,x,tone])=>write(label,margin+x,78,9,tone,true));
+      write('Alertas válidas | Alertas no válidas | Pendientes',margin+86,78,8,'gray');
+      [['Recibidas',174,'blue'],['Alertas válidas',199,'green'],['Alertas no válidas',224,'pink'],['Pendientes',249,'amber']].forEach(([label,x,tone])=>write(label,margin+x,78,8,tone,true,24));
       alertY=88;
     };
     alertPage();
@@ -159,7 +159,7 @@
     });
 
     page('Hallazgos y tiempos');
-    write('Motivos más frecuentes de No aplica',margin,61,13,'navy',true);
+    write('Motivos más frecuentes de Alertas no válidas',margin,61,13,'navy',true);
     if(!r.reasons.length)write('Sin alertas descartadas en este alcance.',margin,73,10,'gray');
     const reasonMax=Math.max(1,...r.reasons.map(row=>row.count));
     r.reasons.slice(0,5).forEach((row,i)=>{
