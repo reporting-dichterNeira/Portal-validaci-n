@@ -240,7 +240,7 @@
       if (!auditorMap.has(key)) auditorMap.set(key, { auditor: a.auditor, study: a.study, weeks: new Set(), total: 0 });
       const item = auditorMap.get(key); item.weeks.add(weekKey(a.periodDate)); item.total++;
     }
-    const recurrence = [...auditorMap.values()].map(item => ({ ...item, weeks: item.weeks.size })).sort((a,b) => b.weeks - a.weeks || b.total - a.total || a.auditor.localeCompare(b.auditor));
+    const recurrence = [...auditorMap.values()].map(item => ({ ...item, weeks: item.weeks.size })).sort((a,b) => b.total - a.total || a.auditor.localeCompare(b.auditor) || a.study.localeCompare(b.study));
     const reasonCounts = new Map();
     alerts.filter(a => a.decision === 'no_aplica').forEach(a => { const name = a.reason || 'Sin tipificación'; reasonCounts.set(name, (reasonCounts.get(name) || 0) + 1); });
     const reasons = [...reasonCounts].map(([name, count]) => ({ name, count, share: ratio(count, counts.rejects) })).sort((a,b) => b.count - a.count);
@@ -252,10 +252,10 @@
       row.change = prev && !row.partial && !prev.partial && monthIsComplete(prev.month) ? ratio(row.total - prev.total, prev.total) : null;
     }
     const monthlyAlerts = alerts.filter(a => !month || a.month === month);
-    const benchmark = groups(monthlyAlerts, ['study','geography']).sort((a,b) => a.study.localeCompare(b.study) || a.geography.localeCompare(b.geography));
-    const rejectedTypes = groups(monthlyAlerts, ['name']).sort((a,b) => (b.rejection || 0) - (a.rejection || 0) || b.total - a.total);
+    const benchmark = groups(monthlyAlerts, ['study','geography']).sort((a,b) => b.total - a.total || a.study.localeCompare(b.study) || a.geography.localeCompare(b.geography));
+    const rejectedTypes = groups(monthlyAlerts, ['name']).sort((a,b) => b.total - a.total || a.name.localeCompare(b.name));
     const dimensionKeys=['study','country','region','channel','subchannel'];
-    const workload=groups(alerts,dimensionKeys).sort((a,b)=>b.pending-a.pending || b.total-a.total);
+    const workload=groups(alerts,dimensionKeys).sort((a,b)=>b.total-a.total || dimensionKeys.map(key=>a[key]).join('|').localeCompare(dimensionKeys.map(key=>b[key]).join('|')));
     const performance=groups(monthlyAlerts,dimensionKeys).sort((a,b)=>b.total-a.total);
     const auditCountsByStudy={};for(const a of selected)auditCountsByStudy[a.study]=(auditCountsByStudy[a.study]||0)+1;
     return { counts, audits: selected.length, auditCountsByStudy, alerts, backlog, recurrence, startWeek, alertsWithoutAuditor, reasons, monthly, benchmark, rejectedTypes,

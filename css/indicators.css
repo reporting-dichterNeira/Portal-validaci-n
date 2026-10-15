@@ -118,7 +118,9 @@
 .metric-chart--monthly .metric-chart-label strong { font-size: 17px; }
 .metric-chart--monthly .metric-chart-track { height: 16px; }
 .metric-chart--recurrence .metric-chart-series-row { grid-template-columns: 145px minmax(0,1fr) 45px; }
-.metric-chart-details { margin-top: 18px; }
+.metric-chart-data { margin-top: 18px; }
+.metric-table-actions { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.metric-chart-details { margin-top: 0; }
 .metric-chart-details > summary { color: var(--dn-blue); font-size: 13px; padding: 8px 0; }
 .metric-chart-details[open] .table-responsive { margin-top: 12px; }
 [data-theme="dark"] .metric-chart-details > summary { color: #8bc7ff; }

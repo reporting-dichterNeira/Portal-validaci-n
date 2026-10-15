@@ -8265,6 +8265,7 @@ class ValidaFlowApp {
     target.innerHTML = '<div class="indicator-cards">'+[
       ['Alertas generadas', c.total, 'blue'], ['Alertas válidas', c.applies, 'green'], ['Alertas no válidas', c.rejects, 'magenta'], ['Pendientes', c.pending, 'orange']
     ].map(([label,value,tone])=>`<div class="stat-card indicator-card indicator-tone-${tone}"><span class="stat-label">${label}</span><strong class="stat-value">${format(value)}</strong></div>`).join('')+'</div>'+U.decisionDonut(c);
+    U.bindChartTableExports(target,{suffix:'historico-completo'});
   }
 
   async exportHistoricalAlertsCSV() {

@@ -152,12 +152,40 @@
   function chartLegend(series) {
     return '<div class="metric-chart-legend">'+series.map(s=>'<span class="indicator-tone-'+s.tone+'"><i aria-hidden="true"></i>'+esc(s.label)+'</span>').join('')+'</div>';
   }
-  function chartDetails(content) {
-    return '<details class="metric-chart-details"><summary>Ver datos en tabla</summary>'+content+'</details>';
+  function chartDetails(content, {collapsible=true}={}) {
+    return '<div class="metric-chart-data"><div class="metric-table-actions"><button type="button" class="btn btn-outline btn-sm" data-chart-table-export>📥 Exportar tabla (CSV)</button></div>'+
+      (collapsible?'<details class="metric-chart-details"><summary>Ver datos en tabla</summary>'+content+'</details>':content)+'</div>';
+  }
+  function chartTableData(wrapper) {
+    const table=wrapper.querySelector('table');
+    if(!table)return {headers:[],rows:[]};
+    const cellText=cell=>{
+      if(cell.dataset?.exportValue!==undefined)return cell.dataset.exportValue;
+      const text=node=>node.nodeName==='BR'?' ':node.nodeType===3?node.textContent:[...node.childNodes].map(text).join('');
+      return text(cell).replace(/\s+/g,' ').trim();
+    };
+    const headers=[...table.querySelectorAll('thead th')].map(cellText);
+    // Includes collapsed study territories; an empty-state colspan is not data.
+    const rows=[...table.querySelectorAll('tbody tr')].filter(tr=>tr.cells.length===headers.length && !tr.querySelector('[colspan]')).map(tr=>[...tr.cells].map(cellText));
+    return {headers,rows};
+  }
+  function bindChartTableExports(target,{suffix=''}={}) {
+    target.querySelectorAll('[data-chart-table-export]').forEach(button=>{
+      const wrapper=button.closest('.metric-chart-data');
+      const title=wrapper.closest('section')?.querySelector('h3')?.textContent?.trim() || 'Datos de la gráfica';
+      button.disabled=!chartTableData(wrapper).rows.length;
+      button.setAttribute('aria-label','Exportar tabla (CSV): '+title);
+      button.title='Descarga todas las filas de esta tabla según los filtros activos.';
+      button.addEventListener('click',()=>{
+        const {headers,rows}=chartTableData(wrapper);
+        const slug=title.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-|-$/g,'');
+        download(headers,rows,'Tabla-'+slug+(suffix?'-'+suffix:'')+'.csv');
+      });
+    });
   }
   // Values and series labels remain readable without color, hover or scripts.
   // All rows in a chart share the same zero-based scale; null is never zero.
-  function groupedChart(items,series,{label=r=>r.name,meta=()=>'',format=num,unit='KPIs',kind='grouped'}={}) {
+  function groupedChart(items,series,{label=r=>r.name,meta=()=>'',format=num,unit='alertas',kind='grouped'}={}) {
     if(!items.length)return '<p class="indicator-empty">Sin registros para graficar en este alcance.</p>';
     const values=items.flatMap(r=>series.map(s=>r[s.key])).filter(v=>typeof v==='number'&&Number.isFinite(v)&&v>=0);
     const max=Math.max(1,...values);
@@ -180,7 +208,9 @@
     if(!c.total)return '<p class="indicator-empty">Sin alertas generadas para calcular la distribución.</p>';
     const applies=c.applies/c.total*100,decided=(c.applies+c.rejects)/c.total*100;
     const series=[{key:'applies',label:'Alertas válidas',tone:'green'},{key:'rejects',label:'Alertas no válidas',tone:'magenta'},{key:'pending',label:'Pendientes',tone:'orange'}];
-    return '<div class="metric-donut-layout" data-metric-chart="donut"><div class="metric-donut" style="--donut-applies:'+applies+'%;--donut-decided:'+decided+'%" aria-hidden="true"><div><strong>'+num(c.total)+'</strong><span>Alertas generadas</span></div></div><div class="metric-donut-key">'+series.map(s=>'<div class="indicator-tone-'+s.tone+'"><i aria-hidden="true"></i><span>'+s.label+'</span><strong>'+num(c[s.key])+'</strong><small>'+pct(c[s.key]/c.total)+'</small></div>').join('')+'</div></div>';
+    series.sort((a,b)=>c[b.key]-c[a.key]);
+    return '<div class="metric-donut-layout" data-metric-chart="donut"><div class="metric-donut" style="--donut-applies:'+applies+'%;--donut-decided:'+decided+'%" aria-hidden="true"><div><strong>'+num(c.total)+'</strong><span>Alertas generadas</span></div></div><div class="metric-donut-key">'+series.map(s=>'<div class="indicator-tone-'+s.tone+'"><i aria-hidden="true"></i><span>'+s.label+'</span><strong>'+num(c[s.key])+'</strong><small>'+pct(c[s.key]/c.total)+'</small></div>').join('')+'</div></div>'+
+      chartDetails(table(['Resultado','Alertas','% de alertas generadas'],series.map(s=>row([s.label,num(c[s.key]),pct(c[s.key]/c.total)]))));
   }
   function monthlyTrend(range,month='',limit=null) {
     const scopes=new Map();
@@ -261,10 +291,10 @@
     return [...studies.values()].map(study=>{
       const lifted=base(u.rows,r=>r.study_name===study.study);
       const finish=(group,total)=>({...group,audits:group.ids.size,lifted:total,alertedShare:receiptShare(group.ids.size,total)});
-      const territories=[...study.territories.values()].sort((a,b)=>a.geography.localeCompare(b.geography,'es')).map(group=>
+      const territories=[...study.territories.values()].sort((a,b)=>b.total-a.total || a.geography.localeCompare(b.geography,'es')).map(group=>
         finish(group,base(u.entry.data?.territories||[],r=>r.study_name===study.study && r.geography===group.geography,true)));
       return {...finish(study,lifted),territories};
-    });
+    }).sort((a,b)=>b.total-a.total || a.study.localeCompare(b.study,'es'));
   }
   function summaryBenchmark(result,u,app) {
     const modules=app.currentScope?.module?[app.currentScope.module]:['blocking','smart'];
@@ -281,10 +311,10 @@
       const expanded=app.expandedSummaryStudies.has(group.study),isRegion=['Chile','Lindley'].includes(group.study),unit=isRegion?(group.territories.length===1?'región':'regiones'):(group.territories.length===1?'país':'países');
       const ids=group.territories.map((_,j)=>'summary-territory-'+i+'-'+j).join(' ');
       const button='<button type="button" class="benchmark-expand-toggle" data-summary-study="'+esc(group.study)+'" aria-expanded="'+expanded+'" aria-controls="'+ids+'"><span class="benchmark-expand-chevron" aria-hidden="true">▶</span><span class="benchmark-badge-flag">'+esc(studyLabel(group.study))+'</span><small>'+group.territories.length+' '+unit+'</small></button>';
-      return '<tr class="benchmark-study-parent"><td>'+(group.territories.length?button:esc(studyLabel(group.study)))+'</td>'+metricCells(group)+'</tr>'+group.territories.map((territory,j)=>'<tr id="summary-territory-'+i+'-'+j+'" class="benchmark-country-row" data-summary-parent="'+esc(group.study)+'" '+(expanded?'':'hidden')+'><td><span class="benchmark-country-label">↳ '+esc(territory.geography)+'</span></td>'+metricCells(territory)+'</tr>').join('');
+      return '<tr class="benchmark-study-parent"><td data-export-value="'+esc(studyLabel(group.study))+'">'+(group.territories.length?button:esc(studyLabel(group.study)))+'</td>'+metricCells(group)+'</tr>'+group.territories.map((territory,j)=>'<tr id="summary-territory-'+i+'-'+j+'" class="benchmark-country-row" data-summary-parent="'+esc(group.study)+'" '+(expanded?'':'hidden')+'><td data-export-value="'+esc(studyLabel(group.study)+' / '+territory.geography)+'"><span class="benchmark-country-label">↳ '+esc(territory.geography)+'</span></td>'+metricCells(territory)+'</tr>').join('');
     }).join('');
     return panel('Resumen por estudio, país y región','Auditorías alertadas / total de auditorías levantadas × 100. Despliega cada estudio para consultar su detalle.',
-      '<div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Resumen por estudio, país y región"><table class="data-table benchmark-table summary-benchmark"><thead><tr>'+['Estudio / País / Región','Auditorías alertadas','Total de auditorías','% de auditorías alertadas','Total alertas','Alertas válidas','Alertas no válidas','Tasa de confirmación'].map(label=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div><p class="story-note">El total de auditorías proviene del levantamiento de Databricks. En Consolidado, los IDs alertados se cuentan una sola vez por estudio; las alertas y sus decisiones conservan cada módulo. La tasa de confirmación usa solo alertas revisadas. Los filtros de mes y fecha usan los mismos cortes que el consolidado superior.</p>');
+      chartDetails('<div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Resumen por estudio, país y región"><table class="data-table benchmark-table summary-benchmark"><thead><tr>'+['Estudio / País / Región','Auditorías alertadas','Total de auditorías','% de auditorías alertadas','Total alertas','Alertas válidas','Alertas no válidas','Tasa de confirmación'].map(label=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>',{collapsible:false})+'<p class="story-note">Orden descendente por alertas generadas, tanto entre estudios como dentro de cada estudio. El CSV incluye todos los países y regiones, aunque estén plegados. El total de auditorías proviene del levantamiento de Databricks. En Consolidado, los IDs alertados se cuentan una sola vez por estudio; las alertas y sus decisiones conservan cada módulo. La tasa de confirmación usa solo alertas revisadas. Los filtros de mes y fecha usan los mismos cortes que el consolidado superior.</p>');
   }
   function universePanel(u,result,smart,app) {
     const unavailable=u.entry.error?'Error al consultar':'Sin corte conectado';
@@ -297,13 +327,17 @@
     const display=value=>typeof value==='number'?num(value):esc(value);
     const total=u.entry.loading || u.entry.error || u.partial ? null : u.total;
     const value=u.entry.loading?'Consultando…':u.entry.error || u.total===null?unavailable:num(u.total)+(u.partial?' *':'');
+    const alertVolumes=new Map();
+    const module=app.currentScope?.module || app.getVisualizationModuleFilter?.() || 'all';
+    const rankingAlerts=module==='smart'?(smart.alerts||[]):module==='blocking'?(result.alerts||[]):[...(result.alerts||[]),...(smart.alerts||[])];
+    for(const a of rankingAlerts)alertVolumes.set(a.study,(alertVolumes.get(a.study)||0)+1);
     const chartRows=u.names.map(name=>{
       const r=u.rows.find(r=>r.study_name===name),known=u.verified&&['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'].includes(name);
       const lifted=u.entry.loading?'Consultando…':u.entry.error?unavailable:known?Number(r?.databricks_total||0):unavailable;
       const blocking=receipt('blocking',result.auditCountsByStudy?.[name]||0),smartCount=receipt('smart',smart.auditCountsByStudy?.[name]||0);
-      return {name:studyLabel(name),export:lifted,blocking,smart:smartCount,
+      return {name:studyLabel(name),total:alertVolumes.get(name)||0,export:lifted,blocking,smart:smartCount,
         blockingShare:receiptShare(blocking,lifted),smartShare:receiptShare(smartCount,lifted)};
-    });
+    }).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name,'es'));
     const blocking=receipt('blocking',result.audits),smartCount=receipt('smart',smart.audits);
     return panel('🌐 Auditorías levantadas y recibidas','Total levantado cuenta todas las auditorías. Las recibidas se cuentan de forma independiente en cada módulo.',cards([
       ['Total levantado',value,'Auditorías únicas por estudio','cyan','🌐'],
@@ -513,7 +547,7 @@
     if(section==='evolution') {
       html+=panel('📈 Evolución mensual de alertas generadas','Hasta seis meses del rango de fechas, hasta el mes seleccionado. Una misma escala compara recibidos, Alertas válidas y Alertas no válidas; se indican los pendientes. Son decisiones actuales por jornada, no cierres históricos.',
         monthlyChart(committee.trend)+chartDetails(table(['Mes','Alertas generadas','Alertas válidas','Alertas no válidas','Pendientes'],committee.trend.map(r=>row([esc(r.month)+(r.partial?' · Parcial':''),num(r.total),num(r.applies),num(r.rejects),num(r.pending)])))));
-      html+=panel('Evolución de tiempos','Promedios por mes de carga. Las fechas sin hora se miden en días calendario.',timingChart(committee.timing));
+      html+=panel('Evolución de tiempos','Promedios por mes de carga. Las fechas sin hora se miden en días calendario.',timingChart(committee.timing)+chartDetails(table(['Mes de carga','Tiempo auditoría → generación de alerta','Generación de alerta → decisión aplicada'],committee.timing.map(r=>row([esc(r.month),time(r.intake),time(r.validation)])))));
     }
     if(state.month && section==='pending') {
       html+=inheritedPanel(committee,state.month,asOf);
@@ -531,17 +565,18 @@
       ])+decisionDonut(c)+'<p class="story-note">Una auditoría puede contener varias alertas. Revisadas = Alertas válidas + Alertas no válidas. Recibidas = revisadas + pendientes.</p>');
     }
     if(section==='pending') {
-      html+=panel('Qué falta por revisar',num(c.pending)+' alertas pendientes en '+num(narrative.pendingAudits)+' auditorías. Los grupos siguientes cuentan auditorías, no alertas.','<p class="story-note">Las cargas reemplazadas y los registros retirados se excluyen. La gestión de descargar, reasignar o retirar pendientes se conserva en el panel de supervisión.</p>');
+      html+=panel('Qué falta por revisar',num(c.pending)+' alertas pendientes en '+num(narrative.pendingAudits)+' auditorías. Consulta su distribución y los IDs pendientes por antigüedad.','<p class="story-note">Las cargas reemplazadas y los registros retirados se excluyen. La gestión de descargar, reasignar o retirar pendientes se conserva en el panel de supervisión.</p>');
       const labels={recent:['0–6 días','blue','📅'],week:['7–14 días','orange','⏳'],old:['15 días o más','magenta','🚩'],missing:['Sin fecha original','purple','❔'],future:['Fecha futura','cyan','🗓️']};
-      html+=panel('Distribución del rezago','Auditorías con alguna alerta pendiente, agrupadas por antigüedad desde la fecha original.',groupedChart(Object.entries(labels).map(([key,[name]])=>({name,count:result.backlog[key].length})),[{key:'count',label:'Pendientes',tone:'orange'}],{unit:'auditorías',kind:'backlog'}));
+      const backlogRows=Object.entries(labels).map(([key,[name]])=>({name,count:result.backlog[key].length,total:result.backlog[key].reduce((sum,a)=>sum+a.pending,0)})).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name));
+      html+=panel('Distribución del rezago','Grupos ordenados de mayor a menor por alertas pendientes; antigüedad desde la fecha original.',groupedChart(backlogRows,[{key:'total',label:'Alertas pendientes',tone:'orange'}],{meta:r=>num(r.count)+' auditorías',unit:'alertas',kind:'backlog'})+chartDetails(table(['Antigüedad','Auditorías con pendientes','Alertas pendientes'],backlogRows.map(r=>row([r.name,num(r.count),num(r.total)])))));
       html+=panel('Pendientes por antigüedad','Días calendario desde la fecha original de auditoría, no desde la jornada de carga. Pulsa un grupo para consultar sus IDs.',
         '<div class="indicator-cards indicator-cards--backlog">'+Object.entries(labels).map(([k,[label,tone,symbol]],i)=>'<button type="button" class="stat-card indicator-card indicator-bucket indicator-tone-'+tone+'" style="--indicator-order:'+i+'" data-indicator-bucket="'+k+'" aria-pressed="false"><span class="indicator-card-main"><span class="stat-icon-wrapper indicator-card-icon" aria-hidden="true">'+symbol+'</span><span class="stat-details"><span class="stat-label">'+label+'</span><strong class="stat-value">'+num(result.backlog[k].length)+'</strong><small>Auditorías pendientes</small></span></span><span class="indicator-bucket-link">Ver detalle <span aria-hidden="true">→</span></span></button>').join('')+'</div><div data-indicator-backlog></div>');
     }
     if(section==='findings') {
       html+=panel('Qué confirmó la revisión','Porcentajes sobre todas las alertas recibidas en este alcance; los pendientes no se interpretan como descartados.',decisionDonut(c));
-      html+=panel('Motivos de alertas no válidas','Participación sobre las alertas descartadas, no sobre el total recibido. Hasta 15 motivos; el CSV conserva el detalle.',groupedChart(result.reasons.slice(0,15),[{key:'count',label:'Alertas no válidas',tone:'magenta'}],{meta:r=>pct(r.share)+' de las descartadas',kind:'ranking'})+chartDetails(table(['Motivo','Alertas descartadas','% de descartadas'],result.reasons.slice(0,15).map(r=>row([esc(r.name),num(r.count),pct(r.share)])))));
-      html+=panel('Top alertas con mayor tasa de rechazo','Hasta 20 variables ordenadas por Alertas no válidas / recibidas. Las barras comparan volumen y composición; la tasa aparece junto al nombre.',outcomeChart(result.rejectedTypes.slice(0,20),{meta:r=>'Rechazo: '+pct(r.rejection)+' · Cobertura: '+pct(r.coverage)})+chartDetails(table(['Variable','Alertas','Alertas no válidas','Rechazo','Cobertura','Pendientes'],result.rejectedTypes.slice(0,20).map(r=>row([esc(r.name),num(r.total),num(r.rejects),pct(r.rejection),pct(r.coverage),num(r.pending)])))));
-      html+=panel('Auditores con alertas recurrentes','Auditor de campo: nombre_usuario del Export de Databricks, cruzado por ID de auditoría; no es el validador. Últimas ocho semanas dentro del filtro, desde '+result.startWeek+'. '+num(result.alertsWithoutAuditor)+' alertas sin auditor identificado se excluyen de este ranking. Recurrencia no es productividad ni error confirmado.',groupedChart(result.recurrence.slice(0,20),[{key:'weeks',label:'Semanas con alertas',tone:'purple'}],{label:r=>r.auditor,meta:r=>studyLabel(r.study)+' · '+num(r.total)+' Alertas generadas · '+r.weeks+' / 8 semanas',unit:'semanas',kind:'recurrence'})+chartDetails(table(['Auditor','Estudio','Semanas con alertas','Alertas'],result.recurrence.slice(0,20).map(r=>row([esc(r.auditor),esc(studyLabel(r.study)),num(r.weeks)+' / 8',num(r.total)])))));
+      html+=panel('Motivos de alertas no válidas','Ordenados por cantidad de alertas descartadas. Participación sobre las descartadas, no sobre el total recibido. La gráfica muestra hasta 15 motivos; la tabla y su CSV incluyen todos los motivos del filtro.',groupedChart(result.reasons.slice(0,15),[{key:'count',label:'Alertas no válidas',tone:'magenta'}],{meta:r=>pct(r.share)+' de las descartadas',unit:'alertas',kind:'ranking'})+chartDetails(table(['Motivo','Alertas descartadas','% de descartadas'],result.reasons.map(r=>row([esc(r.name),num(r.count),pct(r.share)])))));
+      html+=panel('Alertas que más se generan','De mayor a menor por alertas generadas. La gráfica muestra las primeras 20 variables; la tabla y su CSV incluyen todas las variables del filtro.',outcomeChart(result.rejectedTypes.slice(0,20),{meta:r=>'Rechazo: '+pct(r.rejection)+' · Cobertura: '+pct(r.coverage)})+chartDetails(table(['Variable','Alertas generadas','Alertas válidas','Alertas no válidas','Pendientes','Rechazo','Cobertura'],result.rejectedTypes.map(r=>row([esc(r.name),num(r.total),num(r.applies),num(r.rejects),num(r.pending),pct(r.rejection),pct(r.coverage)])))));
+      html+=panel('Auditores con alertas recurrentes','Ordenados por alertas generadas en las últimas ocho semanas del filtro, desde '+result.startWeek+'. La gráfica muestra los primeros 20; la tabla y su CSV incluyen todos. Auditor de campo: nombre_usuario del Export de Databricks, cruzado por ID; no es el validador. '+num(result.alertsWithoutAuditor)+' alertas sin auditor identificado se excluyen. Recurrencia no es productividad ni error confirmado.',groupedChart(result.recurrence.slice(0,20),[{key:'total',label:'Alertas generadas',tone:'purple'}],{label:r=>r.auditor,meta:r=>studyLabel(r.study)+' · '+r.weeks+' / 8 semanas con alertas',unit:'alertas',kind:'recurrence'})+chartDetails(table(['Auditor','Estudio','Semanas con alertas','Alertas generadas'],result.recurrence.map(r=>row([esc(r.auditor),esc(studyLabel(r.study)),num(r.weeks)+' / 8',num(r.total)])))));
     }
     if(section==='timing') {
       html+=panel('Tiempo entre cada paso','Bases separadas: una muestra por auditoría para auditoría → generación de alerta; una por alerta decidida para generación de alerta → decisión aplicada. Horas solo con timestamps completos.',cards([['Tiempo auditoría → generación de alerta',time(result.timing.intake),'','blue','📤'],['Generación de alerta → decisión aplicada',time(result.timing.validation),'','purple','⏱️']],'timing'));
@@ -551,11 +586,12 @@
     if(section==='comparison') {
       html+=panel('Benchmark por estudio y territorio',esc(scope)+'. País para KO; región para KO Tradicional CHILE y Lindley. Barras apiladas en una misma escala de volumen.',outcomeChart(result.benchmark,{label:r=>studyLabel(r.study)+' · '+r.geography,meta:r=>'Cobertura: '+pct(r.coverage)+' · Rechazo: '+pct(r.rejection)})+chartDetails(table(['Estudio','País / región','Alertas','Alertas válidas','Alertas no válidas','Pendientes','Cobertura','Rechazo'],result.benchmark.map(r=>row([esc(studyLabel(r.study)),esc(r.geography),num(r.total),num(r.applies),num(r.rejects),num(r.pending),pct(r.coverage),pct(r.rejection)])))));
 
-      html+=panel('Distribución por región, canal y subcanal','Gráfico de los 12 grupos con más pendientes; la tabla permite consultar hasta 40. Los faltantes se muestran sin inferirlos.',outcomeChart(result.workload.slice(0,12),{label:r=>studyLabel(r.study)+' · '+r.country,meta:r=>[r.region,r.channel,r.subchannel].filter(Boolean).join(' · ')})+chartDetails(table(['Estudio','País','Región','Canal','Subcanal','Alertas','Pendientes','Cobertura','Rechazo'],result.workload.slice(0,40).map(r=>row([esc(studyLabel(r.study)),esc(r.country),esc(r.region),esc(r.channel),esc(r.subchannel),num(r.total),num(r.pending),pct(r.coverage),pct(r.rejection)])))));
+      html+=panel('Distribución por región, canal y subcanal','Gráfico de los 12 grupos con más alertas generadas. La tabla y su CSV incluyen todos los grupos del filtro, en el mismo orden descendente. Los faltantes se muestran sin inferirlos.',outcomeChart(result.workload.slice(0,12),{label:r=>studyLabel(r.study)+' · '+r.country,meta:r=>[r.region,r.channel,r.subchannel].filter(Boolean).join(' · ')})+chartDetails(table(['Estudio','País','Región','Canal','Subcanal','Alertas generadas','Pendientes','Cobertura','Rechazo'],result.workload.map(r=>row([esc(studyLabel(r.study)),esc(r.country),esc(r.region),esc(r.channel),esc(r.subchannel),num(r.total),num(r.pending),pct(r.coverage),pct(r.rejection)])))));
     }
     const moduleLabel=module==='smart'?'SMART':module==='all'?'BLOQUEANTES + SMART':'BLOQUEANTES';
     html=html.replace(/· BLOQUEANTES/g,'· '+moduleLabel).replace('No incluye Smart.','Módulo: '+moduleLabel+'. En Consolidado, cada caso y alerta se cuenta por módulo.').replace('resumen de Bloqueantes','resumen de esta lectura').replace(jump('decisions','Preparar decisiones'),'');
     target.innerHTML=html;
+    bindChartTableExports(target,{suffix:[module || 'blocking',state.month || from,to].filter(Boolean).join('-')});
     bindScopeControls();
     target.querySelectorAll('[data-summary-study]').forEach(button=>button.addEventListener('click',()=>{
       const study=button.dataset.summaryStudy,expanded=button.getAttribute('aria-expanded')!=='true';
@@ -589,6 +625,6 @@
       return [a.module==='smart'?'Smart':'Bloqueantes',a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,decisionLabel(a.decision),a.reason];
     }),'Indicadores-'+(module || 'blocking')+'-'+asOf+'.csv'));
   }
-  root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,receiptShare,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart};
+  root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,receiptShare,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};
   if(typeof module!=='undefined')module.exports=root.PortalIndicators;
 })(typeof globalThis!=='undefined'?globalThis:this);
