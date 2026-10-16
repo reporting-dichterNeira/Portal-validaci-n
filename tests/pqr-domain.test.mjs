@@ -26,8 +26,12 @@ test('original answers and PQR decisions remain separate in review and per-alert
 test('analyst view does not include settings, staff creation or reassignment controls',()=>{
  const data={context:{role:'analyst',name:'<script>bad</script>'},today:'2026-10-16',day:'2026-10-16',stats:{selected:1,assigned:1,completed:0},
   analysts:[],reviews:[{id:'1',external_id:'2',day:'2026-10-16',status:'pending',reasons:{},analyst_name:'Ana'}]};
- const html=dashboardView(data,{status:'all',offset:0});assert.doesNotMatch(html,/<script>|pqr-settings|pqr-create-analyst|pqr-create-supervisor|data-reassign/);assert.match(html,/&lt;script&gt;/);
+ const html=dashboardView(data,{status:'all',offset:0});assert.doesNotMatch(html,/<script>|pqr-settings|pqr-create-analyst|pqr-create-supervisor|data-reassign|data-delete|data-restore/);assert.match(html,/&lt;script&gt;/);
  data.context.role='supervisor';const supervisor=dashboardView(data,{status:'all',offset:0});assert.match(supervisor,/pqr-settings/);assert.match(supervisor,/pqr-create-analyst/);assert.doesNotMatch(supervisor,/pqr-create-supervisor/);
+});
+test('supervision separates removed analysts and provides removal and restore actions',()=>{
+ const data={context:{role:'supervisor',name:'Supervisión'},stats:{},analysts:[{id:'active',name:'Ana',active:true,available:true},{id:'removed',name:'Luis',active:false,deleted_at:'2026-10-16T12:00:00Z'}],reviews:[]};
+ const html=dashboardView(data,{status:'all',offset:0});assert.match(html,/data-delete="active"/);assert.doesNotMatch(html,/data-delete="removed"/);assert.match(html,/Analistas eliminados \(1\)/);assert.match(html,/data-restore="removed"/);
 });
 test('evidence links reject active content, duplicates collapse, and CSV escapes formulas',()=>{
  assert.equal(safeUrl('javascript:alert(1)'),null);assert.equal(safeUrl('data:text/html,bad'),null);assert.equal(safeUrl('http://unsafe.test'),null);

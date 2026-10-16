@@ -15,6 +15,7 @@ No modifica perfiles, políticas, asignaciones, respuestas ni RPCs de los valida
 Pausar reparto excluye al analista de nuevas asignaciones y permite terminar sus revisiones actuales.
 La desactivación revoca acceso; no se permite si tiene una revisión en curso.
 Un código nuevo invalida las sesiones abiertas con el anterior.
+**Eliminar analista** lo retira del equipo y revoca su acceso, conservando las revisiones terminadas. Sus pendientes sin iniciar vuelven al reparto; no se permite eliminarlo si tiene una revisión en curso. **Analistas eliminados** permite restaurarlo como inactivo; se debe generar un código nuevo y activarlo para que vuelva a trabajar.
 
 ## Selección y jornada
 
@@ -44,7 +45,7 @@ El CSV tiene una fila por alerta y conserva separadas la respuesta original y la
 - Cliente Supabase con almacenamiento `validaflow-pqr-auth-v1`, separado del portal existente.
 - Credenciales y sesiones PQR en tablas `private.pqr_*`, con RLS y sin permisos directos para clientes.
 - RPCs públicas `pqr_login` y `pqr_api`: invocadores de funciones privadas con autorización explícita por acción y asignación.
-- Supervisión mediante credenciales PQR; analistas mediante código aleatorio de 96 bits. Sesiones de 12 horas, revocables por activación/cambio de credencial.
+- Supervisión mediante credenciales PQR; analistas mediante código `PQR-` más 12 caracteres aleatorios (60 bits), sin 0, 1, I ni O para facilitar su lectura. Los códigos anteriores siguen siendo válidos hasta que se regeneren. Sesiones de 12 horas, revocables por activación/cambio de credencial.
 - Contraseñas bcrypt; códigos SHA-256; limitación de intentos por identidad y credencial. No hay secretos de servicio en el navegador.
 - La cuenta administrativa existente solo inicia la configuración y crea cuentas PQR; no se cambia su perfil.
 

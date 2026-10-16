@@ -25,6 +25,7 @@ create table if not exists private.pqr_analysts (
  available boolean not null default true, credentials_changed_at timestamptz not null default now(),
  created_at timestamptz not null default now()
 );
+alter table private.pqr_analysts add column if not exists deleted_at timestamptz;
 create table if not exists private.pqr_sessions (
  user_id uuid primary key references auth.users(id) on delete cascade,
  supervisor_id uuid references private.pqr_supervisors(id),
@@ -249,7 +250,7 @@ begin
  v_role:=ctx->>'role';
  if p_action='context' then return ctx;end if;
  if p_action='logout' then delete from private.pqr_sessions where user_id=auth.uid();return '{}'::jsonb;end if;
- if p_action in ('settings','start_distribution','create_analyst','update_analyst','reset_code','reassign','create_supervisor') and v_role not in ('admin','supervisor') then
+ if p_action in ('settings','start_distribution','create_analyst','update_analyst','reset_code','delete_analyst','restore_analyst','reassign','create_supervisor') and v_role not in ('admin','supervisor') then
   raise exception 'PQR_SUPERVISOR_REQUIRED' using errcode='42501';end if;
  if p_action='create_supervisor' then
   if v_role<>'admin' then raise exception 'ADMIN_REQUIRED' using errcode='42501';end if;
@@ -266,17 +267,35 @@ begin
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),'settings_changed',p_data-'password');
  elsif p_action='create_analyst' then
   if length(btrim(coalesce(p_data->>'name','')))<2 then raise exception 'Indica el nombre del analista.';end if;
-  v_code:='PQR-'||upper(encode(extensions.gen_random_bytes(12),'hex'));
+  select 'PQR-'||string_agg(substr('23456789ABCDEFGHJKLMNPQRSTUVWXYZ',1+(get_byte(entropy.bytes,i)%32),1),'' order by i)
+   into v_code from (select extensions.gen_random_bytes(12) bytes) entropy cross join generate_series(0,11) i;
   insert into private.pqr_analysts(name,code_hash) values(left(btrim(p_data->>'name'),120),encode(extensions.digest(v_code,'sha256'),'hex')) returning id into v_id;
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),'analyst_created',jsonb_build_object('id',v_id));
   perform private.pqr_refresh_today();return jsonb_build_object('id',v_id,'code',v_code);
+ elsif p_action in ('delete_analyst','restore_analyst') then
+  -- Serialize deletion with today's automatic distributor and review starts.
+  perform pg_advisory_xact_lock(186321,v_day-date '2026-01-01');
+  perform 1 from private.pqr_analysts where id=(p_data->>'id')::uuid for update;
+  if not found then raise exception 'ANALYST_NOT_FOUND';end if;
+  if p_action='delete_analyst' then
+   if exists(select 1 from private.pqr_reviews where analyst_id=(p_data->>'id')::uuid and (status='in_progress' or (status='pending' and review_results<>'{}'::jsonb))) then raise exception 'El analista tiene revisiones en curso. Debe terminarlas antes de eliminarlo.';end if;
+   update private.pqr_analysts set deleted_at=clock_timestamp(),active=false,available=false,credentials_changed_at=clock_timestamp(),code_hash=encode(extensions.digest(extensions.gen_random_bytes(32),'sha256'),'hex') where id=(p_data->>'id')::uuid and deleted_at is null;
+   if not found then raise exception 'El analista ya fue eliminado.';end if;
+   update private.pqr_reviews set analyst_id=null,assigned_at=null,version=version+1 where analyst_id=(p_data->>'id')::uuid and status='pending';
+  else
+   update private.pqr_analysts set deleted_at=null,active=false,available=false where id=(p_data->>'id')::uuid and deleted_at is not null;
+   if not found then raise exception 'El analista no está eliminado.';end if;
+  end if;
+  insert into private.pqr_events(actor,action,detail) values(auth.uid(),p_action,jsonb_build_object('id',p_data->>'id'));
  elsif p_action='update_analyst' then
   if not (p_data->>'active')::boolean and exists(select 1 from private.pqr_reviews where analyst_id=(p_data->>'id')::uuid and status='in_progress') then raise exception 'El analista tiene revisiones en curso. Puede pausar su reparto; debe terminar esas revisiones antes de desactivarlo.';end if;
-  update private.pqr_analysts set active=(p_data->>'active')::boolean,available=(p_data->>'available')::boolean where id=(p_data->>'id')::uuid;
+  update private.pqr_analysts set active=(p_data->>'active')::boolean,available=(p_data->>'available')::boolean where id=(p_data->>'id')::uuid and deleted_at is null;
+  if not found then raise exception 'ANALYST_NOT_FOUND';end if;
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),'analyst_updated',p_data);
  elsif p_action='reset_code' then
-  v_code:='PQR-'||upper(encode(extensions.gen_random_bytes(12),'hex'));
-  update private.pqr_analysts set code_hash=encode(extensions.digest(v_code,'sha256'),'hex'),credentials_changed_at=clock_timestamp() where id=(p_data->>'id')::uuid;
+  select 'PQR-'||string_agg(substr('23456789ABCDEFGHJKLMNPQRSTUVWXYZ',1+(get_byte(entropy.bytes,i)%32),1),'' order by i)
+   into v_code from (select extensions.gen_random_bytes(12) bytes) entropy cross join generate_series(0,11) i;
+  update private.pqr_analysts set code_hash=encode(extensions.digest(v_code,'sha256'),'hex'),credentials_changed_at=clock_timestamp() where id=(p_data->>'id')::uuid and deleted_at is null;
   if not found then raise exception 'ANALYST_NOT_FOUND';end if;
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),'analyst_code_reset',jsonb_build_object('id',p_data->>'id'));
   return jsonb_build_object('code',v_code);
@@ -287,6 +306,10 @@ begin
   if not found then raise exception 'Solo se pueden reasignar auditorías pendientes sin revisión iniciada.';end if;
   insert into private.pqr_events(review_id,actor,action,detail) values((p_data->>'id')::uuid,auth.uid(),'reassigned',jsonb_build_object('analyst_id',p_data->>'analyst_id'));
  elsif p_action in ('detail','start','save') then
+  if v_role='analyst' and p_action in ('start','save') then
+   perform 1 from private.pqr_analysts where id=(ctx->>'id')::uuid and active and deleted_at is null for update;
+   if not found then raise exception 'PQR_ACCESS_REQUIRED' using errcode='42501';end if;
+  end if;
   select * into v_review from private.pqr_reviews where id=(p_data->>'id')::uuid for update;
   if not found or (v_role='analyst' and v_review.analyst_id is distinct from (ctx->>'id')::uuid) then raise exception 'REVIEW_NOT_ASSIGNED' using errcode='42501';end if;
   if p_action in ('start','save') then
@@ -337,7 +360,7 @@ begin
  left join private.pqr_reviews r on r.day=v_day and (v_role<>'analyst' or r.analyst_id=(ctx->>'id')::uuid)
  group by d.eligible,d.target,d.percentage,d.refreshed_at;
  select coalesce(jsonb_agg(to_jsonb(x) order by x.name),'[]'::jsonb) into v_analysts from (
-  select a.id,a.name,a.active,a.available,count(r.id) as assigned,count(r.id) filter(where r.status='completed') as completed,
+  select a.id,a.name,a.active,a.available,a.deleted_at,count(r.id) as assigned,count(r.id) filter(where r.status='completed') as completed,
    count(r.id) filter(where r.status='in_progress') as in_progress,count(r.id) filter(where r.status='pending') as pending,
    count(r.id) filter(where r.verdict='errors') as errors,
    count(r.id) filter(where r.status='completed' and (r.completed_at at time zone 'America/Bogota')::date=r.day) as on_time,
