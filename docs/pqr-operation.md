@@ -18,6 +18,12 @@ Un código nuevo invalida las sesiones abiertas con el anterior.
 Los códigos anteriores que solo tenían hash se conservan sin cambios. Su copia se habilita al ingresar el analista con su código actual, o al generar uno nuevo expresamente desde el botón. Copiar un código ya disponible no lo regenera ni cierra sesiones.
 **Eliminar analista** lo retira del equipo y revoca su acceso, conservando las revisiones terminadas. Sus pendientes sin iniciar vuelven al reparto; no se permite eliminarlo si tiene una revisión en curso. **Analistas eliminados** permite restaurarlo como inactivo; se debe generar un código nuevo y activarlo para que vuelva a trabajar.
 
+## Administración de supervisoras PQR
+
+Solo la administración existente puede crear, editar, restablecer contraseñas, eliminar y restaurar supervisoras PQR. Editar permite cambiar nombre, usuario y estado. Los usuarios se normalizan a minúsculas y son únicos. Cambiar usuario o estado revoca sesiones anteriores; cambiar solo el nombre las conserva.
+
+Restablecer contraseña requiere al menos 8 caracteres, reemplaza su hash bcrypt y revoca las sesiones anteriores. No se devuelve ni se registra la contraseña. Eliminar desactiva la cuenta y revoca su credencial conservando el historial. Restaurar la deja inactiva; se debe restablecer su contraseña y activarla. No modifica perfiles de supervisión existentes en Bloqueantes o Smart.
+
 ## Selección y jornada
 
 - Solo auditorías completadas en Bloqueantes. La cohorte corresponde a `completed_at` en `America/Bogota`, nunca a la fecha de carga.

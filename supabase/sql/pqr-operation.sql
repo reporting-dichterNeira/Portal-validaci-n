@@ -22,6 +22,7 @@ create table if not exists private.pqr_supervisors (
  name text not null, password_hash text not null, active boolean not null default true,
  credentials_changed_at timestamptz not null default now(), created_at timestamptz not null default now()
 );
+alter table private.pqr_supervisors add column if not exists deleted_at timestamptz;
 create table if not exists private.pqr_analysts (
  id uuid primary key default gen_random_uuid(), name text not null,
  code_hash text unique not null, active boolean not null default true,
@@ -112,7 +113,7 @@ begin
  end if;
  select jsonb_build_object('role','supervisor','name',p.name,'id',p.id) into result
  from private.pqr_sessions s join private.pqr_supervisors p on p.id=s.supervisor_id
- where s.user_id=auth.uid() and s.expires_at>now() and p.active and s.created_at>=p.credentials_changed_at;
+ where s.user_id=auth.uid() and s.expires_at>now() and p.active and p.deleted_at is null and s.created_at>=p.credentials_changed_at;
  if result is not null then return result; end if;
  select jsonb_build_object('role','analyst','name',a.name,'id',a.id) into result
  from private.pqr_sessions s join private.pqr_analysts a on a.id=s.analyst_id
@@ -132,8 +133,8 @@ begin
   return jsonb_build_object('error','Demasiados intentos. Espera 15 minutos.');
  end if;
  if p_kind='supervisor' then
-  select id into v_id from private.pqr_supervisors where username=lower(btrim(p_identifier)) and active
-   and password_hash=extensions.crypt(p_secret,password_hash);
+  select id into v_id from private.pqr_supervisors where username=lower(btrim(p_identifier)) and active and deleted_at is null
+   and password_hash=extensions.crypt(p_secret,password_hash) for update;
  elsif p_kind='analyst' then
   select id,code_secret_id into v_id,v_secret_id from private.pqr_analysts where active and deleted_at is null and code_hash=encode(extensions.digest(upper(btrim(p_secret)),'sha256'),'hex') for update;
  else raise exception 'INVALID_LOGIN_KIND'; end if;
@@ -258,6 +259,8 @@ begin
  v_role:=ctx->>'role';
  if p_action='context' then return ctx;end if;
  if p_action='logout' then delete from private.pqr_sessions where user_id=auth.uid();return '{}'::jsonb;end if;
+ if p_action in ('create_supervisor','update_supervisor','reset_supervisor_password','delete_supervisor','restore_supervisor') and v_role<>'admin' then
+  raise exception 'ADMIN_REQUIRED' using errcode='42501';end if;
  if p_action in ('settings','start_distribution','create_analyst','update_analyst','get_code','reset_code','delete_analyst','restore_analyst','reassign','create_supervisor') and v_role not in ('admin','supervisor') then
   raise exception 'PQR_SUPERVISOR_REQUIRED' using errcode='42501';end if;
  if p_action='create_supervisor' then
@@ -265,8 +268,35 @@ begin
   if length(btrim(coalesce(p_data->>'name','')))<2 then raise exception 'Indica un nombre de al menos 2 caracteres.';end if;
   if lower(btrim(coalesce(p_data->>'username',''))) !~ '^[a-z0-9][a-z0-9._-]{2,31}$' then raise exception 'El usuario debe tener entre 3 y 32 caracteres: letras, números, punto, guion o guion bajo.';end if;
   if length(coalesce(p_data->>'password',''))<8 then raise exception 'La contraseña debe tener al menos 8 caracteres.';end if;
+  if exists(select 1 from private.pqr_supervisors where username=lower(btrim(p_data->>'username'))) then raise exception 'Ese usuario PQR ya existe.';end if;
   insert into private.pqr_supervisors(username,name,password_hash) values(lower(btrim(p_data->>'username')),left(btrim(p_data->>'name'),120),extensions.crypt(p_data->>'password',extensions.gen_salt('bf',10))) returning id into v_id;
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),'supervisor_created',jsonb_build_object('id',v_id));
+  return jsonb_build_object('id',v_id);
+ elsif p_action in ('update_supervisor','reset_supervisor_password','delete_supervisor','restore_supervisor') then
+  v_id:=(p_data->>'id')::uuid;
+  perform 1 from private.pqr_supervisors where id=v_id for update;
+  if not found then raise exception 'SUPERVISOR_NOT_FOUND';end if;
+  if p_action='restore_supervisor' then
+   update private.pqr_supervisors set deleted_at=null,active=false,credentials_changed_at=clock_timestamp() where id=v_id and deleted_at is not null;
+   if not found then raise exception 'La supervisora no está eliminada.';end if;
+  else
+   if exists(select 1 from private.pqr_supervisors where id=v_id and deleted_at is not null) then raise exception 'Restaura la supervisora antes de modificar su cuenta.';end if;
+   if p_action='update_supervisor' then
+    if length(btrim(coalesce(p_data->>'name','')))<2 then raise exception 'Indica un nombre de al menos 2 caracteres.';end if;
+    if lower(btrim(coalesce(p_data->>'username',''))) !~ '^[a-z0-9][a-z0-9._-]{2,31}$' then raise exception 'El usuario debe tener entre 3 y 32 caracteres: letras, números, punto, guion o guion bajo.';end if;
+    if exists(select 1 from private.pqr_supervisors where username=lower(btrim(p_data->>'username')) and id<>v_id) then raise exception 'Ese usuario PQR ya existe.';end if;
+    update private.pqr_supervisors set name=left(btrim(p_data->>'name'),120),username=lower(btrim(p_data->>'username')),
+     active=coalesce((p_data->>'active')::boolean,active),
+     credentials_changed_at=case when username is distinct from lower(btrim(p_data->>'username')) or active is distinct from coalesce((p_data->>'active')::boolean,active) then clock_timestamp() else credentials_changed_at end where id=v_id;
+   elsif p_action='reset_supervisor_password' then
+    if length(coalesce(p_data->>'password',''))<8 then raise exception 'La contraseña debe tener al menos 8 caracteres.';end if;
+    update private.pqr_supervisors set password_hash=extensions.crypt(p_data->>'password',extensions.gen_salt('bf',10)),credentials_changed_at=clock_timestamp() where id=v_id;
+   else
+    update private.pqr_supervisors set deleted_at=clock_timestamp(),active=false,credentials_changed_at=clock_timestamp(),
+     password_hash=extensions.crypt(encode(extensions.gen_random_bytes(32),'hex'),extensions.gen_salt('bf',10)) where id=v_id;
+   end if;
+  end if;
+  insert into private.pqr_events(actor,action,detail) values(auth.uid(),p_action,jsonb_build_object('id',v_id));
   return jsonb_build_object('id',v_id);
  elsif p_action='start_distribution' then
   if not exists(select 1 from private.pqr_analysts where active and available) then raise exception 'Crea o habilita al menos un analista antes de distribuir.';end if;
@@ -408,7 +438,7 @@ begin
  ) x;
  return jsonb_build_object('context',ctx,'today',(now() at time zone 'America/Bogota')::date,'day',v_day,'stats',v_stats,
   'settings',case when v_role<>'analyst' then v_settings else null end,'analysts',v_analysts,'reviews',v_rows,
-  'supervisors',case when v_role='admin' then (select coalesce(jsonb_agg(jsonb_build_object('username',username,'name',name,'active',active)),'[]'::jsonb) from private.pqr_supervisors) else '[]'::jsonb end);
+  'supervisors',case when v_role='admin' then (select coalesce(jsonb_agg(jsonb_build_object('id',id,'username',username,'name',name,'active',active,'deleted_at',deleted_at) order by name,username),'[]'::jsonb) from private.pqr_supervisors) else '[]'::jsonb end);
 end;$$;
 
 create or replace function public.pqr_login(p_kind text,p_identifier text default '',p_secret text default '') returns jsonb

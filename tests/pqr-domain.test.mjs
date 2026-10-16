@@ -38,6 +38,11 @@ test('PQR supervisor creation requires an eight-character password in the form',
  const html=dashboardView({context:{role:'admin',name:'Administración'},stats:{},analysts:[],reviews:[]},{status:'all',offset:0});
  assert.match(html,/name="password" type="password" minlength="8"/);assert.doesNotMatch(html,/minlength="12"/);
 });
+test('only administrators see supervisor account management and removed accounts can be restored',()=>{
+ const data={context:{role:'admin',name:'Administración'},stats:{},analysts:[],reviews:[],supervisors:[{id:'p1',name:'Prueba',username:'prueba',active:true},{id:'p2',name:'Retirada',username:'retirada',active:false,deleted_at:'2026-10-16T14:00:00Z'}]};
+ const html=dashboardView(data,{status:'all',offset:0});assert.match(html,/data-supervisor-edit="p1"/);assert.match(html,/data-supervisor-password="p1"/);assert.match(html,/data-supervisor-delete="p1"/);assert.match(html,/data-supervisor-restore="p2"/);assert.doesNotMatch(html,/data-supervisor-edit="p2"/);
+ for(const role of ['supervisor','analyst']){data.context.role=role;assert.doesNotMatch(dashboardView(data,{status:'all',offset:0}),/data-supervisor-/);}
+});
 test('evidence links reject active content, duplicates collapse, and CSV escapes formulas',()=>{
  assert.equal(safeUrl('javascript:alert(1)'),null);assert.equal(safeUrl('data:text/html,bad'),null);assert.equal(safeUrl('http://unsafe.test'),null);
  assert.equal(evidenceEntries({meta:{foto:'https://example.test/photo'}},{foto:'https://example.test/photo'}).length,1);
