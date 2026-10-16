@@ -17,7 +17,7 @@ test('auditor comparison separates audits from KPIs and deduplicates IDs across 
   assert.equal(data.rows[0].meanAlerts,4/3);assert.equal(data.rows[0].validShare,2/3);
   assert.equal(data.rows[2].meanAlerts,null);assert.equal(data.rows[2].validShare,null);
   const html=U.auditorComparison(result,universe());
-  assert.match(html,/Auditorías con alerta/);assert.match(html,/KPIs aplican/);assert.match(html,/15%/);
+  assert.match(html,/Auditorías con alerta/);assert.match(html,/Alertas válidas/);assert.match(html,/15%/);
   assert.match(html,/Promedio de alertas por auditoría alertada/);assert.match(html,/1,33/);assert.match(html,/66,7%/);
   assert.match(html,/data-chart-table-export/);assert.doesNotMatch(html,/data-metric-chart|metric-chart-details|Semanas con alertas/);
 });

@@ -17,7 +17,7 @@ test('channel and segment merge across regions, deduplicate module IDs, and use 
   assert.equal(rows[0].alertedShare,3/80);assert.equal(rows[0].meanAlerts,4/3);assert.equal(rows[0].validShare,2/3);
   assert.equal(rows[1].total,0);assert.equal(rows[1].alertedShare,0);assert.equal(rows[1].meanAlerts,null);assert.equal(rows[1].validShare,null);
   const html=U.channelSegmentComparison(result,scope(),'Mes: 2026-10');
-  for(const label of ['Canal','Segmento','Auditorías con alerta','KPIs con alerta','KPIs aplican','Promedio de alertas por auditoría alertada'])assert.ok(html.includes(label));
+  for(const label of ['Canal','Segmento','Auditorías con alerta','Alertas generadas','Alertas válidas','Promedio de alertas por auditoría alertada'])assert.ok(html.includes(label));
   assert.match(html,/1,33/);assert.match(html,/66,7%/);assert.match(html,/data-chart-table-export/);
   assert.doesNotMatch(html,/data-metric-chart|metric-chart-details|NaN|Infinity/);
 });

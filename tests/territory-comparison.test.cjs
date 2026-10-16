@@ -15,7 +15,7 @@ test('territory table uses the same comparison indicators as auditors, including
   assert.equal(rows[0].alertedShare,3/80);assert.equal(rows[0].meanAlerts,4/3);assert.equal(rows[0].validShare,2/3);
   assert.equal(rows[1].total,0);assert.equal(rows[1].alertedShare,0);assert.equal(rows[1].meanAlerts,null);assert.equal(rows[1].validShare,null);
   const html=U.territoryComparison(result,scope(),'Mes: 2026-10');
-  assert.match(html,/KPIs aplican/);assert.match(html,/Promedio de alertas por auditoría alertada/);assert.match(html,/1,33/);assert.match(html,/66,7%/);
+  assert.match(html,/Alertas válidas/);assert.match(html,/Promedio de alertas por auditoría alertada/);assert.match(html,/1,33/);assert.match(html,/66,7%/);
   assert.match(html,/data-chart-table-export/);assert.doesNotMatch(html,/data-metric-chart|metric-chart-details|NaN|Infinity/);
 });
 

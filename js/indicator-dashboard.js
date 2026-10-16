@@ -290,8 +290,8 @@
     return typeof received==='number' && Number.isFinite(received) && received>=0
       && typeof lifted==='number' && Number.isFinite(lifted) && lifted>0 ? received/lifted : null;
   }
-  const comparisonHeaders=['Auditorías','Auditorías con alerta','KPIs con alerta','KPIs aplican','% de auditorías alertadas','Promedio de alertas por auditoría alertada','% de alertas válidas entre revisadas'];
-  const comparisonDefinitions='Auditorías = total levantado, incluidas las que no generaron alertas. Los IDs alertados se cuentan una vez por estudio, incluso si están en ambos módulos. KPIs con alerta cuenta cada alerta generada; KPIs aplican son alertas válidas. % de auditorías alertadas = auditorías con alerta / total levantado × 100. Promedio = KPIs con alerta / auditorías con alerta. % de alertas válidas entre revisadas = válidas / (válidas + no válidas) × 100; excluye pendientes. Sin denominador se muestra «Sin base». El total levantado usa el mes de Ola y la fecha original; las alertas usan la jornada de carga.';
+  const comparisonHeaders=['Auditorías','Auditorías con alerta','Alertas generadas','Alertas válidas','% de auditorías alertadas','Promedio de alertas por auditoría alertada','% de alertas válidas entre revisadas'];
+  const comparisonDefinitions='Auditorías = total levantado, incluidas las que no generaron alertas. Los IDs alertados se cuentan una vez por estudio, incluso si están en ambos módulos. Alertas generadas = total de alertas recibidas; Alertas válidas = alertas confirmadas en la revisión. % de auditorías alertadas = auditorías con alerta / total levantado × 100. Promedio = alertas generadas / auditorías con alerta. % de alertas válidas entre revisadas = válidas / (válidas + no válidas) × 100; excluye pendientes. Sin denominador se muestra «Sin base». El total levantado usa el mes de Ola y la fecha original; las alertas usan la jornada de carga.';
   function comparisonStatistics(total,applies,rejects,alertedAudits) {
     return {meanAlerts:receiptShare(total,alertedAudits),validShare:receiptShare(applies,applies+rejects)};
   }
@@ -330,7 +330,7 @@
   function auditorComparison(result,u) {
     const data=auditorComparisonData(result,u);
     const baseStatus=u.entry.loading?'Consultando…':u.entry.error?'Error al consultar':'Sin base';
-    return panel('Comparativo por auditor','De mayor a menor por KPIs con alerta; en empate, por KPIs que aplican. Incluye todo el período y los filtros seleccionados.',
+    return panel('Comparativo por auditor','De mayor a menor por alertas generadas; en empate, por alertas válidas. Incluye todo el período y los filtros seleccionados.',
       chartDetails(table(['Auditor',...comparisonHeaders],data.rows.map(r=>row([esc(r.auditor),...comparisonCells(r,baseStatus)]))),{collapsible:false})+'<p class="story-note">Auditor de campo del Export de Databricks. '+comparisonDefinitions+' '+num(data.unidentified)+' alertas sin auditor identificado se excluyen de la comparación.</p>'+
       (u.entry.error?'<p role="alert">No fue posible consultar el total de auditorías por auditor: '+esc(u.entry.error)+'</p>':''));
   }
@@ -352,7 +352,7 @@
   }
   function territoryComparison(result,u,scope) {
     const rows=territoryComparisonData(result,u),baseStatus=u.entry.loading?'Consultando…':u.entry.error?'Error al consultar':'Sin base';
-    return panel('Comparativo por estudio y territorio',esc(scope)+'. País para KO; región para KO Tradicional CHILE y Lindley. De mayor a menor por KPIs con alerta; en empate, por KPIs que aplican.',
+    return panel('Comparativo por estudio y territorio',esc(scope)+'. País para KO; región para KO Tradicional CHILE y Lindley. De mayor a menor por alertas generadas; en empate, por alertas válidas.',
       chartDetails(table(['Estudio','País / región',...comparisonHeaders],rows.map(r=>row([esc(studyLabel(r.study)),esc(r.geography),...comparisonCells(r,baseStatus)]))),{collapsible:false})+
       '<p class="story-note">'+comparisonDefinitions+'</p>'+
       (u.entry.error?'<p role="alert">No fue posible consultar el total de auditorías por territorio: '+esc(u.entry.error)+'</p>':''));
@@ -386,7 +386,7 @@
   }
   function channelSegmentComparison(result,u,scope) {
     const rows=channelSegmentComparisonData(result,u),baseStatus=u.entry.loading?'Consultando…':u.entry.error?'Error al consultar':'Sin base';
-    return panel('Comparativo por canal y segmento',esc(scope)+'. Agrupado por estudio, canal y segmento; de mayor a menor por KPIs con alerta.',
+    return panel('Comparativo por canal y segmento',esc(scope)+'. Agrupado por estudio, canal y segmento; de mayor a menor por alertas generadas.',
       chartDetails(table(['Estudio','Canal','Segmento',...comparisonHeaders],rows.map(r=>row([esc(studyLabel(r.study)),esc(r.channel),esc(r.segment),...comparisonCells(r,baseStatus)]))),{collapsible:false})+
       '<p class="story-note">Segmento corresponde a la columna segmento de Databricks. Los registros sin este dato se agrupan como «Sin segmento identificado». '+comparisonDefinitions+'</p>'+
       (u.entry.error?'<p role="alert">No fue posible consultar el total de auditorías por canal y segmento: '+esc(u.entry.error)+'</p>':''));
