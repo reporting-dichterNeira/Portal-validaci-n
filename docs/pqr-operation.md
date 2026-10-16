@@ -7,7 +7,7 @@ No modifica perfiles, políticas, asignaciones, respuestas ni RPCs de los valida
 ## Puesta en marcha
 
 1. En PQR, abrir **Administrar accesos PQR** e ingresar con una cuenta administrativa existente.
-2. Crear la cuenta independiente de la supervisora PQR, con usuario y contraseña de al menos 12 caracteres.
+2. Crear la cuenta independiente de la supervisora PQR, con un usuario y una contraseña de al menos 8 caracteres. El usuario se normaliza a minúsculas.
 3. La supervisora entra por **Supervisión PQR**, configura el porcentaje y crea los analistas.
 4. Entregar cada código a su analista. Supervisión puede recuperarlo con **Copiar código**; se conserva cifrado en Supabase Vault y su hash se usa para autenticar. La lista y las descargas nunca incluyen el código.
 5. Una vez listo el equipo, pulsar **Distribuir pendientes de hoy**. En adelante el reparto se actualiza automáticamente.

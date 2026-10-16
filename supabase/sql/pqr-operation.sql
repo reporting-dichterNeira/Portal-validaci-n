@@ -262,8 +262,10 @@ begin
   raise exception 'PQR_SUPERVISOR_REQUIRED' using errcode='42501';end if;
  if p_action='create_supervisor' then
   if v_role<>'admin' then raise exception 'ADMIN_REQUIRED' using errcode='42501';end if;
-  if coalesce(p_data->>'username','') !~ '^[a-z0-9][a-z0-9._-]{2,31}$' or length(coalesce(p_data->>'password',''))<12 or length(btrim(coalesce(p_data->>'name','')))<2 then raise exception 'Nombre, usuario y contraseña de al menos 12 caracteres requeridos.';end if;
-  insert into private.pqr_supervisors(username,name,password_hash) values(p_data->>'username',left(btrim(p_data->>'name'),120),extensions.crypt(p_data->>'password',extensions.gen_salt('bf',10))) returning id into v_id;
+  if length(btrim(coalesce(p_data->>'name','')))<2 then raise exception 'Indica un nombre de al menos 2 caracteres.';end if;
+  if lower(btrim(coalesce(p_data->>'username',''))) !~ '^[a-z0-9][a-z0-9._-]{2,31}$' then raise exception 'El usuario debe tener entre 3 y 32 caracteres: letras, números, punto, guion o guion bajo.';end if;
+  if length(coalesce(p_data->>'password',''))<8 then raise exception 'La contraseña debe tener al menos 8 caracteres.';end if;
+  insert into private.pqr_supervisors(username,name,password_hash) values(lower(btrim(p_data->>'username')),left(btrim(p_data->>'name'),120),extensions.crypt(p_data->>'password',extensions.gen_salt('bf',10))) returning id into v_id;
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),'supervisor_created',jsonb_build_object('id',v_id));
   return jsonb_build_object('id',v_id);
  elsif p_action='start_distribution' then

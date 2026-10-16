@@ -2,7 +2,7 @@
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');const root=path.resolve(__dirname,'..');
 const day='2026-10-16';const analysts=[{id:'a1',name:'Ana García',active:true,available:true,assigned:10,completed:6,in_progress:0,pending:4,on_time:6,errors:1,mean_seconds:140,previous_pending:0},{id:'a2',name:'Luis Pérez',active:true,available:true,assigned:10,completed:5,in_progress:2,pending:3,on_time:5,errors:0,mean_seconds:175,previous_pending:2}];
 const reviews=Array.from({length:20},(_,i)=>({id:'r'+i,day,external_id:String(872101+i),study:['Chile','Lindley','Tradicional'][i%3],country:['Chile','Perú','Panamá'][i%3],validator_name:'Validador '+(i%4+1),analyst_id:i%2?'a1':'a2',analyst_name:i%2?'Ana García':'Luis Pérez',alert_count:4,invalid_count:3,risk:85-i,reasons:{fast:i%3===0,many_alerts:true,many_invalid:true},selection:i<16?'risk':'random',original_completed_at:day+'T14:00:00Z',original_sla_seconds:45+i*5,status:i<11?'completed':'pending',verdict:i<11?'correct':null,on_time:i<11,version:1,created_at:day+'T14:01:00Z'}));
-const html=fs.readFileSync(path.join(root,'pqr.html'),'utf8').replace('<script type="module" src="js/pqr-app.js?v=1.2"></script>',`<script type="module">
+const html=fs.readFileSync(path.join(root,'pqr.html'),'utf8').replace('<script type="module" src="js/pqr-app.js?v=1.3"></script>',`<script type="module">
 import {PqrUI} from '/js/pqr-ui.mjs';
 let ctx={role:'supervisor',name:'Supervisora PQR · Datos de prueba'},rows=${JSON.stringify(reviews)},analysts=${JSON.stringify(analysts)};
 const data=()=>({context:ctx,today:'${day}',day:'${day}',stats:{eligible:100,target:20,percentage:20,selected:20,assigned:20,completed:11,on_time:11,mean_seconds:155,refreshed_at:'${day}T17:00:00Z'},settings:{percentage:20,random_percentage:0,auto_assign:true},analysts:ctx.role==='analyst'?analysts.filter(a=>a.id===ctx.id):analysts,reviews:ctx.role==='analyst'?rows.filter(r=>r.analyst_id===ctx.id):rows,supervisors:[]});
@@ -15,7 +15,8 @@ if(action==='get_code'){if(p.id==='a2'&&!analysts.find(a=>a.id===p.id).codeAvail
 if(action==='reset_code'){analysts.find(a=>a.id===p.id).codeAvailable=true;return {code:'PQR-7X9M2R8K5V3A'};}
 if(action==='create_analyst')return {code:'PQR-7X9M2R8K5V3A'};return data();}};
 const root=document.getElementById('pqr-app'),ui=new PqrUI(root,backend);await ui.init();
-const toolbar=document.createElement('div');toolbar.className='pqr-notice';toolbar.style.margin='20px 24px';toolbar.innerHTML='Datos de prueba · <button id="preview-supervisor">Supervisión</button> <button id="preview-analyst">Analista</button>';root.before(toolbar);
+const toolbar=document.createElement('div');toolbar.className='pqr-notice';toolbar.style.margin='20px 24px';toolbar.innerHTML='Datos de prueba · <button id="preview-supervisor">Supervisión</button> <button id="preview-analyst">Analista</button> <button id="preview-admin">Administración</button>';root.before(toolbar);
+document.getElementById('preview-admin').onclick=()=>{ctx={role:'admin',name:'Administración · Prueba'};ui.detail=null;ui.load();};
 document.getElementById('preview-supervisor').onclick=()=>{ctx={role:'supervisor',name:'Supervisora PQR · Prueba'};ui.detail=null;ui.load();};
 document.getElementById('preview-analyst').onclick=()=>{ctx={role:'analyst',id:'a1',name:'Ana García · Prueba'};ui.detail=null;ui.load();};
 </script>`);

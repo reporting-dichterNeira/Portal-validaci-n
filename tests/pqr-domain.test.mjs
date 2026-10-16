@@ -34,6 +34,10 @@ test('supervision separates removed analysts and provides removal and restore ac
  const html=dashboardView(data,{status:'all',offset:0});assert.match(html,/data-delete="active"/);assert.doesNotMatch(html,/data-delete="removed"/);assert.match(html,/Analistas eliminados \(1\)/);assert.match(html,/data-restore="removed"/);
  assert.match(html,/data-copy="active"/);assert.doesNotMatch(html,/data-copy="removed"|Parte aleatoria|name="random_percentage"|20% aleatorio/);
 });
+test('PQR supervisor creation requires an eight-character password in the form',()=>{
+ const html=dashboardView({context:{role:'admin',name:'Administración'},stats:{},analysts:[],reviews:[]},{status:'all',offset:0});
+ assert.match(html,/name="password" type="password" minlength="8"/);assert.doesNotMatch(html,/minlength="12"/);
+});
 test('evidence links reject active content, duplicates collapse, and CSV escapes formulas',()=>{
  assert.equal(safeUrl('javascript:alert(1)'),null);assert.equal(safeUrl('data:text/html,bad'),null);assert.equal(safeUrl('http://unsafe.test'),null);
  assert.equal(evidenceEntries({meta:{foto:'https://example.test/photo'}},{foto:'https://example.test/photo'}).length,1);
