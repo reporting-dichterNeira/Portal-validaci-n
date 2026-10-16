@@ -9,12 +9,13 @@ No modifica perfiles, políticas, asignaciones, respuestas ni RPCs de los valida
 1. En PQR, abrir **Administrar accesos PQR** e ingresar con una cuenta administrativa existente.
 2. Crear la cuenta independiente de la supervisora PQR, con usuario y contraseña de al menos 12 caracteres.
 3. La supervisora entra por **Supervisión PQR**, configura el porcentaje y crea los analistas.
-4. Guardar cada código cuando se muestra y entregarlo a su analista. La base solo conserva su hash.
+4. Entregar cada código a su analista. Supervisión puede recuperarlo con **Copiar código**; se conserva cifrado en Supabase Vault y su hash se usa para autenticar. La lista y las descargas nunca incluyen el código.
 5. Una vez listo el equipo, pulsar **Distribuir pendientes de hoy**. En adelante el reparto se actualiza automáticamente.
 
 Pausar reparto excluye al analista de nuevas asignaciones y permite terminar sus revisiones actuales.
 La desactivación revoca acceso; no se permite si tiene una revisión en curso.
 Un código nuevo invalida las sesiones abiertas con el anterior.
+Los códigos anteriores que solo tenían hash se conservan sin cambios. Su copia se habilita al ingresar el analista con su código actual, o al generar uno nuevo expresamente desde el botón. Copiar un código ya disponible no lo regenera ni cierra sesiones.
 **Eliminar analista** lo retira del equipo y revoca su acceso, conservando las revisiones terminadas. Sus pendientes sin iniciar vuelven al reparto; no se permite eliminarlo si tiene una revisión en curso. **Analistas eliminados** permite restaurarlo como inactivo; se debe generar un código nuevo y activarlo para que vuelva a trabajar.
 
 ## Selección y jornada
@@ -23,7 +24,7 @@ Un código nuevo invalida las sesiones abiertas con el anterior.
 - Se toma la última finalización del día por estudio, país e ID externo; se excluyen registros retirados/reemplazados y casos sin alertas.
 - Meta: `ceil(auditorías elegibles × porcentaje / 100)`, por defecto 20%.
 - Riesgo: 40 puntos para el 20% más rápido del estudio con tiempo medible; hasta 20 por proporción de No aplica, hasta 15 por cantidad de No aplica (máximo a partir de 5) y hasta 25 por volumen de alertas (máximo a partir de 10).
-- Por defecto 80% de la muestra priorizada por riesgo y 20% aleatoria, con semilla estable por jornada. No se extrapola su tasa de error al universo.
+- Toda nueva selección se prioriza por riesgo. El único porcentaje configurable es el total a revisar. Se conservan las auditorías que ya habían sido seleccionadas. No se extrapola su tasa de error al universo.
 - La muestra se completa de forma incremental; nunca se retiran selecciones ni asignaciones existentes al cambiar el porcentaje.
 - Reparto por carga pendiente de alertas, seguido por cantidad de auditorías, entre analistas activos y disponibles.
 - La primera asignación necesita activación de la supervisora. Después se actualiza cada minuto mediante `validaflow-pqr-same-day` en pg_cron y al consultar la operación.
@@ -46,7 +47,7 @@ El CSV tiene una fila por alerta y conserva separadas la respuesta original y la
 - Credenciales y sesiones PQR en tablas `private.pqr_*`, con RLS y sin permisos directos para clientes.
 - RPCs públicas `pqr_login` y `pqr_api`: invocadores de funciones privadas con autorización explícita por acción y asignación.
 - Supervisión mediante credenciales PQR; analistas mediante código `PQR-` más 12 caracteres aleatorios (60 bits), sin 0, 1, I ni O para facilitar su lectura. Los códigos anteriores siguen siendo válidos hasta que se regeneren. Sesiones de 12 horas, revocables por activación/cambio de credencial.
-- Contraseñas bcrypt; códigos SHA-256; limitación de intentos por identidad y credencial. No hay secretos de servicio en el navegador.
+- Contraseñas bcrypt; autenticación de códigos SHA-256; copia de códigos cifrada en Vault, recuperable solo por supervisión/administración PQR mediante `get_code` y con evento de auditoría sin el código. Eliminar al analista retira también la copia recuperable. Limitación de intentos por identidad y credencial. No hay secretos de servicio en el navegador.
 - La cuenta administrativa existente solo inicia la configuración y crea cuentas PQR; no se cambia su perfil.
 
 Instalación idempotente: `supabase/sql/pqr-operation.sql`.

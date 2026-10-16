@@ -3,17 +3,20 @@
 begin;
 set local lock_timeout='5s';
 create extension if not exists pg_cron with schema pg_catalog;
+create extension if not exists supabase_vault with schema vault;
 
 create table if not exists private.pqr_settings (
  singleton boolean primary key default true check(singleton),
  percentage numeric not null default 20 check(percentage between 1 and 100),
- random_percentage numeric not null default 20 check(random_percentage between 0 and 100),
+ random_percentage numeric not null default 0 check(random_percentage between 0 and 100),
  enabled boolean not null default true,
  auto_assign boolean not null default false,
  updated_at timestamptz not null default now()
 );
 insert into private.pqr_settings(singleton) values(true) on conflict do nothing;
 alter table private.pqr_settings add column if not exists auto_assign boolean not null default false;
+alter table private.pqr_settings alter column random_percentage set default 0;
+update private.pqr_settings set random_percentage=0 where random_percentage<>0;
 create table if not exists private.pqr_supervisors (
  id uuid primary key default gen_random_uuid(), username text unique not null,
  name text not null, password_hash text not null, active boolean not null default true,
@@ -26,6 +29,7 @@ create table if not exists private.pqr_analysts (
  created_at timestamptz not null default now()
 );
 alter table private.pqr_analysts add column if not exists deleted_at timestamptz;
+alter table private.pqr_analysts add column if not exists code_secret_id uuid;
 create table if not exists private.pqr_sessions (
  user_id uuid primary key references auth.users(id) on delete cascade,
  supervisor_id uuid references private.pqr_supervisors(id),
@@ -118,7 +122,7 @@ end;$$;
 
 create or replace function private.pqr_login(p_kind text,p_identifier text,p_secret text) returns jsonb
 language plpgsql security definer set search_path='' as $$
-declare v_id uuid; v_subject text; v_now timestamptz:=clock_timestamp(); v_ok boolean:=false;
+declare v_id uuid; v_secret_id uuid; v_subject text; v_now timestamptz:=clock_timestamp(); v_ok boolean:=false;
 begin
  if auth.uid() is null then raise exception 'AUTH_REQUIRED' using errcode='42501';end if;
  v_subject:=case when p_kind='supervisor' then lower(btrim(p_identifier)) else 'code:'||encode(extensions.digest(upper(btrim(p_secret)),'sha256'),'hex') end;
@@ -131,11 +135,15 @@ begin
   select id into v_id from private.pqr_supervisors where username=lower(btrim(p_identifier)) and active
    and password_hash=extensions.crypt(p_secret,password_hash);
  elsif p_kind='analyst' then
-  select id into v_id from private.pqr_analysts where active and code_hash=encode(extensions.digest(upper(btrim(p_secret)),'sha256'),'hex');
+  select id,code_secret_id into v_id,v_secret_id from private.pqr_analysts where active and deleted_at is null and code_hash=encode(extensions.digest(upper(btrim(p_secret)),'sha256'),'hex') for update;
  else raise exception 'INVALID_LOGIN_KIND'; end if;
  v_ok:=v_id is not null;
  insert into private.pqr_login_attempts(user_id,subject,success) values(auth.uid(),v_subject,v_ok);
  if not v_ok then return jsonb_build_object('error','Credenciales PQR inválidas o inactivas.');end if;
+ -- Preserve an existing hash-only code after successful proof of possession.
+ if p_kind='analyst' and v_secret_id is null then
+  update private.pqr_analysts set code_secret_id=vault.create_secret(upper(btrim(p_secret)),null,'PQR analyst access code') where id=v_id;
+ end if;
  insert into private.pqr_sessions(user_id,supervisor_id,analyst_id,created_at,expires_at)
  values(auth.uid(),case when p_kind='supervisor' then v_id end,case when p_kind='analyst' then v_id end,v_now,v_now+interval '12 hours')
  on conflict(user_id) do update set supervisor_id=excluded.supervisor_id,analyst_id=excluded.analyst_id,created_at=excluded.created_at,expires_at=excluded.expires_at;
@@ -242,7 +250,7 @@ end;$$;
 create or replace function private.pqr_api(p_action text,p_data jsonb default '{}'::jsonb) returns jsonb
 language plpgsql security definer set search_path='' as $$
 declare ctx jsonb:=private.pqr_context(); v_role text; v_day date:=(now() at time zone 'America/Bogota')::date;
- v_id uuid; v_code text; v_review private.pqr_reviews%rowtype; v_results jsonb; v_kpi jsonb; v_result jsonb; v_verdict text;
+ v_id uuid; v_secret_id uuid; v_code text; v_code_hash text; v_review private.pqr_reviews%rowtype; v_results jsonb; v_kpi jsonb; v_result jsonb; v_verdict text;
  v_errors integer:=0; v_unevaluable integer:=0; v_rows jsonb; v_stats jsonb; v_analysts jsonb; v_settings jsonb;
  v_offset integer:=greatest(0,least(coalesce((p_data->>'offset')::integer,0),100000));
 begin
@@ -250,7 +258,7 @@ begin
  v_role:=ctx->>'role';
  if p_action='context' then return ctx;end if;
  if p_action='logout' then delete from private.pqr_sessions where user_id=auth.uid();return '{}'::jsonb;end if;
- if p_action in ('settings','start_distribution','create_analyst','update_analyst','reset_code','delete_analyst','restore_analyst','reassign','create_supervisor') and v_role not in ('admin','supervisor') then
+ if p_action in ('settings','start_distribution','create_analyst','update_analyst','get_code','reset_code','delete_analyst','restore_analyst','reassign','create_supervisor') and v_role not in ('admin','supervisor') then
   raise exception 'PQR_SUPERVISOR_REQUIRED' using errcode='42501';end if;
  if p_action='create_supervisor' then
   if v_role<>'admin' then raise exception 'ADMIN_REQUIRED' using errcode='42501';end if;
@@ -263,13 +271,13 @@ begin
   update private.pqr_settings set auto_assign=true,updated_at=now() where singleton;
   insert into private.pqr_events(actor,action) values(auth.uid(),'distribution_enabled');
  elsif p_action='settings' then
-  update private.pqr_settings set percentage=(p_data->>'percentage')::numeric,random_percentage=(p_data->>'random_percentage')::numeric,updated_at=now() where singleton;
-  insert into private.pqr_events(actor,action,detail) values(auth.uid(),'settings_changed',p_data-'password');
+  update private.pqr_settings set percentage=(p_data->>'percentage')::numeric,random_percentage=0,updated_at=now() where singleton;
+  insert into private.pqr_events(actor,action,detail) values(auth.uid(),'settings_changed',jsonb_build_object('percentage',p_data->'percentage'));
  elsif p_action='create_analyst' then
   if length(btrim(coalesce(p_data->>'name','')))<2 then raise exception 'Indica el nombre del analista.';end if;
   select 'PQR-'||string_agg(substr('23456789ABCDEFGHJKLMNPQRSTUVWXYZ',1+(get_byte(entropy.bytes,i)%32),1),'' order by i)
    into v_code from (select extensions.gen_random_bytes(12) bytes) entropy cross join generate_series(0,11) i;
-  insert into private.pqr_analysts(name,code_hash) values(left(btrim(p_data->>'name'),120),encode(extensions.digest(v_code,'sha256'),'hex')) returning id into v_id;
+  insert into private.pqr_analysts(name,code_hash,code_secret_id) values(left(btrim(p_data->>'name'),120),encode(extensions.digest(v_code,'sha256'),'hex'),vault.create_secret(v_code,null,'PQR analyst access code')) returning id into v_id;
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),'analyst_created',jsonb_build_object('id',v_id));
   perform private.pqr_refresh_today();return jsonb_build_object('id',v_id,'code',v_code);
  elsif p_action in ('delete_analyst','restore_analyst') then
@@ -279,7 +287,9 @@ begin
   if not found then raise exception 'ANALYST_NOT_FOUND';end if;
   if p_action='delete_analyst' then
    if exists(select 1 from private.pqr_reviews where analyst_id=(p_data->>'id')::uuid and (status='in_progress' or (status='pending' and review_results<>'{}'::jsonb))) then raise exception 'El analista tiene revisiones en curso. Debe terminarlas antes de eliminarlo.';end if;
-   update private.pqr_analysts set deleted_at=clock_timestamp(),active=false,available=false,credentials_changed_at=clock_timestamp(),code_hash=encode(extensions.digest(extensions.gen_random_bytes(32),'sha256'),'hex') where id=(p_data->>'id')::uuid and deleted_at is null;
+   select code_secret_id into v_secret_id from private.pqr_analysts where id=(p_data->>'id')::uuid;
+   if v_secret_id is not null then perform vault.update_secret(v_secret_id,encode(extensions.gen_random_bytes(32),'hex'));end if;
+   update private.pqr_analysts set deleted_at=clock_timestamp(),active=false,available=false,credentials_changed_at=clock_timestamp(),code_secret_id=null,code_hash=encode(extensions.digest(extensions.gen_random_bytes(32),'sha256'),'hex') where id=(p_data->>'id')::uuid and deleted_at is null;
    if not found then raise exception 'El analista ya fue eliminado.';end if;
    update private.pqr_reviews set analyst_id=null,assigned_at=null,version=version+1 where analyst_id=(p_data->>'id')::uuid and status='pending';
   else
@@ -292,10 +302,21 @@ begin
   update private.pqr_analysts set active=(p_data->>'active')::boolean,available=(p_data->>'available')::boolean where id=(p_data->>'id')::uuid and deleted_at is null;
   if not found then raise exception 'ANALYST_NOT_FOUND';end if;
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),'analyst_updated',p_data);
+ elsif p_action='get_code' then
+  select code_secret_id,code_hash into v_secret_id,v_code_hash from private.pqr_analysts where id=(p_data->>'id')::uuid and deleted_at is null for update;
+  if not found then raise exception 'ANALYST_NOT_FOUND';end if;
+  select decrypted_secret into v_code from vault.decrypted_secrets where id=v_secret_id;
+  if v_code is null or encode(extensions.digest(v_code,'sha256'),'hex') is distinct from v_code_hash then return jsonb_build_object('requires_new_code',true);end if;
+  insert into private.pqr_events(actor,action,detail) values(auth.uid(),'analyst_code_copied',jsonb_build_object('id',p_data->>'id'));
+  return jsonb_build_object('code',v_code);
  elsif p_action='reset_code' then
+  select code_secret_id into v_secret_id from private.pqr_analysts where id=(p_data->>'id')::uuid and deleted_at is null for update;
+  if not found then raise exception 'ANALYST_NOT_FOUND';end if;
   select 'PQR-'||string_agg(substr('23456789ABCDEFGHJKLMNPQRSTUVWXYZ',1+(get_byte(entropy.bytes,i)%32),1),'' order by i)
    into v_code from (select extensions.gen_random_bytes(12) bytes) entropy cross join generate_series(0,11) i;
-  update private.pqr_analysts set code_hash=encode(extensions.digest(v_code,'sha256'),'hex'),credentials_changed_at=clock_timestamp() where id=(p_data->>'id')::uuid and deleted_at is null;
+  if v_secret_id is null then v_secret_id:=vault.create_secret(v_code,null,'PQR analyst access code');
+  else perform vault.update_secret(v_secret_id,v_code);end if;
+  update private.pqr_analysts set code_hash=encode(extensions.digest(v_code,'sha256'),'hex'),code_secret_id=v_secret_id,credentials_changed_at=clock_timestamp() where id=(p_data->>'id')::uuid and deleted_at is null;
   if not found then raise exception 'ANALYST_NOT_FOUND';end if;
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),'analyst_code_reset',jsonb_build_object('id',p_data->>'id'));
   return jsonb_build_object('code',v_code);
