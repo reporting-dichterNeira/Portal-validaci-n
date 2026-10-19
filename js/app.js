@@ -4,7 +4,7 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=34.1';
+import { ExcelParser } from './excel-parser.js?v=34.2';
 import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
@@ -6019,7 +6019,11 @@ class ValidaFlowApp {
       const identity=JSON.stringify([audit.id,audit.estudio]);
       if(previous?.source===source && previous.identity===identity && previous.geography===audit.databricksGeography)continue;
       const candidates=byId.get(this.normalizeAuditId(audit.id)) || [];
-      if(candidates.length)audit.databricksGeography={...(audit.databricksGeography || {}),...globalThis.PortalIndicators.reportDimensions(audit,candidates,readField)};
+      const checked=this.benchmarkReportCheckedKeys?.has(JSON.stringify([this.normalizeAuditId(audit.id),this.getStudyForAudit(audit)]));
+      if(candidates.length || checked) {
+        const lookup={...audit,databricksGeography:{...(audit.databricksGeography || {}),channelLookupComplete:true}};
+        audit.databricksGeography={...(audit.databricksGeography || {}),...globalThis.PortalIndicators.reportDimensions(lookup,candidates,readField)};
+      }
       this.benchmarkReportHydrated.set(audit,{source,identity,geography:audit.databricksGeography});
     }
   }

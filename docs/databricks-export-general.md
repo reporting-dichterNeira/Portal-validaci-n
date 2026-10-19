@@ -67,6 +67,10 @@ determina la elegibilidad del cruce. Región, canal, subcanal y segmento del
 export sincronizado tienen prioridad sobre la base diaria de alertas. Los
 valores vacíos o «Sin región» no bloquean el cruce; coincidencias contradictorias
 quedan sin asignar. El CSV espera a completar esta consulta.
+Una vez consultado el origen, el canal se toma exclusivamente de `canal` de
+Databricks. Si no hay coincidencia por ID y estudio o el canal está vacío,
+se muestra sin canal identificado; no se sustituye por el canal de la carga
+diaria. Esta regla aplica a todos los estudios y meses en métricas y CSV.
 
 La consulta devuelve solo metadatos de IDs existentes en el portal, en lotes de
 500 pares ID/estudio, con autenticación y alcance de supervisión. Comercial puede

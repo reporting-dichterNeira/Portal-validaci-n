@@ -25,6 +25,22 @@ test('August historical export corrects channels while preserving previously ver
  const data=U.alertExport(rows,historical),region=data.headers.indexOf('Región'),channel=data.headers.indexOf('Canal');
  assert.deepEqual(data.rows.map(r=>[r[1],r[region],r[channel]]),[['5552800','IQUIQUE','HOME MARKET TRADICIONAL'],['5558229','TEMUCO','HOME MARKET TRADICIONAL'],['5555119','IQUIQUE','HOME MARKET TRADICIONAL']]);
 });
+
+test('checked metadata never falls back to the uploaded channel when Databricks has no match or no channel',async()=>{
+ const rows=[audit('8000001'),audit('8000002')];
+ const app=Object.assign(Object.create(ctx.App.prototype),{currentRole:'commercial',currentProfile:{id:'commercial'},
+  benchmarkCountryRows:[],getReportAuditSource:()=>rows,renderReportsView(){},
+  backend:{configured:true,async loadAuditReportContext(){return [{...context('8000002','TEMUCO'),channel:null}];}}});
+ await app.ensureBenchmarkCountries(rows);
+ for(const a of rows) {
+  assert.equal(a.canal,'GROCERY SHOPPING');
+  assert.equal(a.databricksGeography.channelLookupComplete,true);
+  assert.equal(a.databricksGeography.channel,'');
+  assert.equal(U.adapt([a],app.benchmarkCountryRows)[0].channel,'');
+  assert.equal(ctx.ExcelParser.getReportChannel(a),'');
+ }
+ assert.equal(rows[1].databricksGeography.region,'TEMUCO');
+});
 test('ID plus study rejects unrelated matches; equivalent casing is one value; genuine ambiguity is explicit',()=>{
  const a=audit('5692890',{databricksGeography:{region:'ANTIGUA'},region:'TALCA'});
  const other={...context('5692890','ARICA'),study:'ko_moderno_cr_202610',channel:'OTRO'};

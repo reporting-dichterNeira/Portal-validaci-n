@@ -86,7 +86,10 @@ export class ExcelParser {
   }
 
   static getReportChannel(audit) {
-    return audit.databricksGeography?.channelAmbiguous?'':audit.databricksGeography?.channel || audit.canal || audit.channel || '';
+    const verified=audit.databricksGeography;
+    if(verified?.channelAmbiguous)return '';
+    if(verified?.channelLookupComplete)return verified.channelSource==='storeview.slv_sv_ceres_ag_export.canal'?verified.channel || '':'';
+    return verified?.channel || audit.canal || audit.channel || '';
   }
 
   static buildConsolidatedExportRows(audits, validators) {

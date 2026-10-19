@@ -124,7 +124,15 @@
       const values=[...new Map(relevant.map(c=>clean(readField(c,names))).filter(Boolean)
         .map(v=>[v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),v])).values()];
       result[key+'Ambiguous']=values.length>1 || !values.length && a.databricksGeography?.[key+'Ambiguous']===true;
-      result[key]=result[key+'Ambiguous']?'':values[0] || clean(readField(a.databricksGeography || {},names)) || clean(readField(a,names));
+      const verifiedChannel=key==='channel' && a.databricksGeography?.channelSource==='storeview.slv_sv_ceres_ag_export.canal';
+      const channelChecked=key==='channel' && (relevant.length>0 || a.databricksGeography?.channelLookupComplete===true);
+      result[key]=result[key+'Ambiguous']?'':values[0] ||
+        (channelChecked?(verifiedChannel?clean(readField(a.databricksGeography || {},names)):''):
+          clean(readField(a.databricksGeography || {},names)) || clean(readField(a,names)));
+      if(key==='channel') {
+        result.channelLookupComplete=channelChecked;
+        result.channelSource=result.channel && (values.length===1 || verifiedChannel)?'storeview.slv_sv_ceres_ag_export.canal':'';
+      }
     }
     return result;
   }
