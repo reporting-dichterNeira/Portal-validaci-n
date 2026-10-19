@@ -450,9 +450,15 @@ export class SupabaseBackend {
   }
 
   async readMetricsRpc(name,args) {
+    return this.readWithRetry(()=>this.client.rpc(name,args));
+  }
+
+  // Retry reads only. Rebuild each request so a renewed JWT is used, and
+  // keep pagination at the same cursor until the page succeeds.
+  async readWithRetry(request) {
     this.ensureConfigured();
     const refresh=async()=>{
-      // Comparisons can request the same session simultaneously. Renew once.
+      // Concurrent reads can request the same session. Renew once.
       this.metricsSessionRefresh ||= this.client.auth.refreshSession().finally(()=>{this.metricsSessionRefresh=null;});
       const {data,error}=await this.metricsSessionRefresh;
       if(error)throw error;
@@ -466,7 +472,7 @@ export class SupabaseBackend {
     let renewed=false;
     for(let attempt=0;attempt<3;attempt++) {
       try {
-        const {data,error}=await this.client.rpc(name,args);
+        const {data,error}=await request();
         if(error)throw error;
         return data;
       } catch(error) {
@@ -769,9 +775,10 @@ export class SupabaseBackend {
     let cursor = 0;
 
     while (true) {
-      let request = this.client
-        .from('audits')
-        .select(`
+      const page = await this.readWithRetry(()=>{
+        let request = this.client
+          .from('audits')
+          .select(`
           id, batch_id, module, external_id, study, study_id, country_id,
           assigned_validator_id, status, audit_date, validation_date, payload, report_geography,
           validation_results, started_at, completed_at, duration_seconds,
@@ -779,19 +786,17 @@ export class SupabaseBackend {
           pending_resolution, original_operation_date, original_source_filename, original_uploaded_at,
           upload_batches!inner(operation_date, status, source_filename, created_at),
           validators(code, name)
-        `)
-        .in('upload_batches.status', ['active', 'archived'])
-        .gt('id', cursor);
+          `)
+          .in('upload_batches.status', ['active', 'archived'])
+          .gt('id', cursor);
 
-      if (module) request = request.eq('module', module);
-      if (!ignoreScope && this.currentScope?.study?.id) request = request.eq('study_id', this.currentScope.study.id);
-      if (!ignoreScope && this.currentScope?.country?.id) request = request.eq('country_id', this.currentScope.country.id);
-      request = request.order('id', { ascending: true }).limit(safePageSize);
+        if (module) request = request.eq('module', module);
+        if (!ignoreScope && this.currentScope?.study?.id) request = request.eq('study_id', this.currentScope.study.id);
+        if (!ignoreScope && this.currentScope?.country?.id) request = request.eq('country_id', this.currentScope.country.id);
+        request = request.order('id', { ascending: true }).limit(safePageSize);
 
-      const { data, error } = await request;
-      if (error) throw error;
-
-      const page = data || [];
+        return request;
+      }) || [];
       rows.push(...page);
       if (typeof onProgress === 'function') onProgress(rows.length);
       if (page.length < safePageSize) break;
