@@ -4,12 +4,12 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=34.0';
+import { ExcelParser } from './excel-parser.js?v=34.1';
 import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
 import { ValidatorUI } from './validator-ui.js?v=37.1';
-import { SupabaseBackend } from './supabase-backend.js?v=65.1';
+import { SupabaseBackend } from './supabase-backend.js?v=65.2';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.1';
 
@@ -94,6 +94,7 @@ class ValidaFlowApp {
     this.expandedBenchmarkStudies = new Set(['Tradicional', 'Moderno']);
     this.benchmarkCountryRows = [];
     this.benchmarkCountryCheckedIds = new Set();
+    this.benchmarkReportCheckedKeys = new Set();
     this.benchmarkCountryLoadPromise = null;
 
     // Filtro activo en el feed de anomalías
@@ -841,6 +842,7 @@ class ValidaFlowApp {
     this.adminExternalAnalysisCacheHydrationPromise = null;
     this.benchmarkCountryRows = [];
     this.benchmarkCountryCheckedIds = new Set();
+    this.benchmarkReportCheckedKeys = new Set();
     this.benchmarkCountryLoadPromise = null;
     this.benchmarkCountryRetryAfter = 0;
     this.benchmarkCountryIndex = null;
@@ -5943,24 +5945,33 @@ class ValidaFlowApp {
   }
 
   async ensureBenchmarkCountries(audits) {
-    if (!this.backend?.configured || !this.canUseExternalAnalysis()) return;
+    const reportContext=!!this.backend?.loadAuditReportContext && ['admin','supervisor','visualizer','commercial'].includes(this.currentRole);
+    if (!this.backend?.configured || !this.canUseExternalAnalysis() && !reportContext) return;
     if (this.benchmarkCountryLoadPromise) return this.benchmarkCountryLoadPromise;
     if (Date.now() < (this.benchmarkCountryRetryAfter || 0)) return;
     this.benchmarkCountryCheckedIds ||= new Set();
+    this.benchmarkReportCheckedKeys ||= new Set();
+    const reportKey=a=>JSON.stringify([this.normalizeAuditId(a.id),this.getStudyForAudit(a)]);
     const needsIndicatorContext = ['metrics','committee'].includes(this.visualizationTab) || this.currentTab === 'reports';
-    const ids = [...new Set(audits.filter(audit =>
+    const pendingAudits=audits.filter(audit => reportContext ? !this.benchmarkReportCheckedKeys.has(reportKey(audit)) :
       needsIndicatorContext ||
       (['Tradicional', 'Moderno', 'Chile', 'Lindley'].includes(this.getStudyForAudit(audit)) && !this.getReportGeography(audit))
-    ).map(audit => this.normalizeAuditId(audit.id)))]
-      .filter(id => /^\d+$/.test(id) && !this.benchmarkCountryCheckedIds.has(id));
-    if (!ids.length) return;
+    ).filter(audit=>/^\d+$/.test(this.normalizeAuditId(audit.id)));
+    const ids = [...new Set(pendingAudits.map(audit=>this.normalizeAuditId(audit.id)))]
+      .filter(id => reportContext || !this.benchmarkCountryCheckedIds.has(id));
+    if (!ids.length) {if(reportContext)this.hydrateReportDimensions(audits);return;}
     const profile = this.currentProfile;
     const request = (async () => {
       try {
-        const rows = await this.backend.loadAuditCountryContext(ids);
+        const rows = reportContext
+          ? await this.backend.loadAuditReportContext(pendingAudits.map(a=>({id:this.normalizeAuditId(a.id),study:this.getStudyForAudit(a)})))
+          : await this.backend.loadAuditCountryContext(ids);
         if (this.currentProfile !== profile || !this.currentRole) return;
         this.benchmarkCountryRows = [...(this.benchmarkCountryRows || []), ...rows];
-        ids.forEach(id => this.benchmarkCountryCheckedIds.add(id));
+        if(reportContext) {
+          pendingAudits.forEach(audit=>this.benchmarkReportCheckedKeys.add(reportKey(audit)));
+          this.hydrateReportDimensions(audits);
+        } else ids.forEach(id => this.benchmarkCountryCheckedIds.add(id));
         this.benchmarkCountryRetryAfter = 0;
         this.renderReportsView();
       } catch (error) {
@@ -5974,7 +5985,23 @@ class ValidaFlowApp {
     }
     // The next pass handles any history page that arrived during the request.
     if (this.currentProfile === profile && this.currentRole && !this.benchmarkCountryRetryAfter) {
-      this.ensureBenchmarkCountries(this.getReportAuditSource());
+      return this.ensureBenchmarkCountries(this.getReportAuditSource());
+    }
+  }
+
+  areReportDimensionsReady(audits) {
+    if(!this.backend?.configured || !this.backend?.loadAuditReportContext)return true;
+    return !this.benchmarkCountryRetryAfter && (audits || []).every(a=> !/^\d+$/.test(this.normalizeAuditId(a.id)) ||
+      this.benchmarkReportCheckedKeys?.has(JSON.stringify([this.normalizeAuditId(a.id),this.getStudyForAudit(a)])));
+  }
+
+  hydrateReportDimensions(audits) {
+    if(!globalThis.PortalIndicators?.reportDimensions)return;
+    const byId=new Map();
+    for(const row of this.benchmarkCountryRows || []) {const id=this.normalizeAuditId(row.audit_external_id);if(!byId.has(id))byId.set(id,[]);byId.get(id).push(row);}
+    for(const audit of audits || []) {
+      const candidates=byId.get(this.normalizeAuditId(audit.id)) || [];
+      if(candidates.length)audit.databricksGeography={...(audit.databricksGeography || {}),...globalThis.PortalIndicators.reportDimensions(audit,candidates)};
     }
   }
 
@@ -8301,6 +8328,7 @@ class ValidaFlowApp {
     try {
       await this.ensureIndicatorHistoriesLoaded();
       await this.ensureBenchmarkCountries(this.getHistoricalAlertsSource());
+      if(!this.areReportDimensionsReady(this.getHistoricalAlertsSource()))throw new Error('No se completó el cruce con Databricks.');
       if (this.currentProfile !== profile) return;
       const data = this.getHistoricalAlertsExport();
       if (!data.rows.length) { this.showToast('No hay alertas en el histórico disponible.', 'warning'); return; }
@@ -8321,6 +8349,7 @@ class ValidaFlowApp {
       this.showToast('Preparando los indicadores para el PDF…', 'info');
       await this.ensureIndicatorHistoriesLoaded();
       await this.ensureBenchmarkCountries(this.getReportAuditSource());
+      if(!this.areReportDimensionsReady(this.getReportAuditSource()))throw new Error('No se completó el cruce con Databricks.');
       if (this.currentProfile !== profile) return;
       const snapshot = globalThis.PortalIndicatorReport.buildSnapshot(this);
       const pdf = globalThis.PortalIndicatorReport.buildPdf(window.jspdf.jsPDF, snapshot);

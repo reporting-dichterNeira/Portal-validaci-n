@@ -82,7 +82,11 @@ export class ExcelParser {
   static getGeographyExportFields(audit) {
     const raw = audit.databricksGeography?.country || audit.pais || audit.country || '';
     const country = /guatemala/i.test(raw) ? 'Guatemala' : this.normalizeCountry(raw);
-    return { 'País': country, 'Región': audit.databricksGeography?.region || audit.region || audit.meta?.region || '' };
+    return { 'País': country, 'Región': audit.databricksGeography?.regionAmbiguous?'':audit.databricksGeography?.region || audit.region || audit.meta?.region || '' };
+  }
+
+  static getReportChannel(audit) {
+    return audit.databricksGeography?.channelAmbiguous?'':audit.databricksGeography?.channel || audit.canal || audit.channel || '';
   }
 
   static buildConsolidatedExportRows(audits, validators) {
@@ -97,7 +101,7 @@ export class ExcelParser {
         'ID PDV': audit.idPDV,
         ...this.getGeographyExportFields(audit),
         'Ciudad': audit.ciudad,
-        'Canal': audit.canal,
+        'Canal': this.getReportChannel(audit),
         'Fecha Auditoría': audit.fecha,
         'Auditor': audit.usuario,
         'Validador Asignado': validador ? validador.name : 'Sin asignar',
@@ -662,7 +666,7 @@ export class ExcelParser {
           'ID PDV': audit.idPDV,
           ...this.getGeographyExportFields(audit),
           'Ciudad': audit.ciudad,
-          'Canal': audit.canal,
+          'Canal': this.getReportChannel(audit),
           'Fecha Captura': audit.fecha,
           'Auditor': audit.usuario,
           'Validador Asignado': validador ? validador.name : 'Sin asignar',
@@ -786,7 +790,7 @@ export class ExcelParser {
         'ID PDV': audit.idPDV,
         ...this.getGeographyExportFields(audit),
         'Ciudad': audit.ciudad,
-        'Canal': audit.canal,
+        'Canal': this.getReportChannel(audit),
         'Fecha Captura': audit.fecha,
         'Auditor': audit.usuario,
         'Validador Responsable': validador ? validador.name : 'Sin asignar',

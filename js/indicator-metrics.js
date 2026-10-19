@@ -326,7 +326,7 @@
       missingPeriodDates: undated, missingCountries: selected.filter(a => a.country === 'Sin país identificado').length,
       missingPdv: selected.filter(a => !a.pdv).length, monthlyCounts: totals(monthlyAlerts) };
   }
-  const api = { dateKey, weekKey, ratio, eventStamp, interval, normalizeRegion, normalizeAudits, parseCSV, readConsolidatedCSV, attachContext, excludeUndatedPending, compute, totals, auditValidationSla,validationSlaExport,validationSlaStatistics,formatSla };
+  const api = { dateKey, weekKey, ratio, eventStamp, interval, normalizeStudy, normalizeRegion, normalizeAudits, parseCSV, readConsolidatedCSV, attachContext, excludeUndatedPending, compute, totals, auditValidationSla,validationSlaExport,validationSlaStatistics,formatSla };
   root.PortalIndicatorMetrics = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

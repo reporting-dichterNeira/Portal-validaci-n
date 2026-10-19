@@ -75,7 +75,8 @@
       byId.get(id).push(c);
     }
     return M.normalizeAudits(canonical(audits).filter(a=> (sourceModule==='all' || (a._module || 'blocking') === sourceModule) && /^\d+$/.test(String(a.id))).map(a=> {
-      const candidates = byId.get(String(a.id)) || [];
+      const candidates = (byId.get(String(a.id)) || []).filter(c=>!c.study || M.normalizeStudy(c.study)===M.normalizeStudy(a.estudio));
+      const dimensions=reportDimensions(a,candidates,readField);
       const fallback = names => {
         const values = [...new Set(candidates.map(c=>names.includes('region')?M.normalizeRegion(readField(c,names)):readField(c,names)).filter(Boolean))];
         return values.length === 1 ? values[0] : '';
@@ -96,10 +97,24 @@
         // identify the field auditor. Never read it from the uploaded base.
         auditor:databricksAuditor(a,candidates,readField),
         pdv:readField(a,['idPDV','pdv']) || fallback(['pdv_id']),
-        region:readField(a.databricksGeography || {},['region']) || readField(a,['region']) || fallback(['region']), channel:readField(a,['canal','channel']) || fallback(['channel']),
-        subchannel:readField(a,['subcanal','subchannel']) || fallback(['subchannel']),
-        segment:readField(a.databricksGeography || {},['segmento']) || readField(a,['segmento']) || fallback(['segmento']), kpis};
+        region:dimensions.region,channel:dimensions.channel,subchannel:dimensions.subchannel,
+        segment:dimensions.segmento,kpis};
     }));
+  }
+  function reportDimensions(a,candidates=[],readField=field) {
+    const result={};
+    for(const [key,names] of [['region',['region']],['channel',['channel','canal']],['subchannel',['subchannel','subcanal']],['segmento',['segmento']]]) {
+      const clean=value=>{
+        const text=String(value ?? '').trim().replace(/\s+/g,' ');
+        return key==='region'?M.normalizeRegion(text):/^(sin (canal|subcanal|segmento)( identificad[oa])?|null|undefined|n\/?a|-)$/i.test(text)?'':text;
+      };
+      const relevant=candidates.filter(c=>!c.study || M.normalizeStudy(c.study)===M.normalizeStudy(a.estudio));
+      const values=[...new Map(relevant.map(c=>clean(readField(c,names))).filter(Boolean)
+        .map(v=>[v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),v])).values()];
+      result[key+'Ambiguous']=values.length>1 || !values.length && a.databricksGeography?.[key+'Ambiguous']===true;
+      result[key]=result[key+'Ambiguous']?'':values[0] || clean(readField(a.databricksGeography || {},names)) || clean(readField(a,names));
+    }
+    return result;
   }
   function databricksAuditor(a, candidates, readField=field) {
     const clean=value=>{
@@ -743,6 +758,10 @@
     }
     const moduleLabel=module==='smart'?'SMART':module==='all'?'BLOQUEANTES + SMART':'BLOQUEANTES';
     html=html.replace(/· BLOQUEANTES/g,'· '+moduleLabel).replace('No incluye Smart.','Módulo: '+moduleLabel+'. En Consolidado, cada caso y alerta se cuenta por módulo.').replace('resumen de Bloqueantes','resumen de esta lectura').replace(jump('decisions','Preparar decisiones'),'');
+    const reportContextReady=app.areReportDimensionsReady?.(audits)!==false;
+    if(!reportContextReady)html='<p class="story-note" role="status">'+(app.benchmarkCountryRetryAfter
+      ?'No fue posible contrastar región y canal con Databricks. Pulsa Actualizar totales para reintentar; las descargas esperan el cruce.'
+      :'Contrastando región y canal con Databricks; las descargas estarán disponibles al terminar.')+'</p>'+html;
     target.innerHTML=html;
     bindChartTableExports(target,{suffix:[module || 'blocking',state.month || from,to].filter(Boolean).join('-')});
     bindScopeControls();
@@ -753,6 +772,10 @@
       target.querySelectorAll('[data-summary-parent]').forEach(row=>{if(row.dataset.summaryParent===study)row.hidden=!expanded;});
     }));
     target.querySelector('[data-universe-refresh]')?.addEventListener('click',async()=>{
+      if(app.backend?.loadAuditReportContext) {
+        app.benchmarkReportCheckedKeys=new Set();app.benchmarkCountryRows=[];
+        app.benchmarkCountryIndex=null;app.benchmarkCountryRetryAfter=0;
+      }
       app.databricksTotalsCache?.forEach(entry=>{entry.loadedAt=0;entry.attemptedAt=0;entry.retryCount=0;clearTimeout(entry.retryTimer);});app.renderReportsView();
       try {await app.ensureIndicatorHistoriesLoaded?.({force:true});}
       catch(error) {console.error('No fue posible actualizar los recibidos:',error);}
@@ -770,14 +793,14 @@
     if(exportButton) {
       const modules=module==='all'?['blocking','smart']:[module || 'blocking'];
       const historyReady=!app.backend?.configured || modules.every(key=>Array.isArray(app.auditHistoryByModule?.[key]) && !app.auditHistoryErrors?.[key]);
-      exportButton.disabled=!c.total || !historyReady;
-      exportButton.title=historyReady?'Una fila por alerta generada, según los filtros activos. El SLA total de la auditoría se repite en sus alertas; no se suma por KPI.':'Consultando el histórico de alertas…';
+      exportButton.disabled=!c.total || !historyReady || !reportContextReady;
+      exportButton.title=!reportContextReady?'Contrastando región y canal con Databricks…':historyReady?'Una fila por alerta generada, según los filtros activos. El SLA total de la auditoría se repite en sus alertas; no se suma por KPI.':'Consultando el histórico de alertas…';
     }
     target.querySelector('[data-indicator-download]')?.addEventListener('click',()=>download(['Módulo','ID auditoría','Jornada','Fecha auditoría original','Fecha de carga','Fecha de decisión','Estudio','País','Región','Canal','Subcanal','Auditor','Sub-KPI','Decisión','Tipificación','Segmento','Validador','Código validador','Inicio de validación','Fin de validación',...Object.keys(M.validationSlaExport({}))],result.alerts.map(a=>{
       const source=auditIndex.get(JSON.stringify([a.module,a.id,a.study]));
       return [a.module==='smart'?'Smart':'Bloqueantes',a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,decisionLabel(a.decision),a.reason,a.segment,source?.validatorName || source?.validatorId,source?.validatorCode,source?.startedAt,source?.completedAt,...Object.values(M.validationSlaExport(source || {},asOf))];
     }),'Indicadores-'+(module || 'blocking')+'-'+asOf+'.csv'));
   }
-  root.PortalIndicators={adapt,canonical,render,csv,download,alertExport,signalPanel,receiptShare,auditorComparisonData,auditorComparison,territoryComparisonData,territoryComparison,channelSegmentComparisonData,channelSegmentComparison,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};
+  root.PortalIndicators={adapt,reportDimensions,canonical,render,csv,download,alertExport,signalPanel,receiptShare,auditorComparisonData,auditorComparison,territoryComparisonData,territoryComparison,channelSegmentComparisonData,channelSegmentComparison,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};
   if(typeof module!=='undefined')module.exports=root.PortalIndicators;
 })(typeof globalThis!=='undefined'?globalThis:this);

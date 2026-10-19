@@ -446,6 +446,10 @@ export class SupabaseBackend {
   }
 
   async loadDatabricksAuditTotals(filters) {
+    return this.readMetricsRpc('get_databricks_audit_totals',{p_filters:filters});
+  }
+
+  async readMetricsRpc(name,args) {
     this.ensureConfigured();
     const refresh=async()=>{
       // Comparisons can request the same session simultaneously. Renew once.
@@ -462,7 +466,7 @@ export class SupabaseBackend {
     let renewed=false;
     for(let attempt=0;attempt<3;attempt++) {
       try {
-        const {data,error}=await this.client.rpc('get_databricks_audit_totals',{p_filters:filters});
+        const {data,error}=await this.client.rpc(name,args);
         if(error)throw error;
         return data;
       } catch(error) {
@@ -472,6 +476,19 @@ export class SupabaseBackend {
         await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));
       }
     }
+  }
+
+  async loadAuditReportContext(audits) {
+    const pairs=[...new Map((audits || []).filter(a=>/^\d+$/.test(String(a.id)) && a.study)
+      .map(a=>[JSON.stringify([String(a.id),a.study]),{id:String(a.id),study:a.study}])).values()];
+    const chunks=[];
+    for(let i=0;i<pairs.length;i+=500)chunks.push(pairs.slice(i,i+500));
+    const result=[];
+    for(let i=0;i<chunks.length;i+=4) {
+      const pages=await Promise.all(chunks.slice(i,i+4).map(chunk=>this.readMetricsRpc('get_audit_report_context',{p_audits:chunk})));
+      pages.forEach(page=>result.push(...(page || [])));
+    }
+    return result;
   }
 
   async resolvePreviousPending(ids, action, reason, target = null) {

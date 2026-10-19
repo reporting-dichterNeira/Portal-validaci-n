@@ -70,9 +70,9 @@ test('two timing legs exclude missing, negative and future events without manufa
 const base={id:'123',_module:'blocking',estudio:'Moderno',_studyId:'s',_countryId:'c',_batchId:1,_batchOperationDate:'2026-10-01',
  meta:{FECHA_AU:'2026-09-30',region:'Norte',subcanal:'Supermercado'},_createdAt:'2026-10-01T12:00:00Z',pais:'Panamá',
  kpis:[{name:'A',needsReview:true}],validationResults:{A:{status:'no_aplica',tipificacion:'Falso positivo',decisionAt:'2026-10-02T12:00:00Z'}}};
-test('adapter keeps original audit, upload and decision timestamps, daily dimensions have priority',()=>{
+test('adapter keeps event timestamps and gives Databricks dimensions priority over daily labels',()=>{
  const [a]=U.adapt([base],[{audit_external_id:'123',region:'Sur',subchannel:'Otro',audit_date:'2026-09-29'}]);
- assert.equal(a.auditDate,'2026-09-30');assert.equal(a.region,'NORTE');assert.equal(a.subchannel,'Supermercado');
+ assert.equal(a.auditDate,'2026-09-30');assert.equal(a.region,'SUR');assert.equal(a.subchannel,'Otro');
  const r=global.PortalIndicatorMetrics.compute([a],{asOf:'2026-10-10',from:'2026-10-01',to:'2026-10-10'});
  assert.equal(r.counts.rejects,1);assert.equal(r.timing.intake.dateOnly,1);assert.equal(r.timing.validation.meanHours,24);
 });

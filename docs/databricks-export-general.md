@@ -58,3 +58,17 @@ consulta de metadatos por mes e ID de auditoría. Solo se aceptan cruces con un
 único segmento no vacío, conservando una copia privada del valor anterior.
 Este enriquecimiento modifica únicamente `segmento`: no vuelve a publicar el
 corte, no modifica cantidades o decisiones y no reabre meses cerrados.
+
+Las métricas y sus descargas consultan los metadatos de Databricks por ID de
+auditoría y estudio mediante `get_audit_report_context` (instalación en
+`supabase/sql/audit-report-context.sql`). Región, canal, subcanal y segmento del
+export sincronizado tienen prioridad sobre la base diaria de alertas. Los
+valores vacíos o «Sin región» no bloquean el cruce; coincidencias contradictorias
+quedan sin asignar. El CSV espera a completar esta consulta.
+
+La consulta devuelve solo metadatos de IDs existentes en el portal, en lotes de
+500 pares ID/estudio, con autenticación y alcance de supervisión. Comercial puede
+usarla desde métricas sin obtener acceso al export completo ni a otras hojas.
+No modifica decisiones, asignaciones ni los datos originales de las auditorías.
+`supabase/sql/test-audit-report-context.sql` verifica los permisos y los IDs de
+regresión dentro de una transacción que se revierte.
