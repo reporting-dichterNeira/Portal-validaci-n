@@ -285,11 +285,25 @@
     // Reports also render while init restores auth. Do not cache an anonymous
     // permission error and reuse it after the staff session becomes available.
     let entry=canQuery?app.databricksTotalsCache.get(key):{loading:true,data:null,error:''};
-    if(canQuery && (!entry||Date.now()-entry.loadedAt>5*60*1000)) {
-      entry={loading:true,data:null,error:'',loadedAt:Date.now()};app.databricksTotalsCache.set(key,entry);
+    if(canQuery && (!entry || !entry.refreshing && Date.now()-entry.loadedAt>5*60*1000 && Date.now()-(entry.attemptedAt||0)>=15000)) {
+      const previous=entry;
+      entry={loading:!previous?.data,refreshing:true,data:previous?.data||null,error:'',warning:'',loadedAt:previous?.loadedAt||0,
+        attemptedAt:Date.now(),retryCount:previous?.retryCount||0};app.databricksTotalsCache.set(key,entry);
       if(app.databricksTotalsCache.size>12)app.databricksTotalsCache.delete(app.databricksTotalsCache.keys().next().value);
-      if(app.backend?.loadDatabricksAuditTotals)app.backend.loadDatabricksAuditTotals(filters).then(data=>entry.data=data).catch(error=>entry.error=error.message).finally(()=>{entry.loading=false;if(app.currentView==='visualizations')app.renderReportsView();});
-      else {entry.loading=false;entry.error='Fuente no disponible';}
+      if(app.backend?.loadDatabricksAuditTotals)app.backend.loadDatabricksAuditTotals(filters).then(data=>{
+        entry.data=data;entry.loadedAt=Date.now();entry.retryCount=0;
+      }).catch(error=>{
+        if(entry.data && error.metricsRetryable)entry.warning='No se pudo actualizar. Se muestra el último dato consultado para estos filtros; consulta su fecha de corte.';
+        else {entry.data=null;entry.error=error.message || 'No fue posible consultar los totales.';}
+        if(error.metricsRetryable && entry.retryCount<1) {
+          entry.retryCount++;
+          entry.retryTimer=setTimeout(()=>{
+            if(app.databricksTotalsCache.get(key)===entry && app.currentView==='visualizations')app.renderReportsView();
+          },15050);
+          entry.retryTimer?.unref?.();
+        }
+      }).finally(()=>{entry.loading=false;entry.refreshing=false;entry.attemptedAt=Date.now();if(app.currentView==='visualizations')app.renderReportsView();});
+      else {entry.loading=false;entry.refreshing=false;entry.error='Fuente no disponible';}
     }
     const rows=entry.data?.studies||[],names=studies.length?studies:['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'];
     const supported=new Set(['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley']);
@@ -302,6 +316,7 @@
     return typeof received==='number' && Number.isFinite(received) && received>=0
       && typeof lifted==='number' && Number.isFinite(lifted) && lifted>0 ? received/lifted : null;
   }
+  const totalsWarning=u=>u.entry.warning?'<p role="status">'+esc(u.entry.warning)+'</p>':u.entry.refreshing && u.entry.data?'<p role="status">Actualizando totales…</p>':'';
   const comparisonHeaders=['Auditorías','Auditorías con alerta','Alertas generadas','Alertas válidas','% de auditorías alertadas','Promedio de alertas por auditoría alertada','% de alertas válidas entre revisadas'];
   const comparisonDefinitions='Auditorías = total levantado, incluidas las que no generaron alertas. Los IDs alertados se cuentan una vez por estudio, incluso si están en ambos módulos. Alertas generadas = total de alertas recibidas; Alertas válidas = alertas confirmadas en la revisión. % de auditorías alertadas = auditorías con alerta / total levantado × 100. Promedio = alertas generadas / auditorías con alerta. % de alertas válidas entre revisadas = válidas / (válidas + no válidas) × 100; excluye pendientes. Sin denominador se muestra «Sin base». El total levantado usa el mes de Ola y la fecha original; las alertas usan la jornada de carga.';
   function comparisonStatistics(total,applies,rejects,alertedAudits) {
@@ -343,7 +358,7 @@
     const data=auditorComparisonData(result,u);
     const baseStatus=u.entry.loading?'Consultando…':u.entry.error?'Error al consultar':'Sin base';
     return panel('Comparativo por auditor','De mayor a menor por alertas generadas; en empate, por alertas válidas. Incluye todo el período y los filtros seleccionados.',
-      chartDetails(table(['Auditor',...comparisonHeaders],data.rows.map(r=>row([esc(r.auditor),...comparisonCells(r,baseStatus)]))),{collapsible:false})+'<p class="story-note">Auditor de campo del Export de Databricks. '+comparisonDefinitions+' '+num(data.unidentified)+' alertas sin auditor identificado se excluyen de la comparación.</p>'+
+      totalsWarning(u)+chartDetails(table(['Auditor',...comparisonHeaders],data.rows.map(r=>row([esc(r.auditor),...comparisonCells(r,baseStatus)]))),{collapsible:false})+'<p class="story-note">Auditor de campo del Export de Databricks. '+comparisonDefinitions+' '+num(data.unidentified)+' alertas sin auditor identificado se excluyen de la comparación.</p>'+
       (u.entry.error?'<p role="alert">No fue posible consultar el total de auditorías por auditor: '+esc(u.entry.error)+'</p>':''));
   }
   function territoryComparisonData(result,u) {
@@ -365,7 +380,7 @@
   function territoryComparison(result,u,scope) {
     const rows=territoryComparisonData(result,u),baseStatus=u.entry.loading?'Consultando…':u.entry.error?'Error al consultar':'Sin base';
     return panel('Comparativo por estudio y territorio',esc(scope)+'. País para KO; región para KO Tradicional CHILE y Lindley. De mayor a menor por alertas generadas; en empate, por alertas válidas.',
-      chartDetails(table(['Estudio','País / región',...comparisonHeaders],rows.map(r=>row([esc(studyLabel(r.study)),esc(r.geography),...comparisonCells(r,baseStatus)]))),{collapsible:false})+
+      totalsWarning(u)+chartDetails(table(['Estudio','País / región',...comparisonHeaders],rows.map(r=>row([esc(studyLabel(r.study)),esc(r.geography),...comparisonCells(r,baseStatus)]))),{collapsible:false})+
       '<p class="story-note">'+comparisonDefinitions+'</p>'+
       (u.entry.error?'<p role="alert">No fue posible consultar el total de auditorías por territorio: '+esc(u.entry.error)+'</p>':''));
   }
@@ -399,7 +414,7 @@
   function channelSegmentComparison(result,u,scope) {
     const rows=channelSegmentComparisonData(result,u),baseStatus=u.entry.loading?'Consultando…':u.entry.error?'Error al consultar':'Sin base';
     return panel('Comparativo por canal y segmento',esc(scope)+'. Agrupado por estudio, canal y segmento; de mayor a menor por alertas generadas.',
-      chartDetails(table(['Estudio','Canal','Segmento',...comparisonHeaders],rows.map(r=>row([esc(studyLabel(r.study)),esc(r.channel),esc(r.segment),...comparisonCells(r,baseStatus)]))),{collapsible:false})+
+      totalsWarning(u)+chartDetails(table(['Estudio','Canal','Segmento',...comparisonHeaders],rows.map(r=>row([esc(studyLabel(r.study)),esc(r.channel),esc(r.segment),...comparisonCells(r,baseStatus)]))),{collapsible:false})+
       '<p class="story-note">Segmento corresponde a la columna segmento de Databricks. Los registros sin este dato se agrupan como «Sin segmento identificado». '+comparisonDefinitions+'</p>'+
       (u.entry.error?'<p role="alert">No fue posible consultar el total de auditorías por canal y segmento: '+esc(u.entry.error)+'</p>':''));
   }
@@ -450,7 +465,7 @@
       return '<tr class="benchmark-study-parent"><td data-export-value="'+esc(studyLabel(group.study))+'">'+(group.territories.length?button:esc(studyLabel(group.study)))+'</td>'+metricCells(group)+'</tr>'+group.territories.map((territory,j)=>'<tr id="summary-territory-'+i+'-'+j+'" class="benchmark-country-row" data-summary-parent="'+esc(group.study)+'" '+(expanded?'':'hidden')+'><td data-export-value="'+esc(studyLabel(group.study)+' / '+territory.geography)+'"><span class="benchmark-country-label">↳ '+esc(territory.geography)+'</span></td>'+metricCells(territory)+'</tr>').join('');
     }).join('');
     return panel('Resumen por estudio, país y región','Auditorías alertadas / total de auditorías levantadas × 100. Despliega cada estudio para consultar su detalle.',
-      chartDetails('<div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Resumen por estudio, país y región"><table class="data-table benchmark-table summary-benchmark"><thead><tr>'+['Estudio / País / Región','Auditorías alertadas','Total de auditorías','% de auditorías alertadas','Total alertas','Alertas válidas','Alertas no válidas','Tasa de confirmación'].map(label=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>',{collapsible:false})+'<p class="story-note">Orden descendente por alertas generadas, tanto entre estudios como dentro de cada estudio. El CSV incluye todos los países y regiones, aunque estén plegados. El total de auditorías proviene del levantamiento de Databricks. En Consolidado, los IDs alertados se cuentan una sola vez por estudio; las alertas y sus decisiones conservan cada módulo. La tasa de confirmación usa solo alertas revisadas. Los filtros de mes y fecha usan los mismos cortes que el consolidado superior.</p>');
+      totalsWarning(u)+chartDetails('<div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Resumen por estudio, país y región"><table class="data-table benchmark-table summary-benchmark"><thead><tr>'+['Estudio / País / Región','Auditorías alertadas','Total de auditorías','% de auditorías alertadas','Total alertas','Alertas válidas','Alertas no válidas','Tasa de confirmación'].map(label=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>',{collapsible:false})+'<p class="story-note">Orden descendente por alertas generadas, tanto entre estudios como dentro de cada estudio. El CSV incluye todos los países y regiones, aunque estén plegados. El total de auditorías proviene del levantamiento de Databricks. En Consolidado, los IDs alertados se cuentan una sola vez por estudio; las alertas y sus decisiones conservan cada módulo. La tasa de confirmación usa solo alertas revisadas. Los filtros de mes y fecha usan los mismos cortes que el consolidado superior.</p>');
   }
   function universePanel(u,result,smart,app) {
     const unavailable=u.entry.error?'Error al consultar':'Sin corte conectado';
@@ -481,7 +496,7 @@
       ['Auditorías recibidas en Smart',display(smartCount),pct(receiptShare(smartCount,total))+' del total levantado','purple','💡']
     ])+groupedChart(chartRows,[{key:'export',label:'Total levantado',tone:'cyan'},{key:'blocking',label:'Auditorías recibidas en Bloqueantes',tone:'blue',shareKey:'blockingShare'},{key:'smart',label:'Auditorías recibidas en Smart',tone:'purple',shareKey:'smartShare'}],{unit:'auditorías',kind:'universe'})+chartDetails(table(['Estudio','Total levantado','Auditorías recibidas en Bloqueantes','Auditorías recibidas en Smart','% Bloqueantes / levantado','% Smart / levantado'],chartRows.map(r=>
       row([esc(r.name),display(r.export),display(r.blocking),display(r.smart),pct(r.blockingShare),pct(r.smartShare)]))))+
-      '<p class="story-note">Porcentaje = auditorías recibidas en el módulo / total levantado. Una auditoría puede estar en ambos módulos; los porcentajes no se suman. El total levantado usa el mes de Ola y, al filtrar días, la fecha original de auditoría; las recibidas usan la jornada de carga. '+(u.snapshots.length?'Cortes: '+u.snapshots.map(s=>esc(String(s.month).slice(0,7))+' · '+esc(s.refreshed_at)).join('; '):'La ausencia de un corte o un error de consulta no se interpreta como cero.')+'</p>'+(u.entry.error?'<p role="alert">No fue posible consultar el total levantado: '+esc(u.entry.error)+'</p>':'')+'<button type="button" class="btn btn-outline btn-sm" data-universe-refresh>↻ Actualizar totales</button>');
+      '<p class="story-note">Porcentaje = auditorías recibidas en el módulo / total levantado. Una auditoría puede estar en ambos módulos; los porcentajes no se suman. El total levantado usa el mes de Ola y, al filtrar días, la fecha original de auditoría; las recibidas usan la jornada de carga. '+(u.snapshots.length?'Cortes: '+u.snapshots.map(s=>esc(String(s.month).slice(0,7))+' · '+esc(s.refreshed_at)).join('; '):'La ausencia de un corte o un error de consulta no se interpreta como cero.')+'</p>'+totalsWarning(u)+(u.entry.error?'<p role="alert">No fue posible consultar el total levantado: '+esc(u.entry.error)+'</p>':'')+'<button type="button" class="btn btn-outline btn-sm" data-universe-refresh>↻ Actualizar totales</button>');
   }
   const journey = [
     ['summary','📊','Resumen','¿Cómo va la operación?'],
@@ -738,7 +753,7 @@
       target.querySelectorAll('[data-summary-parent]').forEach(row=>{if(row.dataset.summaryParent===study)row.hidden=!expanded;});
     }));
     target.querySelector('[data-universe-refresh]')?.addEventListener('click',async()=>{
-      app.databricksTotalsCache?.clear();app.renderReportsView();
+      app.databricksTotalsCache?.forEach(entry=>{entry.loadedAt=0;entry.attemptedAt=0;entry.retryCount=0;clearTimeout(entry.retryTimer);});app.renderReportsView();
       try {await app.ensureIndicatorHistoriesLoaded?.({force:true});}
       catch(error) {console.error('No fue posible actualizar los recibidos:',error);}
       app.renderReportsView();

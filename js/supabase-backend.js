@@ -24,6 +24,13 @@ function isExpiredJwtError(error) {
   return /jwt.*expired|expired.*jwt|token.*expired|expired.*token/.test(message);
 }
 
+function isTransientMetricsError(error) {
+  if(error?.code==='42501' || [401,403].includes(Number(error?.status)))return false;
+  return ['57014','55P03','53300','PGRST003'].includes(error?.code)
+    || Number(error?.status)===429 || Number(error?.status)>=500
+    || /failed to fetch|fetch failed|network|load failed|timeout|timed out|temporarily unavailable/i.test(String(error?.message || error));
+}
+
 function mapValidator(row) {
   return {
     id: row.id,
@@ -440,9 +447,31 @@ export class SupabaseBackend {
 
   async loadDatabricksAuditTotals(filters) {
     this.ensureConfigured();
-    const { data, error } = await this.client.rpc('get_databricks_audit_totals', { p_filters: filters });
-    if (error) throw error;
-    return data;
+    const refresh=async()=>{
+      // Comparisons can request the same session simultaneously. Renew once.
+      this.metricsSessionRefresh ||= this.client.auth.refreshSession().finally(()=>{this.metricsSessionRefresh=null;});
+      const {data,error}=await this.metricsSessionRefresh;
+      if(error)throw error;
+      if(!data?.session)throw new Error('La sesión venció. Vuelve a ingresar para consultar las métricas.');
+    };
+    const {data:sessionData,error:sessionError}=await this.client.auth.getSession();
+    if(sessionError)throw sessionError;
+    if(!sessionData?.session)throw new Error('La sesión venció. Vuelve a ingresar para consultar las métricas.');
+    const expires=Number(sessionData.session.expires_at || 0)*1000;
+    if(expires && expires-Date.now()<60000)await refresh();
+    let renewed=false;
+    for(let attempt=0;attempt<3;attempt++) {
+      try {
+        const {data,error}=await this.client.rpc('get_databricks_audit_totals',{p_filters:filters});
+        if(error)throw error;
+        return data;
+      } catch(error) {
+        if(isExpiredJwtError(error) && !renewed && attempt<2) {renewed=true;await refresh();continue;}
+        if(!isTransientMetricsError(error))throw error;
+        if(attempt===2) {error.metricsRetryable=true;throw error;}
+        await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));
+      }
+    }
   }
 
   async resolvePreviousPending(ids, action, reason, target = null) {
