@@ -27,7 +27,8 @@ test('universo usa una consulta agregada reutilizable y mantiene independientes 
  let calls=0,filters;const target={innerHTML:'',parentElement:{children:[]},querySelectorAll:()=>[],querySelector:()=>null};target.parentElement.children=[target];
  global.document={getElementById:()=>target};
  const app={currentProfile:{id:'test'},currentView:'visualizations',selectedMetricsMonth:'2026-10',reportsSubtab:'metrics',getVisualizationModuleFilter:()=> 'blocking',getReportCountry:()=> 'Chile',selectedStudies:['Chile'],selectedReportCountry:'all',indicatorExecutiveSection:'summary',renderReportsView(){},backend:{async loadDatabricksAuditTotals(f){calls++;filters=f;return {studies:[{study_name:'Chile',databricks_total:2702,export_total:2702,verified:true}],snapshots:[{month:'2026-10-01',source:'Databricks · Reporting Cluster',refreshed_at:'2026-10-12'}]};}}};
- const rows=[{id:'10',_module:'blocking',estudio:'Chile',fecha:'2026-10-01',kpis:[{name:'A',needsReview:true}]}];
+ // This pending fixture needs its original audit date to belong to metrics.
+ const rows=[{id:'10',_module:'blocking',estudio:'Chile',fecha:'2026-10-01',fechaAuditoriaOriginal:'2026-10-01',kpis:[{name:'A',needsReview:true}]}];
  const receipts=[...rows,{id:'10',_module:'smart',estudio:'Chile',fecha:'2026-10-01',kpis:[]},{id:'11',_module:'smart',estudio:'Chile',fecha:'2026-10-01',kpis:[]},{id:'11',_module:'smart',estudio:'Chile',fecha:'2026-10-01',kpis:[]},{id:'12',_module:'smart',estudio:'Chile',fecha:'2026-09-01',kpis:[]}];
  try {U.render(app,rows,null,null,receipts);await new Promise(resolve=>setImmediate(resolve));U.render(app,rows,null,null,receipts);U.render(app,rows,null,null,receipts);
  assert.equal(calls,1);assert.equal(filters.month,'2026-10');assert.deepEqual(filters.studies,['Chile']);

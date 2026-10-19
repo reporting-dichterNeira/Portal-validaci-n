@@ -114,9 +114,9 @@ test('reassignment keeps original history while canonicalizing the physical uplo
  assert.equal(U.canonical([original,moved,current]).length,3);
  assert.equal(U.adapt([moved])[0].periodDate,'2026-10-01');
 });
-test('a newer corrected payload needs review even if an older version was completed',()=>{
+test('a repeated Blocking ID retains its completed validation instead of becoming pending',()=>{
  const old={...base,validationStatus:'completada'};
  const fresh={...base,_batchId:2,_batchOperationDate:'2026-10-02',validationStatus:'pendiente',validationResults:{}};
  const [chosen]=U.canonical([old,fresh]);
- assert.equal(chosen._batchId,2);assert.equal(chosen.validationStatus,'pendiente');
+ assert.equal(chosen._batchId,1);assert.equal(chosen.validationStatus,'completada');
 });

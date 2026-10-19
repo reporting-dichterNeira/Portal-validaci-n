@@ -36,6 +36,16 @@
     };
   }
   function canonical(audits) {
+    const identity = a => JSON.stringify([a._studyId || a.estudio,a._countryId || '',
+      String(a.id).trim().replace(/^0+(?=\d)/,'').replace(/^([0-9]+)[.,]0+$/,'$1')]);
+    // Check the full history before discarding superseded loads or filtering
+    // dates. A completed Blocking audit must not become pending on reimport.
+    const completedBlocking = new Map();
+    for (const a of audits || []) {
+      if ((a._module || 'blocking') !== 'blocking' || a.validationStatus !== 'completada') continue;
+      const key=identity(a), previous=completedBlocking.get(key);
+      if (!previous || Number(a._batchId || 0)>Number(previous._batchId || 0)) completedBlocking.set(key,a);
+    }
     const latestBatches = new Map();
     for (const a of audits || []) {
       const day = a._physicalBatchOperationDate || a._batchOperationDate || a.fecha || '';
@@ -45,9 +55,11 @@
     const map = new Map();
     for (const a of audits || []) {
       if (a._pendingResolution === 'removed' || a._pendingResolution === 'replaced') continue;
+      const completed=(a._module || 'blocking') === 'blocking' ? completedBlocking.get(identity(a)) : null;
+      if (completed && a.validationStatus !== 'completada') continue;
       const batchKey = JSON.stringify([a._module,a._studyId || a.estudio,a._countryId,a._physicalBatchOperationDate || a._batchOperationDate || a.fecha || '']);
-      if (Number(a._batchId || 0) < latestBatches.get(batchKey)) continue;
-      const key = JSON.stringify([a._module || 'blocking',a._studyId || a.estudio,String(a.id)]);
+      if (Number(a._batchId || 0) < latestBatches.get(batchKey) && a !== completed) continue;
+      const key = JSON.stringify([a._module || 'blocking',identity(a)]);
       const prev = map.get(key);
       if (!prev || Number(a._batchId || 0) > Number(prev._batchId || 0) ||
         (Number(a._batchId || 0) === Number(prev._batchId || 0) && a.validationStatus === 'completada' && prev.validationStatus !== 'completada')) map.set(key,a);
