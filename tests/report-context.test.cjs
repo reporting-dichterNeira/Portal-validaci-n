@@ -18,6 +18,13 @@ test('reported Chile IDs export their actual Databricks region and channel, igno
  assert.deepEqual(data.rows.map(r=>[r[1],r[data.headers.indexOf('Región')],r[data.headers.indexOf('Canal')]]),[['5692890','TEMUCO','HOME MARKET TRADICIONAL'],['5695658','PUERTO MONTT','HOME MARKET TRADICIONAL'],['5695983','VIÑA DEL MAR','HOME MARKET TRADICIONAL']]);
  assert.equal(JSON.stringify(rows),before);
 });
+
+test('August historical export corrects channels while preserving previously verified regions',()=>{
+ const rows=[audit('5552800',{fecha:'2026-08-21',databricksGeography:{region:'IQUIQUE'}}),audit('5558229',{fecha:'2026-08-21',databricksGeography:{region:'TEMUCO'}}),audit('5555119',{fecha:'2026-08-21',databricksGeography:{region:'IQUIQUE'}})];
+ const historical=rows.map(a=>({...context(a.id,null),study:'ko_trad_ch_202608',region:null}));
+ const data=U.alertExport(rows,historical),region=data.headers.indexOf('Región'),channel=data.headers.indexOf('Canal');
+ assert.deepEqual(data.rows.map(r=>[r[1],r[region],r[channel]]),[['5552800','IQUIQUE','HOME MARKET TRADICIONAL'],['5558229','TEMUCO','HOME MARKET TRADICIONAL'],['5555119','IQUIQUE','HOME MARKET TRADICIONAL']]);
+});
 test('ID plus study rejects unrelated matches; equivalent casing is one value; genuine ambiguity is explicit',()=>{
  const a=audit('5692890',{databricksGeography:{region:'ANTIGUA'},region:'TALCA'});
  const other={...context('5692890','ARICA'),study:'ko_moderno_cr_202610',channel:'OTRO'};

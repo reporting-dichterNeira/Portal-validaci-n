@@ -36,7 +36,10 @@ begin
    select distinct r.audit_external_id,r.study,r.country,r.region,r.channel,r.subchannel,r.segmento,r.auditor,r.audit_date,r.pdv_id
    from authorized a join public.admin_alert_export_records r on r.audit_external_id=a.external_id
    join public.admin_analysis_imports i on i.dataset_type='alerts' and i.period_month=r.period_month
-   where private.report_context_study(r.study)=a.study and i.source_filename ilike 'Databricks%'
+   -- Final imports include historical Databricks exports uploaded as Excel.
+   -- The filename is a display label, not an eligibility or authorization rule.
+   -- Staged, unpublished synchronization rows are not in this table.
+   where private.report_context_study(r.study)=a.study
  ) select coalesce(jsonb_agg(to_jsonb(m)),'[]'::jsonb) into result from matched m;
  return result;
 end; $$;

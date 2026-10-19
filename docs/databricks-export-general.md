@@ -61,7 +61,9 @@ corte, no modifica cantidades o decisiones y no reabre meses cerrados.
 
 Las métricas y sus descargas consultan los metadatos de Databricks por ID de
 auditoría y estudio mediante `get_audit_report_context` (instalación en
-`supabase/sql/audit-report-context.sql`). Región, canal, subcanal y segmento del
+`supabase/sql/audit-report-context.sql`). Incluye los exports históricos cargados
+como Excel antes de la sincronización automática: el nombre del archivo no
+determina la elegibilidad del cruce. Región, canal, subcanal y segmento del
 export sincronizado tienen prioridad sobre la base diaria de alertas. Los
 valores vacíos o «Sin región» no bloquean el cruce; coincidencias contradictorias
 quedan sin asignar. El CSV espera a completar esta consulta.

@@ -12,6 +12,12 @@ begin
  where r->>'audit_external_id'='5692890' and r->>'region'='TEMUCO' and r->>'channel'='HOME MARKET TRADICIONAL') then raise exception 'Incorrect requested metadata for %',profile.role; end if;
  if public.get_audit_report_context('[{"id":"5692890","study":"Moderno"}]')<>'[]'::jsonb then raise exception 'Cross-study match'; end if;
  insert into report_context_results values(profile.role,4,extract(epoch from clock_timestamp()-started)*1000);
+ -- August was imported from a historical Excel export. Its filename must
+ -- not exclude the correct channel from the same ID/study metadata lookup.
+ data:=public.get_audit_report_context('[{"id":"5552800","study":"Chile"},{"id":"5558229","study":"Chile"},{"id":"5555119","study":"Chile"}]');
+ if jsonb_array_length(data)<>3 or exists(select 1 from jsonb_array_elements(data)r
+ where r->>'channel' is distinct from 'HOME MARKET TRADICIONAL') then raise exception 'Historical Excel export channel excluded for %',profile.role;end if;
+ insert into report_context_results values(profile.role,3,extract(epoch from clock_timestamp()-started)*1000);
  end loop;
  for profile in select p.id from public.profiles p where p.is_active and p.role::text='supervisor'
  and not exists(select 1 from public.supervisor_assignments sa join public.audits a
