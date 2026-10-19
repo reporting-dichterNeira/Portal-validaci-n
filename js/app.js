@@ -4,7 +4,7 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=34.2';
+import { ExcelParser } from './excel-parser.js?v=34.3';
 import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
@@ -3406,7 +3406,7 @@ class ValidaFlowApp {
     const remember=rows=>{cache?.set(sourceKey,rows);return rows;};
     const today = getNicaraguaDateKey(new Date());
     const withoutExpiredPending = audits => {
-      const visible = (audits || []).filter(audit => !this.isExpiredPendingAudit(audit, today));
+      const visible = (audits || []).filter(audit => globalThis.PortalIndicatorMetrics?.isReportAudit?.(audit)!==false && !this.isExpiredPendingAudit(audit, today));
       return globalThis.PortalIndicators ? globalThis.PortalIndicators.canonical(visible) : visible;
     };
     if (visualizationModule === 'all' && this.currentView === 'visualizations') {
@@ -5914,6 +5914,7 @@ class ValidaFlowApp {
   }
 
   getBenchmarkCountry(audit) {
+    if(audit.databricksGeography?.countryAmbiguous)return '';
     const daily = this.getDailyBenchmarkCountry(audit);
     if (daily) return daily;
     this.rebuildBenchmarkCountryIndex();

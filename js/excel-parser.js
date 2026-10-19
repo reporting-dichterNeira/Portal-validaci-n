@@ -82,7 +82,7 @@ export class ExcelParser {
   static getGeographyExportFields(audit) {
     const raw = audit.databricksGeography?.country || audit.pais || audit.country || '';
     const country = /guatemala/i.test(raw) ? 'Guatemala' : this.normalizeCountry(raw);
-    return { 'País': country, 'Región': audit.databricksGeography?.regionAmbiguous?'':audit.databricksGeography?.region || audit.region || audit.meta?.region || '' };
+    return { 'País': audit.databricksGeography?.countryAmbiguous?'':country, 'Región': audit.databricksGeography?.regionAmbiguous?'':audit.databricksGeography?.region || audit.region || audit.meta?.region || '' };
   }
 
   static getReportChannel(audit) {

@@ -115,6 +115,25 @@ Deno.serve(async (req) => {
   try {
     const adminClient = createAdminClient();
 
+    if (action === 'context-identities' || action === 'context-batch') {
+      const token = req.headers.get('x-ingest-token') || '';
+      if (token.length < 40 || await hashToken(token) !== ingestTokenHash) {
+        return respond({ error: 'INVALID_INGEST_TOKEN' }, 401);
+      }
+      if (action === 'context-identities') {
+        const after = String(body.after ?? '');
+        if (after.length > 100) return respond({ error: 'INVALID_CURSOR' }, 400);
+        const { data, error } = await adminClient.rpc('report_context_sync_ids', { p_after: after, p_limit: 1000 });
+        if (error) throw error;
+        return respond({ identities: data || [] });
+      }
+      const rows = Array.isArray(body.rows) ? body.rows : [];
+      if (!rows.length || rows.length > 250) return respond({ error: 'INVALID_BATCH' }, 400);
+      const { data, error } = await adminClient.rpc('ingest_report_context', { p_rows: rows });
+      if (error) throw error;
+      return respond({ ok: true, written: data });
+    }
+
     if (action === 'schedule') {
       const token = req.headers.get('x-ingest-token') || '';
       if (token.length < 40 || await hashToken(token) !== ingestTokenHash) {

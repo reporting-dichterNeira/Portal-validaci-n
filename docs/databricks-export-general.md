@@ -78,3 +78,36 @@ usarla desde métricas sin obtener acceso al export completo ni a otras hojas.
 No modifica decisiones, asignaciones ni los datos originales de las auditorías.
 `supabase/sql/test-audit-report-context.sql` verifica los permisos y los IDs de
 regresión dentro de una transacción que se revierte.
+
+### Metadatos de auditorías que llegan tarde a una ola anterior
+
+El corte mensual conserva el volumen publicado, pero no constituye un catálogo
+completo y actualizado de metadatos. Por ejemplo, una auditoría de AGO 2026 puede
+haber llegado al portal el 3 de septiembre y no existir en el Excel original de
+agosto. La ausencia en ese corte no significa que Databricks no tenga su canal.
+
+La tarea `sync_report_context`, después de `sync_export_general` en el job diario,
+ejecuta `databricks/validaflow_report_context.py`. Obtiene tanto las auditorías
+recibidas en el portal como todos los IDs del total levantado de los cortes
+publicados, en páginas, y los cruza con `storeview.slv_sv_ceres_ag_export`,
+sin restringirlos al mes de carga ni reabrir snapshots mensuales. Publica solo
+metadatos en `private.audit_report_context_cache`; no escribe en `audits`,
+validaciones, asignaciones ni tablas de volúmenes mensuales. El agregado de
+totales usa el mismo catálogo verificado para país, región, canal, segmento y
+auditor (`supabase/sql/live-inventory-report-context.sql`), conservando los IDs,
+fechas de corte y cantidades del snapshot. Esto evita mantener una fila de
+«Sin región» procedente de metadatos incompletos en el total levantado.
+
+La función Edge existente autentica `context-identities` y `context-batch` con
+el mismo secreto de integración guardado en Databricks. Sus RPC de sincronización
+solo pueden ejecutarse como `service_role`. No se entregan IDs ni permisos de
+escritura a perfiles del portal. Cada fila se verifica contra ID y estudio
+existentes y cada campo solo se acepta si su valor en la fuente es único; un
+conflicto se informa explícitamente. La lectura autorizada de métricas prioriza
+estos datos directos sobre los exports congelados, manteniendo el alcance de
+supervisión. `supabase/sql/test-live-report-context.sql` prueba el caso de llegada
+tardía y los permisos; toda escritura de prueba se revierte.
+
+Los registros cuyo estudio original sea DSD/Mystery DSD se ignoran en las
+métricas y descargas: no pertenecen a Lindley aunque el archivo se hubiera
+cargado bajo ese estudio. Se conserva su registro operativo sin modificarlo.

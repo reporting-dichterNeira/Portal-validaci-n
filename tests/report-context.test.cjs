@@ -26,6 +26,39 @@ test('August historical export corrects channels while preserving previously ver
  assert.deepEqual(data.rows.map(r=>[r[1],r[region],r[channel]]),[['5552800','IQUIQUE','HOME MARKET TRADICIONAL'],['5558229','TEMUCO','HOME MARKET TRADICIONAL'],['5555119','IQUIQUE','HOME MARKET TRADICIONAL']]);
 });
 
+test('late prior-wave audits receive live Databricks context regardless of their upload month',()=>{
+ const a=audit('5601215',{fecha:'2026-09-03',fechaAuditoriaOriginal:'',region:'Sin región'});
+ const actual={audit_external_id:a.id,study:'Chile',country:'Chile',region:'TALCA',channel:'HOME MARKET TRADICIONAL',
+  segmento:'ORO',audit_date:'2026-08-13',auditor:'pa.cp.redigitacioneskotradicionalpruebaa'};
+ const result=U.adapt([a],[actual])[0];
+ assert.equal(result.region,'TALCA');assert.equal(result.channel,'HOME MARKET TRADICIONAL');assert.equal(result.segment,'ORO');
+ assert.equal(result.auditDate,'2026-08-13');assert.equal(result.periodDate,'2026-09-03');
+ const ambiguous=U.adapt([a],[{...actual,region:null,region_ambiguous:true,channel:null,channel_ambiguous:true}])[0];
+ assert.equal(ambiguous.region,'');assert.equal(ambiguous.channel,'');
+});
+
+test('DSD rows misfiled under Lindley are excluded from reporting without altering operational data',()=>{
+ const real=audit('1',{estudio:'Lindley',meta:{Estudio:'Lindley'}}),dsd=audit('2',{estudio:'Lindley',meta:{Estudio:'Mystery DSD'}});
+ const before=JSON.stringify(dsd);
+ assert.deepEqual(U.canonical([real,dsd]).map(a=>a.id),['1']);
+ assert.deepEqual(U.alertExport([real,dsd]).rows.map(r=>r[1]),['1']);
+ assert.equal(M.isReportAudit({...real,meta:{Survey:'mystery_dsd_pe_202610'}}),false);
+ assert.equal(M.isReportAudit({...real,kpis:[{name:'DSD',needsReview:true}]}),true);
+ assert.equal(JSON.stringify(dsd),before);
+});
+
+test('verified country corrects CAM reporting while preserving the uploaded operational country',()=>{
+ const row=audit('8881234',{estudio:'Moderno',pais:'Guatemala'});
+ const actual={...context(row.id,''),study:'ko_moderno_cr_202610',country:'Costa Rica'};
+ const app=Object.assign(Object.create(ctx.App.prototype),{benchmarkCountryRows:[actual]});
+ app.hydrateReportDimensions([row]);
+ assert.equal(row.pais,'Guatemala');assert.equal(app.getReportCountry(row),'Costa Rica');
+ assert.equal(U.adapt([row],[actual])[0].country,'Costa Rica');
+ assert.equal(ctx.ExcelParser.getGeographyExportFields(row)['País'],'Costa Rica');
+ app.benchmarkCountryRows=[{...actual,country:null,country_ambiguous:true}];app.hydrateReportDimensions([row]);
+ assert.equal(app.getReportCountry(row),'');assert.equal(ctx.ExcelParser.getGeographyExportFields(row)['País'],'');
+});
+
 test('checked metadata never falls back to the uploaded channel when Databricks has no match or no channel',async()=>{
  const rows=[audit('8000001'),audit('8000002')];
  const app=Object.assign(Object.create(ctx.App.prototype),{currentRole:'commercial',currentProfile:{id:'commercial'},

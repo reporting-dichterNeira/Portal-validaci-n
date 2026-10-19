@@ -24,6 +24,17 @@
         },
         "timeout_seconds": 7200,
         "max_retries": 0
+      },
+      {
+        "task_key": "sync_report_context",
+        "depends_on": [{ "task_key": "sync_export_general" }],
+        "run_if": "ALL_SUCCESS",
+        "existing_cluster_id": "1115-192254-jqnbpmi",
+        "notebook_task": {
+          "notebook_path": "/Users/masanchez@dichter-neira.com/validaflow-report-context-20261019",
+          "source": "WORKSPACE"
+        },
+        "max_retries": 0
       }
     ]
   }

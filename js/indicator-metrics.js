@@ -4,6 +4,12 @@
   const norm = v => String(v ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   const text = v => String(v ?? '').trim();
   const ratio = (n, d) => d > 0 ? n / d : null;
+  function isReportAudit(audit) {
+    const sourceStudies=[audit?.study,audit?.estudio,audit?.originalStudy];
+    const meta=audit?.meta || {};
+    for(const key of ['Estudio','estudio','ESTUDIO','Study','study','STUDY','Survey','survey','SURVEY'])sourceStudies.push(meta[key]);
+    return !sourceStudies.some(value=>/(^|[^a-z0-9])dsd([^a-z0-9]|$)/i.test(text(value)));
+  }
   function normalizeRegion(value) {
     const region = text(value).replace(/\s+/g, ' ');
     if (!region || /^(null|undefined|n\/?a|sin regi[oó]n(?: identificada)?|-|\d+(\.\d+)?)$/i.test(region)) return '';
@@ -159,6 +165,7 @@
     if (!Array.isArray(input)) throw new Error('Se espera un arreglo de auditorías.');
     const records = new Map();
     for (const row of input) {
+      if(!isReportAudit(row))continue;
       if (!row || !/^\d+$/.test(text(row.id))) throw new Error('Cada auditoría debe tener un ID numérico.');
       const sourceModule=row._module || 'blocking';
       if (!['blocking','smart'].includes(sourceModule)) throw new Error('Módulo de alertas no válido.');
@@ -326,7 +333,7 @@
       missingPeriodDates: undated, missingCountries: selected.filter(a => a.country === 'Sin país identificado').length,
       missingPdv: selected.filter(a => !a.pdv).length, monthlyCounts: totals(monthlyAlerts) };
   }
-  const api = { dateKey, weekKey, ratio, eventStamp, interval, normalizeStudy, normalizeRegion, normalizeAudits, parseCSV, readConsolidatedCSV, attachContext, excludeUndatedPending, compute, totals, auditValidationSla,validationSlaExport,validationSlaStatistics,formatSla };
+  const api = { dateKey, weekKey, ratio, eventStamp, interval, normalizeStudy, normalizeRegion, isReportAudit, normalizeAudits, parseCSV, readConsolidatedCSV, attachContext, excludeUndatedPending, compute, totals, auditValidationSla,validationSlaExport,validationSlaStatistics,formatSla };
   root.PortalIndicatorMetrics = api;
   if (typeof module !== 'undefined') module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

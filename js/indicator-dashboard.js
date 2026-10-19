@@ -48,6 +48,7 @@
     };
   }
   function canonical(audits) {
+    audits=(audits || []).filter(M.isReportAudit);
     const identity = a => JSON.stringify([a._studyId || a.estudio,a._countryId || '',
       String(a.id).trim().replace(/^0+(?=\d)/,'').replace(/^([0-9]+)[.,]0+$/,'$1')]);
     // Check the full history before discarding superseded loads or filtering
@@ -104,7 +105,7 @@
         validatorId:a.assignedValidatorId,validatorName:a._validatorName || a.validadorNombre || a.validatorName,validatorCode:a._validatorCode,
         auditDate:readField(a,['fechaAuditoriaOriginal','auditDate','Fecha_del_audito','FECHA_AUDITORIA','FECHA_AUDITO','FECHA_AU']) || fallback(['audit_date']),
         alertUploadedAt:a._originalUploadedAt || a._batchUploadedAt || a._createdAt,
-        country:countryFor ? countryFor(a) : readField(a.databricksGeography || {},['country']) || readField(a,['pais','country']),
+        country:dimensions.countryAmbiguous?'':countryFor ? countryFor(a) : dimensions.country,
         // Only the Databricks export / verified historical enrichment can
         // identify the field auditor. Never read it from the uploaded base.
         auditor:databricksAuditor(a,candidates,readField),
@@ -115,7 +116,7 @@
   }
   function reportDimensions(a,candidates=[],readField=indexedFieldReader()) {
     const result={};
-    for(const [key,names] of [['region',['region']],['channel',['channel','canal']],['subchannel',['subchannel','subcanal']],['segmento',['segmento']]]) {
+    for(const [key,names] of [['country',['country','pais']],['region',['region']],['channel',['channel','canal']],['subchannel',['subchannel','subcanal']],['segmento',['segmento']]]) {
       const clean=value=>{
         const text=String(value ?? '').trim().replace(/\s+/g,' ');
         return key==='region'?M.normalizeRegion(text):/^(sin (canal|subcanal|segmento)( identificad[oa])?|null|undefined|n\/?a|-)$/i.test(text)?'':text;
@@ -123,7 +124,8 @@
       const relevant=candidates.filter(c=>!c.study || M.normalizeStudy(c.study)===M.normalizeStudy(a.estudio));
       const values=[...new Map(relevant.map(c=>clean(readField(c,names))).filter(Boolean)
         .map(v=>[v.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase(),v])).values()];
-      result[key+'Ambiguous']=values.length>1 || !values.length && a.databricksGeography?.[key+'Ambiguous']===true;
+      result[key+'Ambiguous']=relevant.some(c=>c[key+'_ambiguous']===true) || values.length>1 ||
+        !values.length && a.databricksGeography?.[key+'Ambiguous']===true;
       const verifiedChannel=key==='channel' && a.databricksGeography?.channelSource==='storeview.slv_sv_ceres_ag_export.canal';
       const channelChecked=key==='channel' && (relevant.length>0 || a.databricksGeography?.channelLookupComplete===true);
       result[key]=result[key+'Ambiguous']?'':values[0] ||
@@ -142,6 +144,7 @@
       return !text || /^auditor\s*\([^)]*\)$/i.test(text) || /^\d+$/.test(text) || /^(sin (auditor|identificar)|n\/?a|null)$/i.test(text) ? '' : text;
     };
     const names=[...new Set(candidates.map(c=>clean(readField(c,['nombre_usuario','auditor']))).filter(Boolean))];
+    if(candidates.some(c=>c.auditor_ambiguous===true))return '';
     if(names.length>1)return '';
     if(names.length===1)return names[0];
     const verified=a.databricksGeography;
