@@ -217,14 +217,15 @@
     const rows=[...table.querySelectorAll('tbody tr')].filter(tr=>tr.cells.length===headers.length && !tr.querySelector('[colspan]')).map(tr=>[...tr.cells].map(cellText));
     return {headers,rows};
   }
-  function bindChartTableExports(target,{suffix=''}={}) {
+  function bindChartTableExports(target,{suffix='',ready=true}={}) {
     target.querySelectorAll('[data-chart-table-export]').forEach(button=>{
       const wrapper=button.closest('.metric-chart-data');
       const title=wrapper.closest('section')?.querySelector('h3')?.textContent?.trim() || 'Datos de la gráfica';
-      button.disabled=!chartTableData(wrapper).rows.length;
+      button.disabled=!ready || !chartTableData(wrapper).rows.length;
       button.setAttribute('aria-label','Exportar tabla (CSV): '+title);
-      button.title='Descarga todas las filas de esta tabla según los filtros activos.';
+      button.title=ready?'Descarga todas las filas de esta tabla según los filtros activos.':'Contrastando región y canal con Databricks…';
       button.addEventListener('click',()=>{
+        if(!ready)return;
         const {headers,rows}=chartTableData(wrapper);
         const slug=title.normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'-').replace(/^-|-$/g,'');
         download(headers,rows,'Tabla-'+slug+(suffix?'-'+suffix:'')+'.csv');
@@ -763,7 +764,7 @@
       ?'No fue posible contrastar región y canal con Databricks. Pulsa Actualizar totales para reintentar; las descargas esperan el cruce.'
       :'Contrastando región y canal con Databricks; las descargas estarán disponibles al terminar.')+'</p>'+html;
     target.innerHTML=html;
-    bindChartTableExports(target,{suffix:[module || 'blocking',state.month || from,to].filter(Boolean).join('-')});
+    bindChartTableExports(target,{suffix:[module || 'blocking',state.month || from,to].filter(Boolean).join('-'),ready:reportContextReady});
     bindScopeControls();
     target.querySelectorAll('[data-summary-study]').forEach(button=>button.addEventListener('click',()=>{
       const study=button.dataset.summaryStudy,expanded=button.getAttribute('aria-expanded')!=='true';

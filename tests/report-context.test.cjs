@@ -50,14 +50,15 @@ test('backend requests bounded ID/study batches and retains all scalar JSON resp
  assert.ok(requests.every(r=>r.name==='get_audit_report_context'));
 });
 test('CSV stays disabled while metadata is unresolved, then becomes available after a fresh render',()=>{
- const button={addEventListener(){}},target={innerHTML:'',parentElement:{children:[]},querySelectorAll:()=>[],querySelector:s=>s==='[data-indicator-download]'?button:null};
+ const wrapper={closest:()=>null,querySelector:()=>({querySelectorAll:s=>s==='thead th'?[{dataset:{exportValue:'Columna'}}]:[{cells:[{dataset:{exportValue:'Valor'}}],querySelector:()=>null}]})};
+ const chartButton={closest:()=>wrapper,addEventListener(){},setAttribute(){}},button={addEventListener(){}},target={innerHTML:'',parentElement:{children:[]},querySelectorAll:s=>s==='[data-chart-table-export]'?[chartButton]:[],querySelector:s=>s==='[data-indicator-download]'?button:null};
  global.document={getElementById:id=>id==='indicators-operational'?target:null};
  let ready=false;
  const app={currentView:'visualizations',currentRole:'commercial',reportsSubtab:'metrics',selectedStudies:['Chile'],
   getVisualizationModuleFilter:()=> 'blocking',getReportCountry:()=> 'Chile',areReportDimensionsReady:()=>ready,
   benchmarkCountryRows:[context('5692890','TEMUCO')]};
  try {
-  U.render(app,[audit('5692890')]);assert.equal(button.disabled,true);assert.match(target.innerHTML,/Contrastando región y canal/);
-  ready=true;U.render(app,[audit('5692890')]);assert.equal(button.disabled,false);assert.doesNotMatch(target.innerHTML,/Contrastando región y canal/);
+  U.render(app,[audit('5692890')]);assert.equal(button.disabled,true);assert.equal(chartButton.disabled,true);assert.match(target.innerHTML,/Contrastando región y canal/);
+  ready=true;U.render(app,[audit('5692890')]);assert.equal(button.disabled,false);assert.equal(chartButton.disabled,false);assert.doesNotMatch(target.innerHTML,/Contrastando región y canal/);
  }finally{delete global.document;}
 });
