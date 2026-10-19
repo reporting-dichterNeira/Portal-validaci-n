@@ -17,17 +17,24 @@
   function indexedFieldReader() {
     // Index each row once during preparation, rather than normalizing every
     // metadata column again for every alias and every indicator.
-    const indexes=new WeakMap(), aliases=new Map(), normalizedKeys=new Map();
+    const indexes=new WeakMap(), aliases=new Map(), normalizedKeys=new Map(), schemas=new Map();
     return (a,names)=>{
       for(const source of [a,a.meta || {}]) {
         let index=indexes.get(source);
         if(!index) {
-          index=new Map();
-          for(const key of Object.keys(source)) {
-            // Exports repeat the same column names across thousands of rows.
-            // Normalize each header once per preparation, not once per row.
-            if(!normalizedKeys.has(key))normalizedKeys.set(key,normalize(key));
-            const normalized=normalizedKeys.get(key);if(!index.has(normalized))index.set(normalized,key);
+          const keys=Object.keys(source),schema=JSON.stringify(keys);
+          index=schemas.get(schema);
+          if(!index) {
+            index=new Map();
+            for(const key of keys) {
+              // Exports repeat the same column names across thousands of rows.
+              if(!normalizedKeys.has(key))normalizedKeys.set(key,normalize(key));
+              const normalized=normalizedKeys.get(key);if(!index.has(normalized))index.set(normalized,key);
+            }
+            // Share one header index for rows with the same export structure,
+            // avoiding millions of duplicate Map entries during preparation.
+            if(schemas.size>=128)schemas.delete(schemas.keys().next().value);
+            schemas.set(schema,index);
           }
           indexes.set(source,index);
         }

@@ -115,3 +115,10 @@ test('render source cache is limited to one render and always releases after an 
  a.renderReportsViewContent=()=>{a.getReportAuditSource();throw new Error('Rendering failed');};
  assert.throws(()=>a.renderReportsView(),/Rendering failed/);assert.equal(a.reportAuditSourceCache,undefined);
 });
+
+test('shared header indexes retain per-row values and preserve alias precedence for each column order',()=>{
+ const read=U.createReportFieldReader();
+ assert.equal(read({meta:{'Región':'TEMUCO','REGION':'TALCA'}},['region']),'TEMUCO');
+ assert.equal(read({meta:{'Región':'ARICA','REGION':'IQUIQUE'}},['region']),'ARICA');
+ assert.equal(read({meta:{'REGION':'PUERTO MONTT','Región':'TEMUCO'}},['region']),'PUERTO MONTT');
+});
