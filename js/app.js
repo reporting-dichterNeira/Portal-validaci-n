@@ -3400,25 +3400,29 @@ class ValidaFlowApp {
   }
 
   getReportAuditSource(module = this.currentModule, visualizationModule = this.getVisualizationModuleFilter()) {
+    const sourceKey=this.currentView==='visualizations' ? visualizationModule : module;
+    const cache=this.reportAuditSourceCache;
+    if(cache?.has(sourceKey))return cache.get(sourceKey);
+    const remember=rows=>{cache?.set(sourceKey,rows);return rows;};
     const today = getNicaraguaDateKey(new Date());
     const withoutExpiredPending = audits => {
       const visible = (audits || []).filter(audit => !this.isExpiredPendingAudit(audit, today));
       return globalThis.PortalIndicators ? globalThis.PortalIndicators.canonical(visible) : visible;
     };
     if (visualizationModule === 'all' && this.currentView === 'visualizations') {
-      return withoutExpiredPending(['smart', 'blocking'].flatMap(item => {
+      return remember(withoutExpiredPending(['smart', 'blocking'].flatMap(item => {
         const cached = this.auditHistoryByModule[item];
         return Array.isArray(cached)
           ? cached
           : (item === 'blocking' ? (this.blockingAudits || []) : (this.smartAudits || []));
-      }));
+      })));
     }
     if (this.currentView === 'visualizations' && ['smart', 'blocking'].includes(visualizationModule)) {
       module = visualizationModule;
     }
     const cached = this.auditHistoryByModule[module];
-    if (Array.isArray(cached)) return withoutExpiredPending(cached);
-    return withoutExpiredPending(module === 'blocking' ? this.blockingAudits : this.smartAudits);
+    if (Array.isArray(cached)) return remember(withoutExpiredPending(cached));
+    return remember(withoutExpiredPending(module === 'blocking' ? this.blockingAudits : this.smartAudits));
   }
 
   setHistoricalReportsLoading(isLoading, loadedCount = 0) {
@@ -5872,10 +5876,14 @@ class ValidaFlowApp {
   }
 
   getDailyBenchmarkCountry(audit) {
+    for (const value of [audit.databricksGeography?.country, audit.pais, audit.country]) {
+      const country = this.normalizeBenchmarkCountry(value);
+      if (country) return country;
+    }
     const metadata = Object.entries(audit.meta || {}).filter(([key]) =>
       /^(pais|country|nombre_?pais|nombre_del_pais|pais_del_pdv|pais_pdv|country_name)$/i.test(ExcelParser.normalizeHeader(key)))
       .map(([, value]) => value);
-    for (const value of [audit.databricksGeography?.country, audit.pais, audit.country, ...metadata]) {
+    for (const value of metadata) {
       const country = this.normalizeBenchmarkCountry(value);
       if (country) return country;
     }
@@ -5927,8 +5935,12 @@ class ValidaFlowApp {
   }
 
   getBenchmarkRegion(audit) {
-    for (const value of [audit.databricksGeography?.region, audit.region,
-      ...Object.entries(audit.meta || {}).filter(([key]) => ExcelParser.normalizeHeader(key) === 'region').map(([, value]) => value)]) {
+    for (const value of [audit.databricksGeography?.region, audit.region]) {
+      const region = this.normalizeBenchmarkRegion(value);
+      if (region) return region;
+    }
+    for (const [key,value] of Object.entries(audit.meta || {})) {
+      if(ExcelParser.normalizeHeader(key)!=='region')continue;
       const region = this.normalizeBenchmarkRegion(value);
       if (region) return region;
     }
@@ -5997,11 +6009,18 @@ class ValidaFlowApp {
 
   hydrateReportDimensions(audits) {
     if(!globalThis.PortalIndicators?.reportDimensions)return;
+    this.benchmarkReportHydrated ||= new WeakMap();
+    const source=this.benchmarkCountryRows;
+    const readField=globalThis.PortalIndicators.createReportFieldReader?.();
     const byId=new Map();
     for(const row of this.benchmarkCountryRows || []) {const id=this.normalizeAuditId(row.audit_external_id);if(!byId.has(id))byId.set(id,[]);byId.get(id).push(row);}
     for(const audit of audits || []) {
+      const previous=this.benchmarkReportHydrated.get(audit);
+      const identity=JSON.stringify([audit.id,audit.estudio]);
+      if(previous?.source===source && previous.identity===identity && previous.geography===audit.databricksGeography)continue;
       const candidates=byId.get(this.normalizeAuditId(audit.id)) || [];
-      if(candidates.length)audit.databricksGeography={...(audit.databricksGeography || {}),...globalThis.PortalIndicators.reportDimensions(audit,candidates)};
+      if(candidates.length)audit.databricksGeography={...(audit.databricksGeography || {}),...globalThis.PortalIndicators.reportDimensions(audit,candidates,readField)};
+      this.benchmarkReportHydrated.set(audit,{source,identity,geography:audit.databricksGeography});
     }
   }
 
@@ -6229,6 +6248,15 @@ class ValidaFlowApp {
   // VISTA DE REPORTES Y MÉTRICAS (OPERACIONALES + EJECUTIVAS)
   // ==========================================
   renderReportsView() {
+    // One synchronous render uses one consistent source per module. Discard
+    // the cache afterwards so live updates and in-place edits stay visible.
+    const previous=this.reportAuditSourceCache;
+    this.reportAuditSourceCache=new Map();
+    try {return this.renderReportsViewContent();}
+    finally {this.reportAuditSourceCache=previous;}
+  }
+
+  renderReportsViewContent() {
     this.updateReportsAccessControls();
     if (this.selectedMetricsCountry && this.selectedMetricsCountry !== 'all') this.reconcileMetricsCountry();
     this.populateStudyPills();

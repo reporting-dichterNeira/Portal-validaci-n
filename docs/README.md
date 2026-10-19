@@ -25,3 +25,9 @@ la paginación histórica, sin bloquear las escrituras durante su creación. Las
 lecturas históricas reintentan solo la página fallida ante errores temporales y
 renuevan la sesión si venció. Los errores persistentes se muestran y evitan
 descargar un histórico incompleto; no se reintentan escrituras con este mecanismo.
+
+Las métricas preparan las auditorías recibidas una sola vez y luego separan
+Smart y Bloqueantes. La normalización de encabezados se comparte entre las
+filas del export, y los metadatos ya resueltos se reutilizan mientras no cambie
+la fuente. La caché del histórico durante el render se descarta al terminar,
+incluido si hay un error, para conservar las actualizaciones posteriores.

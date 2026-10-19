@@ -17,13 +17,18 @@
   function indexedFieldReader() {
     // Index each row once during preparation, rather than normalizing every
     // metadata column again for every alias and every indicator.
-    const indexes=new WeakMap(), aliases=new Map();
+    const indexes=new WeakMap(), aliases=new Map(), normalizedKeys=new Map();
     return (a,names)=>{
       for(const source of [a,a.meta || {}]) {
         let index=indexes.get(source);
         if(!index) {
           index=new Map();
-          for(const key of Object.keys(source)) {const normalized=normalize(key);if(!index.has(normalized))index.set(normalized,key);}
+          for(const key of Object.keys(source)) {
+            // Exports repeat the same column names across thousands of rows.
+            // Normalize each header once per preparation, not once per row.
+            if(!normalizedKeys.has(key))normalizedKeys.set(key,normalize(key));
+            const normalized=normalizedKeys.get(key);if(!index.has(normalized))index.set(normalized,key);
+          }
           indexes.set(source,index);
         }
         for(const name of names) {
@@ -101,7 +106,7 @@
         segment:dimensions.segmento,kpis};
     }));
   }
-  function reportDimensions(a,candidates=[],readField=field) {
+  function reportDimensions(a,candidates=[],readField=indexedFieldReader()) {
     const result={};
     for(const [key,names] of [['region',['region']],['channel',['channel','canal']],['subchannel',['subchannel','subcanal']],['segmento',['segmento']]]) {
       const clean=value=>{
@@ -668,9 +673,21 @@
     // Navigation shares this snapshot. A fresh application render after a
     // load/live update always prepares a new one, including in-place edits.
     const context=prepared?null:[...(app.adminExternalAnalysis?.alertRecords || []),...(app.benchmarkCountryRows || [])];
-    const snapshot=prepared || {inputs:adapt(audits,context,a=>app.getReportCountry(a),module || 'blocking'),receiptInputs:adapt(receiptAudits,context,a=>app.getReportCountry(a)),smartInputs:adapt(receiptAudits,context,a=>app.getReportCountry(a),'smart'),calculations:new Map()};
+    const sameRows=(a,b)=>a===b || a.length===b.length && a.every((row,i)=>row===b[i]);
+    let snapshot=prepared;
+    if(!snapshot) {
+      // Prepare each received audit once, then split modules without reading
+      // hundreds of metadata columns again for the same records.
+      const allInputs=adapt(receiptAudits,context,a=>app.getReportCountry(a),'all');
+      const receiptInputs=allInputs.filter(a=>a.module==='blocking'),smartInputs=allInputs.filter(a=>a.module==='smart');
+      const selectedModule=module || 'blocking';
+      const selectedReceipts=selectedModule==='all'?receiptAudits:receiptAudits.filter(a=>(a._module || 'blocking')===selectedModule);
+      const selectedInputs=selectedModule==='all'?allInputs:selectedModule==='smart'?smartInputs:receiptInputs;
+      const inputs=sameRows(audits,selectedReceipts)?selectedInputs:adapt(audits,context,a=>app.getReportCountry(a),selectedModule);
+      snapshot={inputs,receiptInputs,smartInputs,calculations:new Map()};
+    }
     const inputs=snapshot.inputs;
-    if(historyAudits && !snapshot.historyInputs)snapshot.historyInputs=historyAudits===audits ? inputs : adapt(historyAudits,context,a=>app.getReportCountry(a),module || 'blocking');
+    if(historyAudits && !snapshot.historyInputs)snapshot.historyInputs=sameRows(historyAudits,audits) ? inputs : adapt(historyAudits,context,a=>app.getReportCountry(a),module || 'blocking');
     const historyInputs=snapshot.historyInputs || inputs;
     const asOf = new Intl.DateTimeFormat('sv-SE',{timeZone:'America/Bogota',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
     const dimensions = [['region','Región','Sin región'],['channel','Canal','Sin canal'],['subchannel','Subcanal','Sin subcanal']];
@@ -802,6 +819,6 @@
       return [a.module==='smart'?'Smart':'Bloqueantes',a.id,a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,decisionLabel(a.decision),a.reason,a.segment,source?.validatorName || source?.validatorId,source?.validatorCode,source?.startedAt,source?.completedAt,...Object.values(M.validationSlaExport(source || {},asOf))];
     }),'Indicadores-'+(module || 'blocking')+'-'+asOf+'.csv'));
   }
-  root.PortalIndicators={adapt,reportDimensions,canonical,render,csv,download,alertExport,signalPanel,receiptShare,auditorComparisonData,auditorComparison,territoryComparisonData,territoryComparison,channelSegmentComparisonData,channelSegmentComparison,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};
+  root.PortalIndicators={createReportFieldReader:indexedFieldReader,adapt,reportDimensions,canonical,render,csv,download,alertExport,signalPanel,receiptShare,auditorComparisonData,auditorComparison,territoryComparisonData,territoryComparison,channelSegmentComparisonData,channelSegmentComparison,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};
   if(typeof module!=='undefined')module.exports=root.PortalIndicators;
 })(typeof globalThis!=='undefined'?globalThis:this);

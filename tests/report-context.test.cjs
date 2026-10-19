@@ -62,3 +62,56 @@ test('CSV stays disabled while metadata is unresolved, then becomes available af
   ready=true;U.render(app,[audit('5692890')]);assert.equal(button.disabled,false);assert.equal(chartButton.disabled,false);assert.doesNotMatch(target.innerHTML,/Contrastando región y canal/);
  }finally{delete global.document;}
 });
+
+test('report metadata hydration reuses unchanged rows and refreshes new rows and new context',()=>{
+ const a=Object.assign(Object.create(ctx.App.prototype),{benchmarkCountryRows:[context('5692890','TEMUCO')]});
+ const rows=[audit('5692890')],original=U.reportDimensions;let calls=0;
+ U.reportDimensions=(...args)=>{calls++;return original(...args);};
+ try {
+  a.hydrateReportDimensions(rows);const geography=rows[0].databricksGeography;
+  rows[0].validationResults.A={status:'no_aplica'};
+  a.hydrateReportDimensions(rows);assert.equal(calls,1);assert.equal(rows[0].databricksGeography,geography);
+  const replaced=audit('5692890');a.hydrateReportDimensions([replaced]);assert.equal(calls,2);assert.equal(replaced.databricksGeography.region,'TEMUCO');
+  a.benchmarkCountryRows=[context('5692890','ARICA')];a.hydrateReportDimensions(rows);assert.equal(calls,3);assert.equal(rows[0].databricksGeography.region,'ARICA');
+ }finally{U.reportDimensions=original;}
+});
+
+test('known country and region avoid scanning large export metadata',()=>{
+ const a=Object.create(ctx.App.prototype),meta=new Proxy({},{ownKeys(){throw new Error('Unnecessary metadata scan');}});
+ assert.equal(a.getDailyBenchmarkCountry({pais:'Costa Rica',meta}),'Costa Rica');
+ assert.equal(a.getBenchmarkRegion({databricksGeography:{region:'TEMUCO'},meta}),'TEMUCO');
+});
+
+test('render prepares shared audit rows once across module totals and history',()=>{
+ const target={innerHTML:'',parentElement:{children:[]},querySelectorAll:()=>[],querySelector:()=>null};
+ global.document={getElementById:id=>id==='indicators-operational'?target:null};let countryReads=0;
+ const rows=[audit('1'),audit('1',{_module:'smart'}),audit('2')];
+ const app={currentView:'visualizations',currentRole:'commercial',reportsSubtab:'metrics',selectedStudies:['Chile'],
+  getVisualizationModuleFilter:()=> 'all',getReportCountry(){countryReads++;return 'Chile';}};
+ try {U.render(app,rows,rows.slice(),null,rows.slice());assert.equal(countryReads,3);assert.match(target.innerHTML,/BLOQUEANTES \+ SMART/);}
+ finally{delete global.document;}
+});
+
+test('repeated export headers are normalized once per preparation, while aliases retain their values',()=>{
+ const read=U.createReportFieldReader(),normalize=String.prototype.normalize;let calls=0;
+ String.prototype.normalize=function(...args){calls++;return normalize.apply(this,args);};
+ try {
+  for(let i=0;i<200;i++) {
+   const meta=Object.fromEntries(Array.from({length:100},(_,n)=>['Columna '+n,'Valor']));meta['REGIÓN']='Temuco';
+   assert.equal(read({meta},['region']),'Temuco');
+  }
+  assert.ok(calls<300,'Header normalization must scale with distinct column names, not row count: '+calls);
+ }finally{String.prototype.normalize=normalize;}
+});
+
+test('render source cache is limited to one render and always releases after an error',()=>{
+ let scans=0;
+ const a=Object.assign(Object.create(ctx.App.prototype),{currentModule:'blocking',currentView:'visualizations',visualizationModuleFilter:'all',
+  auditHistoryByModule:{blocking:[audit('1')],smart:[audit('2',{_module:'smart'})]},isExpiredPendingAudit(){scans++;return false;}});
+ ctx.getNicaraguaDateKey=()=> '2026-10-19';
+ a.renderReportsViewContent=()=>{const first=a.getReportAuditSource();assert.equal(a.getReportAuditSource(),first);assert.equal(first.length,2);};
+ a.renderReportsView();assert.equal(scans,2);assert.equal(a.reportAuditSourceCache,undefined);
+ a.renderReportsView();assert.equal(scans,4);
+ a.renderReportsViewContent=()=>{a.getReportAuditSource();throw new Error('Rendering failed');};
+ assert.throws(()=>a.renderReportsView(),/Rendering failed/);assert.equal(a.reportAuditSourceCache,undefined);
+});
