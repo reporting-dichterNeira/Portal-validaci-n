@@ -12,6 +12,13 @@
   }
   function dateKey(value) {
     const raw = text(value);
+    // The uploaded bases can retain Excel's 1900-system serial dates. Match
+    // the range already used by the export importer and keep their local day;
+    // the fractional part has no timezone, so it cannot supply exact hours.
+    if (/^\d{5}(?:[.,]\d+)?$/.test(raw)) {
+      const serial=Number(raw.replace(',','.'));
+      if (serial>=20000 && serial<=70000) return new Date(Date.UTC(1899,11,30)+Math.floor(serial)*DAY).toISOString().slice(0,10);
+    }
     let candidate = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T ])/);
     if (!candidate) {
       const dmy = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:$|[ T])/);
@@ -64,6 +71,7 @@
     const raw = text(value);
     const day = dateKey(raw);
     if (!day) return null;
+    if (/^\d{5}(?:[.,]\d+)?$/.test(raw)) return {day,ms:null};
     if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/i.test(raw)) {
       const ms = Date.parse(raw);
       if (!Number.isFinite(ms) || !/^([01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?/.test(raw.slice(11))) return null;
