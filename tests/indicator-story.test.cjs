@@ -31,6 +31,13 @@ test('all six chapters render with filtered alert downloads and hide legacy pane
  assert.match(render('summary').html,/data-indicator-download/);
  assert.match(render('pending').html,/data-indicator-bucket/);
 });
+test('commercial keeps all metric chapters, filters, PDF and CSV even with a stale daily selection',()=>{
+ const target={innerHTML:'',parentElement:{children:[]},querySelectorAll:()=>[],querySelector:()=>null,classList:{toggle(){}}};target.parentElement.children=[target];global.document={getElementById:()=>target};
+ try {for(const [section] of U.journey){
+  U.render({currentRole:'commercial',currentView:'visualizations',reportsSubtab:'daily',indicatorOperationalSection:section,getVisualizationModuleFilter:()=> 'all',getReportCountry:a=>a.pais},rows);
+  assert.match(target.innerHTML,/data-indicator-pdf/);assert.match(target.innerHTML,/data-indicator-download/);assert.match(target.innerHTML,/data-metric-scope-filter="study"/);assert.match(target.innerHTML,/data-metric-scope-filter="country"/);assert.match(target.innerHTML,/aria-current="page"/);
+ }}finally{delete global.document;}
+});
 test('unified dashboard applies month to cards and comparisons while evolution retains context',()=>{
  assert.match(render('summary').html,/2 de 3 alertas/);
  assert.match(render('summary',true).html,/2 de 3 alertas/);

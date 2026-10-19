@@ -382,7 +382,7 @@ class ValidaFlowApp {
   prepareVisualizationPortal() {
     this.mountVisualizationContent();
     const isCommercial = this.currentRole === 'commercial';
-    const roleLabel = isCommercial ? 'Comercial · Comité Ejecutivo' : 'Operaciones';
+    const roleLabel = isCommercial ? 'Comercial · Métricas' : 'Operaciones';
     const userName = this.currentProfile?.display_name || this.currentProfile?.username || 'Usuario';
     const nameEl = document.getElementById('visualization-user-name');
     const roleEl = document.getElementById('visualization-user-role');
@@ -390,31 +390,28 @@ class ValidaFlowApp {
     if (nameEl) nameEl.textContent = userName;
     if (roleEl) roleEl.textContent = roleLabel;
     if (subtitle) subtitle.textContent = isCommercial
-      ? 'Consulta el Informe Ejecutivo de Calidad y KPIs preparado para Comité y Comercial.'
+      ? 'Consulta los indicadores, comparativas y exportaciones de métricas.'
       : 'Seguimiento diario, ediciones, cambios de nota y métricas en un solo espacio. Actualiza notas y ediciones con sus archivos mensuales.';
     document.getElementById('visualization-powerbi-link')?.classList.toggle('hidden', isCommercial);
 
     document.querySelectorAll('.visualization-tab').forEach(button => {
       const tab = button.dataset.visualizationTab;
-      const allowed = isCommercial ? tab === 'committee' : tab !== 'committee';
+      const allowed = isCommercial ? tab === 'metrics' : tab !== 'committee';
       button.classList.toggle('hidden', !allowed);
     });
-    // Operaciones puede alternar entre el seguimiento operativo y la lectura
-    // ejecutiva. Comercial se mantiene como antes: entra únicamente al Comité.
-    document.getElementById('btn-subtab-daily')?.classList.toggle('hidden', isCommercial);
-    document.getElementById('btn-subtab-metrics')?.classList.remove('hidden');
+    this.updateReportsAccessControls();
     document.getElementById('visualization-module-switcher')?.classList.remove('hidden');
     this.updateVisualizationModuleControls();
     this.updateVisualizationDateControls();
     this.switchReportsSubtab(this.reportsSubtab === 'daily' ? 'daily' : 'metrics');
-    this.switchVisualizationTab(isCommercial ? 'committee' : this.visualizationTab || 'overview');
+    this.switchVisualizationTab(isCommercial ? 'metrics' : this.visualizationTab || 'overview');
     // Las bases externas se restauran únicamente cuando se abre su pestaña.
     // Seguimiento diario y Comité no necesitan descargar notas ni ediciones.
   }
 
   async switchVisualizationTab(tabId) {
     const isCommercial = this.currentRole === 'commercial';
-    const allowedTabs = isCommercial ? ['committee'] : ['overview', 'editions', 'score-changes', 'metrics'];
+    const allowedTabs = isCommercial ? ['metrics'] : ['overview', 'editions', 'score-changes', 'metrics'];
     const target = allowedTabs.includes(tabId) ? tabId : allowedTabs[0];
     this.visualizationTab = target;
     document.querySelectorAll('.visualization-tab').forEach(button => {
@@ -585,6 +582,7 @@ class ValidaFlowApp {
   }
 
   showView(viewName) {
+    if (this.currentRole === 'commercial') viewName = 'visualizations';
     this.currentView = viewName;
 
     const landingView = document.getElementById('view-landing');
@@ -724,7 +722,7 @@ class ValidaFlowApp {
     if (description) description.textContent = isAdmin
       ? 'Ingresa las credenciales administrativas para gestionar supervisores, estudios y tipos de alertas.'
       : isVisualization
-        ? 'Ingresa con tu usuario de Operaciones o Comercial. Comercial solo mostrará el Comité Ejecutivo.'
+        ? 'Ingresa con tu usuario de Operaciones o Comercial. Comercial solo mostrará Métricas.'
         : 'Ingresa tus credenciales para acceder al estudio y módulo que tienes asignados.';
     if (label) label.textContent = isAdmin ? 'Usuario administrador' : (isVisualization ? 'Usuario de Operaciones o Comercial' : 'Usuario supervisor');
     const modal = document.getElementById('modal-supervisor-login');
@@ -2964,7 +2962,7 @@ class ValidaFlowApp {
       this.showToast('Selecciona al menos un módulo de alertas.', 'warning');
       return;
     }
-    if (!confirm(`¿Guardar el acceso de ${user.display_name}? ${userRole === 'commercial' ? 'Solo verá Comité Ejecutivo.' : 'Tendrá acceso a Operaciones y Visualizaciones.'}`)) return;
+    if (!confirm(`¿Guardar el acceso de ${user.display_name}? ${userRole === 'commercial' ? 'Solo verá Métricas.' : 'Tendrá acceso a Operaciones y Visualizaciones.'}`)) return;
     try {
       await this.backend.updatePortalUserAccess({ supervisorId, userRole, studyIds, modules });
       this.closeAdminUserAccessModal();
@@ -6204,6 +6202,7 @@ class ValidaFlowApp {
   // VISTA DE REPORTES Y MÉTRICAS (OPERACIONALES + EJECUTIVAS)
   // ==========================================
   renderReportsView() {
+    this.updateReportsAccessControls();
     if (this.selectedMetricsCountry && this.selectedMetricsCountry !== 'all') this.reconcileMetricsCountry();
     this.populateStudyPills();
     this.populateReportCountryFilter();
@@ -6255,7 +6254,7 @@ class ValidaFlowApp {
   }
 
   renderClassicReports(audits) {
-    if (this.currentRole !== 'commercial') this.renderOperationalMetrics(audits);
+    this.renderOperationalMetrics(audits);
     this.renderExecutiveMetrics(audits);
   }
 
@@ -7315,6 +7314,7 @@ class ValidaFlowApp {
   // NAVEGACIÓN DE PESTAÑAS DE SUPERVISIÓN
   // ==========================================
   switchSupervisorTab(targetTab) {
+    if (this.currentRole === 'commercial') { this.showView('visualizations'); return; }
     if (targetTab === 'reports' && this.currentRole === 'supervisor') targetTab = 'tracking';
     this.currentTab = targetTab;
     if (targetTab === 'reports') {
@@ -8025,6 +8025,7 @@ class ValidaFlowApp {
   }
 
   renderDailyReportsView() {
+    if (this.currentRole === 'commercial') return;
     this.renderHistoricalAlertsConsolidated();
     const valMap = new Map(this.validators.map(v => [v.id, v]));
     const auditsToRender = this.getFilteredAuditsForReports();
@@ -8265,6 +8266,7 @@ class ValidaFlowApp {
   }
 
   renderHistoricalAlertsConsolidated() {
+    if (this.currentRole === 'commercial') return;
     const target = document.getElementById('daily-consolidated-summary');
     const U = globalThis.PortalIndicators;
     if (!target || !U) return;
@@ -8290,6 +8292,7 @@ class ValidaFlowApp {
   }
 
   async exportHistoricalAlertsCSV() {
+    if (this.currentRole === 'commercial') return;
     if (this.historicalAlertsExporting) return;
     this.historicalAlertsExporting = true;
     const button = document.getElementById('btn-export-historical-alerts-csv');
@@ -8333,6 +8336,7 @@ class ValidaFlowApp {
   // MODAL DE DETALLADO DEL DÍA (HISTORIAL DIARIO)
   // ==========================================
   openDailyDetailModal(dateKey, studyKey) {
+    if (this.currentRole === 'commercial') return;
     const modal = document.getElementById('modal-daily-detail');
     if (!modal) return;
 
@@ -8502,6 +8506,7 @@ class ValidaFlowApp {
   }
 
   renderDailyDetailTable(audits) {
+    if (this.currentRole === 'commercial') return;
     const tbody = document.getElementById('dd-table-tbody');
     const countEl = document.getElementById('dd-table-count');
     const valMap = new Map(this.validators.map(v => [v.id, v]));
@@ -8568,7 +8573,24 @@ class ValidaFlowApp {
   // ==========================================
   // MÉTODOS DE ACCIÓN RÁPIDA Y REPORTES
   // ==========================================
+  updateReportsAccessControls() {
+    const metricsOnly = this.currentRole === 'commercial';
+    const module = this.currentView === 'visualizations' ? this.getVisualizationModuleFilter() : this.currentModule;
+    document.getElementById('btn-subtab-daily')?.classList.toggle('hidden', metricsOnly);
+    document.getElementById('btn-subtab-metrics')?.classList.remove('hidden');
+    document.querySelectorAll('.btn-open-blocking-kpis').forEach(button => button.classList.toggle('hidden', metricsOnly || module === 'smart'));
+    if (metricsOnly) {
+      this.reportsSubtab = 'metrics';
+      document.getElementById('metrics-view-daily')?.classList.add('hidden');
+      document.getElementById('modal-daily-detail')?.classList.add('hidden');
+      document.getElementById('modal-blocking-kpis')?.classList.add('hidden');
+      document.getElementById('btn-subtab-daily')?.classList.remove('active');
+      document.getElementById('btn-subtab-metrics')?.classList.add('active');
+    }
+  }
+
   switchReportsSubtab(subtab) {
+    this.updateReportsAccessControls();
     this.reportsSubtab = subtab === 'daily' && this.currentRole !== 'commercial' ? 'daily' : 'metrics';
     const daily = this.reportsSubtab === 'daily';
     document.getElementById('btn-subtab-daily')?.classList.toggle('active', daily);
@@ -8579,7 +8601,9 @@ class ValidaFlowApp {
     const title = document.getElementById('reports-view-title');
     const subtitle = document.getElementById('reports-view-subtitle');
     if (title) title.textContent = 'Centro de Métricas y Analítica';
-    if (subtitle) subtitle.textContent = 'Resultados, evolución y comparativas en una sola vista; consulta las notas y cada jornada desde sus accesos directos.';
+    if (subtitle) subtitle.textContent = this.currentRole === 'commercial'
+      ? 'Resultados, evolución y comparativas de los indicadores de validación.'
+      : 'Resultados, evolución y comparativas en una sola vista; consulta las notas y cada jornada desde sus accesos directos.';
     this.renderReportsView();
   }
 
@@ -8598,6 +8622,7 @@ class ValidaFlowApp {
   }
 
   exportConsolidatedExcel() {
+    if (this.currentRole === 'commercial') return;
     const auditsToExport = this.getFilteredAuditsForReports();
     if (!auditsToExport.length) {
       this.showToast('No hay auditorías en la selección actual para exportar.', 'warning');
@@ -8614,6 +8639,7 @@ class ValidaFlowApp {
   }
 
   exportMultiSheetExcel() {
+    if (this.currentRole === 'commercial') return;
     const auditsToExport = this.getFilteredAuditsForReports();
     if (!auditsToExport.length) {
       this.showToast('No hay auditorías en la selección actual para exportar.', 'warning');

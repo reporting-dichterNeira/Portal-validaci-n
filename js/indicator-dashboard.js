@@ -585,7 +585,7 @@
   function render(app, audits, historyAudits = null, prepared = null, receiptAudits = audits) {
     if (!M || !root.document) return;
     const target = document.getElementById('indicators-operational');
-    const daily = app.reportsSubtab === 'daily';
+    const daily = app.currentRole !== 'commercial' && app.reportsSubtab === 'daily';
     if (!target) return;
     if (app.currentView !== 'visualizations' && app.currentTab !== 'reports') return;
     const module = app.currentView === 'visualizations' ? app.getVisualizationModuleFilter() : app.currentModule;

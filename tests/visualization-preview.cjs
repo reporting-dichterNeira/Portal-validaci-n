@@ -3,7 +3,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
-const previewRole = process.env.PREVIEW_ROLE === 'supervisor' ? 'supervisor' : 'visualizer';
+const previewRole = ['supervisor','commercial'].includes(process.env.PREVIEW_ROLE) ? process.env.PREVIEW_ROLE : 'visualizer';
 const previewPort = Number(process.env.PREVIEW_PORT || 8772);
 const geographyPreview = process.env.PREVIEW_GEOGRAPHY === '1';
 const storyPreview = process.env.PREVIEW_STORY === '1';
