@@ -19,6 +19,15 @@ left join private.audit_report_context_cache c on c.audit_external_id=r.audit_ex
  and c.study=l.canonical_study
 where l.canonical_study is not null
  and lower(btrim(coalesce(r.audit_status,''))) <> 'incidencia'
+ and (lower(btrim(coalesce(case when c.audit_external_id is null then r.region else c.metadata->>'region' end,'')))
+        not in ('','sin región','sin region','sin región identificada','sin region identificada')
+   or lower(btrim(coalesce(case when c.audit_external_id is null then r.channel else c.metadata->>'channel' end,'')))
+        not in ('','sin canal','sin canal identificado')
+   or exists(select 1 from public.audits a where a.external_id=nullif(ltrim(r.audit_external_id,'0'),'')
+     and a.study=l.canonical_study and a.module='blocking'
+     and exists(select 1 from jsonb_array_elements(case when jsonb_typeof(a.payload->'kpis')='array'
+       then a.payload->'kpis' else '[]'::jsonb end) k
+       where k->>'needsReview'='true' or k->>'alertaStatus'='SE ALERTA')))
  and nullif(ltrim(r.audit_external_id,'0'),'') is not null
  and (c.audit_external_id is not null or i.source_filename ilike 'Databricks%');
 create temporary table country_total_checks(country text,total_source bigint,total_rpc bigint,elapsed_ms numeric);
