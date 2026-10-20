@@ -5,7 +5,16 @@
 begin;
 do $$ declare definition text; patched text; begin
  definition:=pg_get_functiondef('private.get_databricks_audit_totals(jsonb)'::regprocedure);
- if position('/* exclude-empty-unalerted-inventory */' in definition)>0 then return;end if;
+ if position('/* indexed-empty-alert-check */' in definition)>0 then return;end if;
+ if position('/* exclude-empty-unalerted-inventory */' in definition)>0 then
+  patched:=replace(definition,
+   $old$where k->>'needsReview'='true' or k->>'alertaStatus'='SE ALERTA')))$old$,
+   $new$where k->>'needsReview'='true' or k->>'alertaStatus'='SE ALERTA')
+         offset 0)) /* indexed-empty-alert-check */$new$);
+  if patched=definition then raise exception 'Blocking alert lookup not recognized';end if;
+  execute patched;
+  return;
+ end if;
  patched:=replace(definition,
   'selected as ( select * from source s where s.study_name is not null',
   $filter$selected as ( select * from source s where s.study_name is not null
@@ -17,7 +26,8 @@ do $$ declare definition text; patched text; begin
           when 'KO Moderno CAM' then 'Moderno' else s.study_name end
         and exists (select 1 from jsonb_array_elements(case when jsonb_typeof(a.payload->'kpis')='array'
           then a.payload->'kpis' else '[]'::jsonb end) k
-          where k->>'needsReview'='true' or k->>'alertaStatus'='SE ALERTA')))
+          where k->>'needsReview'='true' or k->>'alertaStatus'='SE ALERTA')
+         offset 0)) /* indexed-empty-alert-check */
        /* exclude-empty-unalerted-inventory */$filter$);
  if patched=definition then raise exception 'Effective reporting source not recognized';end if;
  execute patched;
