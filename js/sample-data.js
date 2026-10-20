@@ -90,9 +90,9 @@ export const DEFAULT_VALIDATORS = [
 
 export const TIPIFICACIONES_POR_DECISION = {
   aplica: [
-    'Evidencia de campo confirma la alerta',
-    'Incumplimiento confirmado en el PDV',
-    'Desviación crítica que requiere corrección'
+    'Alerta válida: encuesta editada',
+    'Alerta válida: encuesta cancelada',
+    'Alerta válida: sin cambios requeridos'
   ],
   no_aplica: [
     'Falso positivo: evidencia de campo correcta',

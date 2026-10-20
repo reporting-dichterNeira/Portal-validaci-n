@@ -3,12 +3,12 @@
  * Incluye Motor de Control de Calidad y Detección de Anomalías
  */
 
-import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.0';
-import { ExcelParser } from './excel-parser.js?v=34.3';
+import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.1';
+import { ExcelParser } from './excel-parser.js?v=34.4';
 import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
 import { Distributor } from './distributor.js?v=25.0';
-import { ValidatorUI } from './validator-ui.js?v=37.1';
+import { ValidatorUI } from './validator-ui.js?v=37.2';
 import { SupabaseBackend } from './supabase-backend.js?v=65.3';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.1';
@@ -7456,10 +7456,12 @@ class ValidaFlowApp {
     const label = document.getElementById('modal-resolve-tipif-label');
     if (!select) return;
     const options = this.getTipificacionesForDecision(decision);
-    const selected = options.includes(selectedValue) ? selectedValue : '';
-    select.innerHTML = `<option value="">-- Selecciona una tipología --</option>${options.map(option => `<option value="${option}" ${option === selected ? 'selected' : ''}>${option}</option>`).join('')}`;
+    const escape = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const historicalOption = selectedValue && !options.includes(selectedValue)
+      ? `<option value="${escape(selectedValue)}" selected>${escape(selectedValue)} (Registro anterior)</option>` : '';
+    select.innerHTML = `<option value="">${decision === 'aplica' ? '-- Selecciona la acción realizada --' : '-- Selecciona una tipología --'}</option>${historicalOption}${options.map(option => `<option value="${escape(option)}" ${option === selectedValue ? 'selected' : ''}>${escape(option)}</option>`).join('')}`;
     if (label) label.textContent = decision === 'aplica'
-      ? '2. Tipología de la alerta que aplica:'
+      ? '2. Acción realizada tras confirmar la alerta:'
       : '2. Tipología del por qué no aplica:';
   }
 

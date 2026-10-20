@@ -118,7 +118,7 @@ export class ExcelParser {
       kpisParaRevisar.forEach(kpi => {
         const result = audit.validationResults?.[kpi.name] || {};
         row[`[${kpi.name}] Resultado`] = result.status === 'aplica' ? 'APLICA' : result.status === 'no_aplica' ? 'NO APLICA' : 'PENDIENTE';
-        row[`[${kpi.name}] Tipificación No Aplica`] = result.tipificacion || '';
+        row[`[${kpi.name}] Tipificación`] = result.tipificacion || '';
         row[`[${kpi.name}] Observaciones`] = result.observaciones || '';
       });
       return row;
@@ -684,7 +684,7 @@ export class ExcelParser {
           const result = (audit.validationResults || {})[kpi.name] || {};
           const statusText = result.status === 'aplica' ? 'APLICA' : result.status === 'no_aplica' ? 'NO APLICA' : 'PENDIENTE';
           row[`[${kpi.name}] Resultado`] = statusText;
-          row[`[${kpi.name}] Tipificación No Aplica`] = result.tipificacion || '';
+          row[`[${kpi.name}] Tipificación`] = result.tipificacion || '';
           row[`[${kpi.name}] Observaciones`] = result.observaciones || '';
         });
 

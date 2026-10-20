@@ -230,7 +230,7 @@
       alertUploadedAt:row['Fecha carga alertas'] || row.alertUploadedAt,
       kpis: resultColumns.filter(h => text(row[h])).map(h => {
         const name = h.slice(1, -11);
-        return { name, needsReview: true, decision: row[h], reason: row[`[${name}] Tipificación No Aplica`],
+        return { name, needsReview: true, decision: row[h], reason: row[`[${name}] Tipificación`] ?? row[`[${name}] Tipificación No Aplica`],
           validatedAt:row[`[${name}] Fecha validación`] };
       })
     })));

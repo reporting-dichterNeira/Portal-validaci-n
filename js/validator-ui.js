@@ -568,7 +568,11 @@ export class ValidatorUI {
       const observaciones = result.observaciones || '';
 
       const tipificacionDecision = status === 'aplica' ? 'aplica' : 'no_aplica';
-      const tipificacionesOptions = this.app.getTipificacionesForDecision(tipificacionDecision).map(t => {
+      const tipificaciones = this.app.getTipificacionesForDecision(tipificacionDecision);
+      // Reopening an older audit must not erase its saved classification.
+      const historicalOption = tipificacion && !tipificaciones.includes(tipificacion)
+        ? `<option value="${escapeValidatorText(tipificacion)}" selected>${escapeValidatorText(tipificacion)} (Registro anterior)</option>` : '';
+      const tipificacionesOptions = historicalOption + tipificaciones.map(t => {
         const isSel = tipificacion === t ? 'selected' : '';
         return `<option value="${t}" ${isSel}>${t}</option>`;
       }).join('');
@@ -635,10 +639,10 @@ export class ValidatorUI {
           <div class="tipificacion-container ${['aplica', 'no_aplica'].includes(status) ? 'visible' : 'hidden'}" id="tipif_box_${index}">
             <div class="tipificacion-header">
               <span class="tipif-icon">🛡️</span>
-              <label for="tipif_select_${index}" id="tipif_label_${index}"><strong>${status === 'aplica' ? 'Tipología de la alerta que aplica:' : 'Tipología del por qué no aplica:'}</strong></label>
+              <label for="tipif_select_${index}" id="tipif_label_${index}"><strong>${status === 'aplica' ? 'Acción realizada tras confirmar la alerta:' : 'Tipología del por qué no aplica:'}</strong></label>
             </div>
             <select class="form-select tipif-select" id="tipif_select_${index}" data-kpi="${kpi.name}">
-              <option value="">-- Selecciona una tipología --</option>
+              <option value="">${status === 'aplica' ? '-- Selecciona la acción realizada --' : '-- Selecciona una tipología --'}</option>
               ${tipificacionesOptions}
             </select>
 
@@ -801,9 +805,9 @@ export class ValidatorUI {
         const currentValue = audit.validationResults[kpiName]?.tipificacion || tipifSelect.value || '';
         const options = this.app.getTipificacionesForDecision(decision);
         const selectedValue = options.includes(currentValue) ? currentValue : '';
-        tipifSelect.innerHTML = `<option value="">-- Selecciona una tipología --</option>${options.map(option => `<option value="${option}" ${option === selectedValue ? 'selected' : ''}>${option}</option>`).join('')}`;
+        tipifSelect.innerHTML = `<option value="">${decision === 'aplica' ? '-- Selecciona la acción realizada --' : '-- Selecciona una tipología --'}</option>${options.map(option => `<option value="${option}" ${option === selectedValue ? 'selected' : ''}>${option}</option>`).join('')}`;
         if (tipifLabel) {
-          tipifLabel.innerHTML = `<strong>${decision === 'aplica' ? 'Tipología de la alerta que aplica:' : 'Tipología del por qué no aplica:'}</strong>`;
+          tipifLabel.innerHTML = `<strong>${decision === 'aplica' ? 'Acción realizada tras confirmar la alerta:' : 'Tipología del por qué no aplica:'}</strong>`;
         }
         return selectedValue;
       };
