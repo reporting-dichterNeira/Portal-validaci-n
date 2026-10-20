@@ -18,6 +18,7 @@ join labels l on l.study=r.study
 left join private.audit_report_context_cache c on c.audit_external_id=r.audit_external_id
  and c.study=l.canonical_study
 where l.canonical_study is not null
+ and lower(btrim(coalesce(r.audit_status,''))) <> 'incidencia'
  and nullif(ltrim(r.audit_external_id,'0'),'') is not null
  and (c.audit_external_id is not null or i.source_filename ilike 'Databricks%');
 create temporary table country_total_checks(country text,total_source bigint,total_rpc bigint,elapsed_ms numeric);

@@ -357,7 +357,7 @@
   }
   const totalsWarning=u=>u.entry.warning?'<p role="status">'+esc(u.entry.warning)+'</p>':u.entry.refreshing && u.entry.data?'<p role="status">Actualizando totales…</p>':'';
   const comparisonHeaders=['Auditorías','Auditorías con alerta','Alertas generadas','Alertas válidas','% de auditorías alertadas','Promedio de alertas por auditoría alertada','% de alertas válidas entre revisadas'];
-  const comparisonDefinitions='Auditorías = total levantado, incluidas las que no generaron alertas. Los IDs alertados se cuentan una vez por estudio, incluso si están en ambos módulos. Alertas generadas = total de alertas recibidas; Alertas válidas = alertas confirmadas en la revisión. % de auditorías alertadas = auditorías con alerta / total levantado × 100. Promedio = alertas generadas / auditorías con alerta. % de alertas válidas entre revisadas = válidas / (válidas + no válidas) × 100; excluye pendientes. Sin denominador se muestra «Sin base». El total levantado usa el mes de Ola y la fecha original; las alertas usan la jornada de carga.';
+  const comparisonDefinitions='Auditorías = total levantado, incluidas las que no generaron alertas; excluye el estado Incidencia. Los IDs alertados se cuentan una vez por estudio, incluso si están en ambos módulos. Alertas generadas = total de alertas recibidas; Alertas válidas = alertas confirmadas en la revisión. % de auditorías alertadas = auditorías con alerta / total levantado × 100. Promedio = alertas generadas / auditorías con alerta. % de alertas válidas entre revisadas = válidas / (válidas + no válidas) × 100; excluye pendientes. Sin denominador se muestra «Sin base». El total levantado usa el mes de Ola y la fecha original; las alertas usan la jornada de carga.';
   function comparisonStatistics(total,applies,rejects,alertedAudits) {
     return {meanAlerts:receiptShare(total,alertedAudits),validShare:receiptShare(applies,applies+rejects)};
   }
@@ -529,7 +529,7 @@
         blockingShare:receiptShare(blocking,lifted),smartShare:receiptShare(smartCount,lifted)};
     }).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name,'es'));
     const blocking=receipt('blocking',result.audits),smartCount=receipt('smart',smart.audits);
-    return panel('🌐 Auditorías levantadas y recibidas','Total levantado cuenta todas las auditorías. Las recibidas se cuentan de forma independiente en cada módulo.',cards([
+    return panel('🌐 Auditorías levantadas y recibidas','Total levantado excluye las auditorías con estado Incidencia. Las recibidas se cuentan de forma independiente en cada módulo.',cards([
       ['Total levantado',value,'Auditorías únicas por estudio','cyan','🌐'],
       ['Auditorías recibidas en Bloqueantes',display(blocking),pct(receiptShare(blocking,total))+' del total levantado','blue','🚨'],
       ['Auditorías recibidas en Smart',display(smartCount),pct(receiptShare(smartCount,total))+' del total levantado','purple','💡']
