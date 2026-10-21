@@ -535,7 +535,7 @@
         blockingShare:receiptShare(blocking,lifted),smartShare:receiptShare(smartCount,lifted)};
     }).sort((a,b)=>b.total-a.total || a.name.localeCompare(b.name,'es'));
     const blocking=receipt('blocking',result.audits),smartCount=receipt('smart',smart.audits);
-    return panel('🌐 Auditorías levantadas y recibidas','Total levantado excluye Incidencia y auditorías sin región ni canal que no tengan alertas bloqueantes. Las recibidas se cuentan de forma independiente en cada módulo.',cards([
+    return panel('🌐 Auditorías levantadas y recibidas','Total levantado excluye incidencias.',cards([
       ['Total levantado',value,'Auditorías únicas por estudio','cyan','🌐'],
       ['Auditorías recibidas en Bloqueantes',display(blocking),pct(receiptShare(blocking,total))+' del total levantado','blue','🚨'],
       ['Auditorías recibidas en Smart',display(smartCount),pct(receiptShare(smartCount,total))+' del total levantado','purple','💡']
