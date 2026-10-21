@@ -346,9 +346,15 @@
     }
     const rows=entry.data?.studies||[],names=studies.length?studies:['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley'];
     const supported=new Set(['Chile','KO Tradicional CAM','KO Moderno CAM','Lindley']);
-    const snapshots=(entry.data?.snapshots||[]).filter(s=>/^Databricks/i.test(s.source)),verified=snapshots.length>0;
+    // Historical snapshots may retain their original Excel filename. The
+    // aggregate verifies their IDs against Databricks independently of it.
+    const snapshots=entry.data?.snapshots||[];
+    const namedDatabricksSource=snapshots.some(s=>/^Databricks/i.test(s.source));
+    const verified=snapshots.length>0 && (rows.length
+      ? rows.every(r=>r.verified===true || r.verified==null && namedDatabricksSource)
+      : namedDatabricksSource);
     const partial=names.some(n=>!supported.has(n)&&!rows.some(r=>r.study_name===n));
-    const total=entry.data&&snapshots.some(s=>/^Databricks/i.test(s.source))&&names.some(n=>supported.has(n))?rows.reduce((n,r)=>n+Number(r.databricks_total||0),0):null;
+    const total=entry.data&&verified&&names.some(n=>supported.has(n))?rows.reduce((n,r)=>n+Number(r.databricks_total||0),0):null;
     return {entry,rows,names,verified,partial,total,snapshots};
   }
   function receiptShare(received, lifted) {

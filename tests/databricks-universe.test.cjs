@@ -97,3 +97,27 @@ test('el país seleccionado se envía a Export sin convertir Chile o Perú en un
   assert.match(target.innerHTML,/data-metric-scope-filter="country"/);assert.match(target.innerHTML,/value="Chile" selected/);
  }finally{delete global.document;}
 });
+
+test('agosto reconoce el corte histórico por la verificación del servidor y conserva su nombre original',async()=>{
+ const target={innerHTML:'',parentElement:{children:[]},querySelectorAll:()=>[],querySelector:()=>null};target.parentElement.children=[target];
+ global.document={getElementById:()=>target};
+ const rows=[{id:'10',_module:'blocking',estudio:'Chile',fecha:'2026-08-21',fechaAuditoriaOriginal:'2026-08-14',kpis:[]}];
+ const data={studies:[{study_name:'Chile',databricks_total:2702,verified:true}],snapshots:[{month:'2026-08-01',source:'Optimización - histórico agosto.xlsx',refreshed_at:'2026-10-01'}]};
+ const app={currentRole:'commercial',currentProfile:{id:'historical'},currentView:'visualizations',reportsSubtab:'metrics',
+  selectedStudies:['Chile'],selectedMetricsCountry:'Chile',selectedMetricsMonth:'2026-08',
+  getVisualizationModuleFilter:()=> 'blocking',getReportCountry:()=> 'Chile',renderReportsView(){},backend:{async loadDatabricksAuditTotals(f){assert.equal(f.month,'2026-08');return data;}}};
+ try {
+  U.render(app,rows);await new Promise(resolve=>setImmediate(resolve));U.render(app,rows);
+  assert.match(target.innerHTML,/2\.702/);assert.match(target.innerHTML,/Optimización - histórico agosto.xlsx|2026-08 · 2026-10-01/);
+  assert.doesNotMatch(target.innerHTML,/Sin corte conectado/);
+  assert.match(target.innerHTML,/<td>KO Tradicional CHILE<\/td><td>2\.702<\/td><td>1<\/td><td>0<\/td>/);
+  // A filename alone cannot override an explicit failed verification. Nor
+  // may verified rows invent a missing monthly snapshot.
+  for(const [verified,snapshots] of [[false,data.snapshots],[false,[{month:'2026-08-01',source:'Databricks'}]],[true,[]]]) {
+   app.databricksTotalsCache=new Map();data.studies[0].verified=verified;data.snapshots=snapshots;
+   U.render(app,rows);await new Promise(resolve=>setImmediate(resolve));U.render(app,rows);
+   assert.match(target.innerHTML,/Sin corte conectado/);
+   assert.doesNotMatch(target.innerHTML,/<td>2\.702<\/td>/);
+  }
+ }finally{delete global.document;}
+});
