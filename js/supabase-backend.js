@@ -771,39 +771,67 @@ export class SupabaseBackend {
   async loadAuditHistory({ module = null, pageSize = 500, onProgress = null, ignoreScope = false } = {}) {
     this.ensureConfigured();
     const safePageSize = Math.min(Math.max(Number(pageSize) || 500, 100), 1000);
+    const batches = [];
     const rows = [];
-    let cursor = 0;
-
+    let batchCursor = 0;
+    // Resolve visible batches first. A module filter on the enum alone can
+    // make a prepared/RLS query scan the other module's entire ID history.
+    // Equality on batch_id narrows every page before reading audit payloads.
     while (true) {
       const page = await this.readWithRetry(()=>{
-        let request = this.client
-          .from('audits')
-          .select(`
+        let request=this.client.from('upload_batches')
+          .select('id, operation_date, status, source_filename, created_at')
+          .in('status',['active','archived']).gt('id',batchCursor);
+        if(module)request=request.eq('module',module);
+        if(!ignoreScope && this.currentScope?.study?.id)request=request.eq('study_id',this.currentScope.study.id);
+        if(!ignoreScope && this.currentScope?.country?.id)request=request.eq('country_id',this.currentScope.country.id);
+        return request.order('id',{ascending:true}).limit(1000);
+      }) || [];
+      batches.push(...page);
+      if(page.length<1000)break;
+      batchCursor=Number(page[page.length-1].id || 0);
+      if(!batchCursor)break;
+    }
+
+    const loadBatch=async batch=>{
+      let cursor=0;
+      while(true) {
+        const page=await this.readWithRetry(()=>{
+          let request = this.client
+            .from('audits')
+            .select(`
           id, batch_id, module, external_id, study, study_id, country_id,
           assigned_validator_id, status, audit_date, validation_date, payload, report_geography,
           validation_results, started_at, completed_at, duration_seconds,
           created_at, updated_at,
           pending_resolution, original_operation_date, original_source_filename, original_uploaded_at,
-          upload_batches!inner(operation_date, status, source_filename, created_at),
           validators(code, name)
           `)
-          .in('upload_batches.status', ['active', 'archived'])
-          .gt('id', cursor);
+            .eq('batch_id',batch.id)
+            .gt('id', cursor);
 
-        if (module) request = request.eq('module', module);
-        if (!ignoreScope && this.currentScope?.study?.id) request = request.eq('study_id', this.currentScope.study.id);
-        if (!ignoreScope && this.currentScope?.country?.id) request = request.eq('country_id', this.currentScope.country.id);
-        request = request.order('id', { ascending: true }).limit(safePageSize);
+          if (module) request = request.eq('module', module);
+          if (!ignoreScope && this.currentScope?.study?.id) request = request.eq('study_id', this.currentScope.study.id);
+          if (!ignoreScope && this.currentScope?.country?.id) request = request.eq('country_id', this.currentScope.country.id);
+          request = request.order('id', { ascending: true }).limit(safePageSize);
 
-        return request;
-      }) || [];
-      rows.push(...page);
-      if (typeof onProgress === 'function') onProgress(rows.length);
-      if (page.length < safePageSize) break;
+          return request;
+        }) || [];
+        rows.push(...page.map(record=>({...record,upload_batches:batch})));
+        if (typeof onProgress === 'function') onProgress(rows.length);
+        if (page.length < safePageSize) break;
 
-      cursor = Number(page[page.length - 1].id || 0);
-      if (!cursor) break;
-    }
+        cursor = Number(page[page.length - 1].id || 0);
+        if (!cursor) break;
+      }
+    };
+    // Bound concurrent payload reads; progress is cumulative across batches.
+    let nextBatch=0;
+    const worker=async()=>{
+      while(nextBatch<batches.length)await loadBatch(batches[nextBatch++]);
+    };
+    await Promise.all(Array.from({length:Math.min(2,batches.length)},worker));
+    rows.sort((a,b)=>Number(a.id)-Number(b.id));
 
     return rows.map(mapAudit);
   }
