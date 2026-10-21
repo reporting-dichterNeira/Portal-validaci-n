@@ -31,3 +31,35 @@ Smart y Bloqueantes. La normalización de encabezados se comparte entre las
 filas del export, y los metadatos ya resueltos se reutilizan mientras no cambie
 la fuente. La caché del histórico durante el render se descarta al terminar,
 incluido si hay un error, para conservar las actualizaciones posteriores.
+
+## Memoria del inventario de Databricks
+
+`supabase/sql/cache-metrics-inventory.sql` conserva en tablas privadas los IDs,
+fechas y dimensiones verificadas de cada corte. Agosto y septiembre se leen una
+vez y se reutilizan. El trabajo programado `metrics-inventory-current-month`
+comprueba solo el mes actual cada cinco minutos y lo actualiza si cambió la
+versión del import o del catálogo verificado. La actualización es atómica.
+
+`supabase/sql/use-cached-metrics-inventory.sql` compara la respuesta completa
+del lector anterior con la nueva, incluidos territorios, auditores, canales,
+segmentos y filtros de fechas. Solo cambia el lector si coinciden. Conserva su
+autorización y un respaldo privado de la definición anterior. Los conteos
+siguen usando IDs distintos por estudio sobre todos los meses seleccionados;
+no se suman porcentajes ni totales mensuales que puedan duplicar auditorías.
+
+Los datos originales y las decisiones no se modifican. Incidencia se excluye
+al construir el corte; la regla de región/canal faltantes y alertas bloqueantes
+se evalúa con las auditorías operativas existentes. La RPC pública mantiene su
+contrato y los filtros. Las tablas de memoria tienen RLS y no son accesibles
+directamente por usuarios del portal.
+
+`supabase/sql/test-cached-metrics-inventory.sql` comprueba permisos, reutilización
+del histórico, programación y resultados por mes y país. Una corrección
+extraordinaria de un mes cerrado se puede reconstruir desde SQL con
+`private.refresh_metrics_inventory_month('2026-08-01', true)`; la actualización
+normal del portal no vuelve a consultar esos meses.
+
+El histórico operativo también se carga por lotes visibles, con un máximo de
+dos páginas simultáneas por módulo. Así se evita recorrer Bloqueantes para
+encontrar Smart. Se conservan RLS, el alcance del supervisor, las fechas y
+archivos originales, el orden final por ID y los reintentos de la página fallida.
