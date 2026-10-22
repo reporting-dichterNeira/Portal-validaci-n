@@ -43,7 +43,7 @@ Restablecer contraseña requiere al menos 8 caracteres, reemplaza su hash bcrypt
 ## Segunda revisión
 
 Se guarda una copia de las respuestas y evidencias al seleccionar la auditoría. PQR no escribe en `public.audits`.
-Cada alerta se evalúa como correcta, incorrecta o no evaluable. Un error exige respuesta correcta y explicación; no evaluable exige explicación.
+El formulario muestra solo el KPI, el validador, su decisión original y la evaluación «Correcta» o «Incorrecta». El detalle es opcional en ambos casos. La corrección opuesta se conserva automáticamente para decisiones originales Aplica/No aplica; no se inventa una decisión si la original no está finalizada. Los resultados antiguos «No evaluable» se conservan y se muestran en consulta.
 La auditoría solo puede completarse tras evaluar todas sus alertas. El resultado final se deriva de esas evaluaciones.
 Los tiempos de inicio y finalización se registran con el reloj del servidor. Los cambios de versión evitan sobrescribir un borrador desde otra pestaña.
 Las revisiones completas quedan en consulta; no se sobrescriben. La supervisora solo puede reasignar casos pendientes sin revisión iniciada.
@@ -60,6 +60,7 @@ El CSV tiene una fila por alerta y conserva separadas la respuesta original y la
 
 Instalación idempotente: `supabase/sql/pqr-operation.sql`.
 Actualización de PQR existente: `supabase/sql/pqr-study-distribution.sql`. Configurar los responsables desde el panel antes de activar el reparto. La actualización no crea ni cambia códigos de acceso.
+Después de instalar o actualizar los scripts anteriores, aplicar `supabase/sql/pqr-simple-review.sql`: simplifica las reglas de respuesta y permite excluir revisiones de forma recuperable, sin borrar la auditoría original ni sus eventos. Las revisiones excluidas no aparecen en bandejas, contadores, exportaciones ni enlaces directos, y cron no vuelve a seleccionarlas en la misma jornada. No se crean permisos ni acciones públicas para excluir datos.
 Pruebas locales: `node --test tests/pqr-domain.test.mjs`.
 Pruebas reales: `tests/pqr-integration.sql`, que revierte todos los datos simulados dentro de una subtransacción.
 Pruebas de reparto por estudio: `tests/pqr-study-distribution.sql`, también con reversión de todos los cambios simulados.

@@ -12,9 +12,21 @@ export function reasons(row){const r=row.reasons||{};return [row.selection==='ra
 export function reviewError(kpis,results,complete=false){
  for(const k of kpis){const r=results[k.name];if(!r){if(complete)return 'Evalúa todas las alertas antes de completar.';continue;}
   if(!['correct','incorrect','not_evaluable'].includes(r.evaluation))return 'Selecciona una evaluación válida.';
-  if(r.evaluation==='incorrect'&&(!['aplica','no_aplica'].includes(r.correct_decision)||String(r.comment||'').trim().length<3))return 'Indica la respuesta correcta y explica cada error.';
+  if(r.correct_decision&&!['aplica','no_aplica'].includes(r.correct_decision))return 'La decisión de corrección no es válida.';
+  if(String(r.comment||'').length>4000)return 'El detalle no puede superar 4.000 caracteres.';
   if(r.evaluation==='not_evaluable'&&String(r.comment||'').trim().length<3)return 'Explica por qué la alerta no es evaluable.';
  }return '';
+}
+export function reviewResults(kpis,values,originalResults={},savedResults={}){
+ const results=Object.create(null);
+ for(const[k,i]of kpis.map((k,i)=>[k,i])){
+  const evaluation=values['evaluation_'+i];if(!evaluation)continue;
+  const original=originalResults[k.name]?.status,saved=savedResults[k.name]||{};
+  // Infer an opposite only for a binary original decision; retain legacy corrections.
+  const corrected=evaluation==='incorrect'?(original==='aplica'?'no_aplica':original==='no_aplica'?'aplica':saved.evaluation==='incorrect'?saved.correct_decision||'':''):'';
+  results[k.name]={evaluation,correct_decision:corrected,comment:String(values['comment_'+i]||'').trim()};
+ }
+ return results;
 }
 export function csv(headers,rows){const cell=v=>{let s=String(v??'');if(typeof v==='string'&&/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};return '\uFEFF'+[headers,...rows].map(r=>r.map(cell).join(';')).join('\r\n');}
 export function safeUrl(value){try{const u=new URL(String(value));return u.protocol==='https:'?u.href:null;}catch{return null;}}

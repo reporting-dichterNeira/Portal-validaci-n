@@ -1,18 +1,42 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {today,reviewError,safeUrl,evidenceEntries,exportRows,csv,exportHeaders} from '../js/pqr-domain.mjs';
+import {today,reviewError,reviewResults,safeUrl,evidenceEntries,exportRows,csv,exportHeaders} from '../js/pqr-domain.mjs';
 import {dashboardView,detailView,loginView,studySettingsView,PqrUI} from '../js/pqr-ui.mjs';
 
 test('same-day boundary uses Colombia even when UTC has entered the next day',()=>{
  assert.equal(today(new Date('2026-10-17T04:59:59Z')),'2026-10-16');
  assert.equal(today(new Date('2026-10-17T05:00:00Z')),'2026-10-17');
 });
-test('completion requires all alerts and an explanation/correct decision for errors',()=>{
+test('completion requires all alerts; detail is optional for correct and incorrect decisions',()=>{
  const kpis=[{name:'A'},{name:'B'}];assert.ok(reviewError(kpis,{A:{evaluation:'correct'}},true));
  assert.equal(reviewError(kpis,{A:{evaluation:'correct'}},false),'');
- assert.ok(reviewError(kpis,{A:{evaluation:'incorrect',correct_decision:'aplica',comment:''}},false));
+ assert.equal(reviewError(kpis,{A:{evaluation:'incorrect',comment:''}},false),'');
+ assert.equal(reviewError(kpis,{A:{evaluation:'incorrect',comment:'a'},B:{evaluation:'correct',comment:''}},true),'');
+ assert.ok(reviewError(kpis,{A:{evaluation:'incorrect',correct_decision:'invalid'}},false));
+ assert.ok(reviewError(kpis,{A:{evaluation:'correct',comment:'x'.repeat(4001)}},false));
  assert.ok(reviewError(kpis,{A:{evaluation:'not_evaluable',comment:''}},false));
  assert.equal(reviewError(kpis,{A:{evaluation:'incorrect',correct_decision:'aplica',comment:'Evidencia confirma'},B:{evaluation:'correct'}},true),'');
+});
+
+test('simple form only shows KPI, validator, original decision, binary evaluation and optional detail',()=>{
+ const row={external_id:'1',day:'2026-10-22',status:'in_progress',validator_name:'<Validador>',kpis:[{name:'<Precio>'}],original_results:{'<Precio>':{status:'no_aplica',observaciones:'Texto original no mostrado'}},review_results:{},payload:{internal:'not shown'}};
+ const before=JSON.stringify(row),html=detailView(row,'analyst');
+ assert.match(html,/KPI/);assert.match(html,/&lt;Validador&gt;/);assert.match(html,/&lt;Precio&gt;/);assert.match(html,/Decisión que tomó/);assert.match(html,/Detalle \(opcional\)/);
+ assert.equal((html.match(/type="radio"/g)||[]).length,2);
+ assert.doesNotMatch(html,/correct_decision_|value="not_evaluable"|Información original|pqr-detail-head|Texto original no mostrado|not shown/);
+ assert.doesNotMatch(html,/<textarea[^>]*required/);assert.equal(JSON.stringify(row),before);
+});
+
+test('binary corrections are derived without editing original data or inventing missing decisions',()=>{
+ const kpis=[{name:'A'},{name:'B'},{name:'C'}],original={A:{status:'aplica'},B:{status:'no_aplica'},C:{status:'pending'}};
+ const values={evaluation_0:'incorrect',evaluation_1:'incorrect',evaluation_2:'incorrect',comment_0:'  opcional  '};
+ const before=JSON.stringify(original),results=reviewResults(kpis,values,original);
+ assert.equal(results.A.correct_decision,'no_aplica');assert.equal(results.B.correct_decision,'aplica');assert.equal(results.C.correct_decision,'');assert.equal(results.A.comment,'opcional');assert.equal(results.B.comment,'');
+ assert.equal(reviewError(kpis,results,true),'');assert.equal(JSON.stringify(original),before);
+ values.evaluation_0='correct';assert.equal(reviewResults(kpis,values,original).A.correct_decision,'');
+ assert.equal(reviewResults(kpis,{},original).A,undefined);
+ const legacy=detailView({external_id:'1',day:'2026-10-22',status:'completed',kpis:[{name:'A'}],review_results:{A:{evaluation:'not_evaluable',comment:'Sin evidencia'}}},'analyst');
+ assert.match(legacy,/Resultado anterior: No evaluable/);assert.match(legacy,/Sin evidencia/);assert.match(legacy,/fieldset disabled/);
 });
 test('original answers and PQR decisions remain separate in review and per-alert CSV',()=>{
  const row={id:'one',day:'2026-10-16',external_id:'1',study:'Chile',status:'completed',original_completed_at:'2026-10-16T14:00:00Z',
