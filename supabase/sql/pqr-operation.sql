@@ -71,6 +71,26 @@ create table if not exists private.pqr_reviews (
 );
 create index if not exists pqr_reviews_analyst_status_day on private.pqr_reviews(analyst_id,status,day);
 create index if not exists pqr_reviews_day_status on private.pqr_reviews(day,status);
+
+-- One responsible analyst per study; an analyst can own several studies.
+create table if not exists private.pqr_study_settings (
+ study text primary key check(study in ('Chile','Tradicional','Moderno','Lindley')),
+ analyst_id uuid references private.pqr_analysts(id),
+ percentage numeric not null default 20 check(percentage between 0 and 100),
+ updated_at timestamptz not null default now()
+);
+insert into private.pqr_study_settings(study) values ('Chile'),('Tradicional'),('Moderno'),('Lindley') on conflict do nothing;
+create table if not exists private.pqr_day_studies (
+ day date not null references private.pqr_days(day), study text not null references private.pqr_study_settings(study),
+ analyst_id uuid references private.pqr_analysts(id), percentage numeric not null check(percentage between 0 and 100),
+ eligible integer not null default 0, target integer not null default 0,
+ primary key(day,study)
+);
+alter table private.pqr_study_settings enable row level security;
+alter table private.pqr_day_studies enable row level security;
+revoke all on private.pqr_study_settings,private.pqr_day_studies from public,anon,authenticated;
+create index if not exists pqr_reviews_day_study on private.pqr_reviews(day,study);
+
 create table if not exists private.pqr_events (
  id bigint generated always as identity primary key, review_id uuid references private.pqr_reviews(id),
  actor uuid, action text not null, detail jsonb not null default '{}'::jsonb, created_at timestamptz not null default now()
@@ -154,8 +174,8 @@ end;$$;
 create or replace function private.pqr_refresh_day(p_day date) returns void
 language plpgsql security definer set search_path='' as $$
 declare v_day date:=p_day; v_today date:=(now() at time zone 'America/Bogota')::date; v_settings private.pqr_settings%rowtype;
- v_n integer; v_target integer; v_selected integer; v_risk_goal integer; v_risk_count integer;
- v_pick record; v_analyst uuid; v_seed uuid; v_selection text;
+ v_n integer; v_target integer; v_selected integer;
+ v_pick record; v_scope record; v_seed uuid;
 begin
  -- Try-lock keeps simultaneous browsers/cron from blocking normal validation.
  if not pg_try_advisory_xact_lock(186321, v_day-date '2026-01-01') then return;end if;
@@ -168,6 +188,16 @@ begin
  end if;
  insert into private.pqr_days(day,percentage) values(v_day,v_settings.percentage) on conflict do nothing;
  select seed into v_seed from private.pqr_days where day=v_day;
+ if v_day=v_today then
+  insert into private.pqr_day_studies(day,study,analyst_id,percentage)
+   select v_day,study,analyst_id,percentage from private.pqr_study_settings
+   on conflict(day,study) do update set analyst_id=excluded.analyst_id,percentage=excluded.percentage;
+ else
+  -- Finalizing yesterday uses its last saved percentages, never today's edits.
+  insert into private.pqr_day_studies(day,study,percentage)
+   select v_day,study,v_settings.percentage from private.pqr_study_settings on conflict do nothing;
+ end if;
+
  -- Temporary candidates live only for this transaction. Completed time, never
  -- upload/operation date, defines the cohort. Source audit rows are read-only.
  create temporary table if not exists pqr_candidates(
@@ -206,33 +236,44 @@ begin
   (case when sla is not null and speed_rank<=0.2 then 40 else 0 end)+20.0*invalid/n+15.0*least(invalid/5.0,1)+25.0*least(n/10.0,1),
   jsonb_build_object('fast',sla is not null and speed_rank<=0.2,'many_alerts',n>=3,'many_invalid',invalid>=2,'invalid_share',invalid::numeric/n),
   payload,validation_results,kpis from ranked;
+ update private.pqr_day_studies d set
+  eligible=(select count(*) from pg_temp.pqr_candidates c where c.study=d.study),
+  target=ceil((select count(*) from pg_temp.pqr_candidates c where c.study=d.study)*d.percentage/100.0)
+  where d.day=v_day;
  select count(*) into v_n from pg_temp.pqr_candidates;
- v_target:=ceil(v_n*v_settings.percentage/100.0);
- update private.pqr_days set eligible=v_n,target=v_target,percentage=v_settings.percentage,refreshed_at=now() where day=v_day;
- select count(*),count(*) filter(where selection='risk') into v_selected,v_risk_count from private.pqr_reviews where day=v_day;
- v_risk_goal:=ceil(v_target*(100-v_settings.random_percentage)/100.0);
- for i in 1..greatest(v_target-v_selected,0) loop
-  v_selection:=case when v_risk_count<v_risk_goal then 'risk' else 'random' end;
-  select c.* into v_pick from pg_temp.pqr_candidates c
-   where not exists(select 1 from private.pqr_reviews r where r.day=v_day and r.source_key=c.source_key)
-   order by case when v_selection='risk' then c.risk end desc nulls last,md5(v_seed::text||c.source_key) limit 1;
-  exit when not found;
-  insert into private.pqr_reviews(day,source_key,source_audit_id,external_id,study,country,validator_id,validator_name,
-   original_started_at,original_completed_at,original_sla_seconds,alert_count,invalid_count,risk,reasons,selection,payload,original_results,kpis)
-  values(v_day,v_pick.source_key,v_pick.source_audit_id,v_pick.external_id,v_pick.study,v_pick.country,v_pick.validator_id,v_pick.validator_name,
-   v_pick.original_started_at,v_pick.original_completed_at,v_pick.original_sla_seconds,v_pick.alert_count,v_pick.invalid_count,v_pick.risk,v_pick.reasons,v_selection,v_pick.payload,v_pick.original_results,v_pick.kpis)
-  on conflict(day,source_key) do nothing;
-  if v_selection='risk' then v_risk_count:=v_risk_count+1;end if;
+ select coalesce(sum(target),0) into v_target from private.pqr_day_studies where day=v_day;
+ update private.pqr_days set eligible=v_n,target=v_target,refreshed_at=now() where day=v_day;
+ for v_scope in select * from private.pqr_day_studies where day=v_day order by study loop
+  select count(*) into v_selected from private.pqr_reviews where day=v_day and study=v_scope.study;
+  for v_pick in select c.* from pg_temp.pqr_candidates c
+   where c.study=v_scope.study and not exists(select 1 from private.pqr_reviews r where r.day=v_day and r.source_key=c.source_key)
+   order by c.risk desc,md5(v_seed::text||c.source_key) limit greatest(v_scope.target-v_selected,0)
+  loop
+   insert into private.pqr_reviews(day,source_key,source_audit_id,external_id,study,country,validator_id,validator_name,
+    original_started_at,original_completed_at,original_sla_seconds,alert_count,invalid_count,risk,reasons,selection,payload,original_results,kpis)
+   values(v_day,v_pick.source_key,v_pick.source_audit_id,v_pick.external_id,v_pick.study,v_pick.country,v_pick.validator_id,v_pick.validator_name,
+    v_pick.original_started_at,v_pick.original_completed_at,v_pick.original_sla_seconds,v_pick.alert_count,v_pick.invalid_count,v_pick.risk,v_pick.reasons,'risk',v_pick.payload,v_pick.original_results,v_pick.kpis)
+   on conflict(day,source_key) do nothing;
+  end loop;
  end loop;
- -- Retain every existing assignment; only distribute unassigned jobs for today.
  if v_day<v_today then update private.pqr_days set closed_at=now() where day=v_day;return;end if;
  if not v_settings.auto_assign then return;end if;
- for v_pick in select id from private.pqr_reviews where day=v_day and analyst_id is null and status='pending' order by risk desc,created_at loop
-  select a.id into v_analyst from private.pqr_analysts a left join private.pqr_reviews r on r.analyst_id=a.id and r.status<>'completed'
-   where a.active and a.available group by a.id,a.created_at order by coalesce(sum(r.alert_count),0),count(r.id),a.created_at limit 1;
-  exit when v_analyst is null;
-  update private.pqr_reviews set analyst_id=v_analyst,assigned_at=now(),version=version+1 where id=v_pick.id;
-  insert into private.pqr_events(review_id,action,detail) values(v_pick.id,'assigned',jsonb_build_object('analyst_id',v_analyst));
+ -- Only today's unstarted work follows a changed owner. In-progress and
+ -- completed reviews, drafts and previous days keep their original analyst.
+ for v_pick in
+  select r.id,r.analyst_id as previous_analyst_id,
+   case when a.active and a.available and a.deleted_at is null then a.id end as next_analyst_id
+  from private.pqr_reviews r join private.pqr_day_studies d on d.day=r.day and d.study=r.study
+  left join private.pqr_analysts a on a.id=d.analyst_id
+  where r.day=v_day and r.status='pending' and r.started_at is null and r.review_results='{}'::jsonb
+   and (r.analyst_id is distinct from d.analyst_id or r.analyst_id is null)
+  order by r.risk desc,r.created_at for update of r skip locked
+ loop
+  if v_pick.previous_analyst_id is not distinct from v_pick.next_analyst_id then continue;end if;
+  update private.pqr_reviews set analyst_id=v_pick.next_analyst_id,
+   assigned_at=case when v_pick.next_analyst_id is not null then now() end,version=version+1 where id=v_pick.id;
+  insert into private.pqr_events(review_id,action,detail) values(v_pick.id,'study_assigned',
+   jsonb_build_object('previous_analyst_id',v_pick.previous_analyst_id,'analyst_id',v_pick.next_analyst_id));
  end loop;
 end;$$;
 
@@ -261,7 +302,7 @@ begin
  if p_action='logout' then delete from private.pqr_sessions where user_id=auth.uid();return '{}'::jsonb;end if;
  if p_action in ('create_supervisor','update_supervisor','reset_supervisor_password','delete_supervisor','restore_supervisor') and v_role<>'admin' then
   raise exception 'ADMIN_REQUIRED' using errcode='42501';end if;
- if p_action in ('settings','start_distribution','create_analyst','update_analyst','get_code','reset_code','delete_analyst','restore_analyst','reassign','create_supervisor') and v_role not in ('admin','supervisor') then
+ if p_action in ('settings','study_settings','start_distribution','create_analyst','update_analyst','get_code','reset_code','delete_analyst','restore_analyst','reassign','create_supervisor') and v_role not in ('admin','supervisor') then
   raise exception 'PQR_SUPERVISOR_REQUIRED' using errcode='42501';end if;
  if p_action='create_supervisor' then
   if v_role<>'admin' then raise exception 'ADMIN_REQUIRED' using errcode='42501';end if;
@@ -299,12 +340,27 @@ begin
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),p_action,jsonb_build_object('id',v_id));
   return jsonb_build_object('id',v_id);
  elsif p_action='start_distribution' then
-  if not exists(select 1 from private.pqr_analysts where active and available) then raise exception 'Crea o habilita al menos un analista antes de distribuir.';end if;
+  if not exists(select 1 from private.pqr_study_settings s join private.pqr_analysts a on a.id=s.analyst_id where a.active and a.available and a.deleted_at is null and s.percentage>0) then raise exception 'Configura al menos un estudio con un responsable disponible y un porcentaje mayor que cero.';end if;
   update private.pqr_settings set auto_assign=true,updated_at=now() where singleton;
   insert into private.pqr_events(actor,action) values(auth.uid(),'distribution_enabled');
+ elsif p_action='study_settings' then
+  -- Serialize configuration with sampling and assignment of today's cohort.
+  perform pg_advisory_xact_lock(186321,v_day-date '2026-01-01');
+  if jsonb_typeof(p_data->'studies') is distinct from 'array' then raise exception 'Indica los cuatro estudios y sus porcentajes.';end if;
+  if jsonb_array_length(p_data->'studies')<>4 or
+   (select count(distinct x->>'study') from jsonb_array_elements(p_data->'studies') x where x->>'study' in ('Chile','Tradicional','Moderno','Lindley'))<>4 then
+   raise exception 'Configura una sola vez cada estudio: Chile, Tradicional CAM, Moderno CAM y Lindley.';end if;
+  if exists(select 1 from jsonb_array_elements(p_data->'studies') x
+   where jsonb_typeof(x->'percentage') is distinct from 'number' or (x->>'percentage')::numeric not between 0 and 100) then
+   raise exception 'Cada porcentaje debe estar entre 0 y 100.';end if;
+  if exists(select 1 from jsonb_array_elements(p_data->'studies') x where nullif(x->>'analyst_id','') is not null
+   and not exists(select 1 from private.pqr_analysts a where a.id=(x->>'analyst_id')::uuid and a.deleted_at is null)) then
+   raise exception 'Selecciona un analista del equipo actual para cada estudio.';end if;
+  update private.pqr_study_settings s set analyst_id=nullif(x->>'analyst_id','')::uuid,
+   percentage=(x->>'percentage')::numeric,updated_at=now() from jsonb_array_elements(p_data->'studies') x where s.study=x->>'study';
+  insert into private.pqr_events(actor,action,detail) values(auth.uid(),'study_settings_changed',p_data);
  elsif p_action='settings' then
-  update private.pqr_settings set percentage=(p_data->>'percentage')::numeric,random_percentage=0,updated_at=now() where singleton;
-  insert into private.pqr_events(actor,action,detail) values(auth.uid(),'settings_changed',jsonb_build_object('percentage',p_data->'percentage'));
+  raise exception 'Configura el responsable y porcentaje de cada estudio desde Reparto por estudio.';
  elsif p_action='create_analyst' then
   if length(btrim(coalesce(p_data->>'name','')))<2 then raise exception 'Indica el nombre del analista.';end if;
   select 'PQR-'||string_agg(substr('23456789ABCDEFGHJKLMNPQRSTUVWXYZ',1+(get_byte(entropy.bytes,i)%32),1),'' order by i)
@@ -324,6 +380,7 @@ begin
    update private.pqr_analysts set deleted_at=clock_timestamp(),active=false,available=false,credentials_changed_at=clock_timestamp(),code_secret_id=null,code_hash=encode(extensions.digest(extensions.gen_random_bytes(32),'sha256'),'hex') where id=(p_data->>'id')::uuid and deleted_at is null;
    if not found then raise exception 'El analista ya fue eliminado.';end if;
    update private.pqr_reviews set analyst_id=null,assigned_at=null,version=version+1 where analyst_id=(p_data->>'id')::uuid and status='pending';
+   update private.pqr_study_settings set analyst_id=null,updated_at=now() where analyst_id=(p_data->>'id')::uuid;
   else
    update private.pqr_analysts set deleted_at=null,active=false,available=false where id=(p_data->>'id')::uuid and deleted_at is not null;
    if not found then raise exception 'El analista no está eliminado.';end if;
@@ -353,9 +410,13 @@ begin
   insert into private.pqr_events(actor,action,detail) values(auth.uid(),'analyst_code_reset',jsonb_build_object('id',p_data->>'id'));
   return jsonb_build_object('code',v_code);
  elsif p_action='reassign' then
+  perform pg_advisory_xact_lock(186321,v_day-date '2026-01-01');
+  if not exists(select 1 from private.pqr_reviews r join private.pqr_study_settings s on s.study=r.study
+   where r.id=(p_data->>'id')::uuid and s.analyst_id=(p_data->>'analyst_id')::uuid) then
+   raise exception 'La auditoría debe asignarse al responsable de su estudio. Cambia el responsable en Reparto por estudio.';end if;
   if not exists(select 1 from private.pqr_analysts where id=(p_data->>'analyst_id')::uuid and active and available) then raise exception 'ANALYST_UNAVAILABLE';end if;
   update private.pqr_reviews set analyst_id=(p_data->>'analyst_id')::uuid,assigned_at=now(),version=version+1
-   where id=(p_data->>'id')::uuid and status='pending' and review_results='{}'::jsonb;
+   where id=(p_data->>'id')::uuid and status='pending' and started_at is null and review_results='{}'::jsonb;
   if not found then raise exception 'Solo se pueden reasignar auditorías pendientes sin revisión iniciada.';end if;
   insert into private.pqr_events(review_id,actor,action,detail) values((p_data->>'id')::uuid,auth.uid(),'reassigned',jsonb_build_object('analyst_id',p_data->>'analyst_id'));
  elsif p_action in ('detail','start','save') then
@@ -402,7 +463,7 @@ begin
  -- Late work remains attached to its original day; never reset its deadline.
  if p_data ? 'day' and coalesce(p_data->>'day','')<>'' then v_day:=(p_data->>'day')::date;end if;
  select to_jsonb(s) into v_settings from private.pqr_settings s;
- select jsonb_build_object('eligible',coalesce(d.eligible,0),'target',coalesce(d.target,0),'percentage',coalesce(d.percentage,(v_settings->>'percentage')::numeric),
+ select jsonb_build_object('eligible',coalesce(d.eligible,0),'target',coalesce(d.target,0),'percentage',null,'percentage_mode','study',
   'selected',count(r.id),'assigned',count(r.id) filter(where r.analyst_id is not null),'completed',count(r.id) filter(where r.status='completed'),
   'on_time',count(r.id) filter(where r.status='completed' and (r.completed_at at time zone 'America/Bogota')::date=r.day),
   'overdue',count(r.id) filter(where r.status<>'completed' and r.day<(now() at time zone 'America/Bogota')::date),
@@ -437,6 +498,14 @@ begin
   order by r.day,r.risk desc,r.created_at limit case when p_action='export' then 10000 else 100 end offset case when p_action='export' then 0 else v_offset end
  ) x;
  return jsonb_build_object('context',ctx,'today',(now() at time zone 'America/Bogota')::date,'day',v_day,'stats',v_stats,
+  'study_settings',(select coalesce(jsonb_agg(jsonb_build_object('study',s.study,'analyst_id',s.analyst_id,'percentage',s.percentage) order by s.study),'[]'::jsonb)
+   from private.pqr_study_settings s where v_role<>'analyst' or s.analyst_id=(ctx->>'id')::uuid),
+  'study_stats',case when v_role<>'analyst' then (select coalesce(jsonb_agg(to_jsonb(x) order by x.study),'[]'::jsonb) from (
+   select d.study,d.analyst_id,a.name as analyst_name,d.percentage,d.eligible,d.target,
+    count(r.id) as selected,count(r.id) filter(where r.analyst_id is not null) as assigned,count(r.id) filter(where r.status='completed') as completed
+   from private.pqr_day_studies d left join private.pqr_analysts a on a.id=d.analyst_id
+   left join private.pqr_reviews r on r.day=d.day and r.study=d.study where d.day=v_day
+   group by d.day,d.study,a.name) x) else '[]'::jsonb end,
   'settings',case when v_role<>'analyst' then v_settings else null end,'analysts',v_analysts,'reviews',v_rows,
   'supervisors',case when v_role='admin' then (select coalesce(jsonb_agg(jsonb_build_object('id',id,'username',username,'name',name,'active',active,'deleted_at',deleted_at) order by name,username),'[]'::jsonb) from private.pqr_supervisors) else '[]'::jsonb end);
 end;$$;

@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {today,reviewError,safeUrl,evidenceEntries,exportRows,csv,exportHeaders} from '../js/pqr-domain.mjs';
-import {dashboardView,detailView,loginView} from '../js/pqr-ui.mjs';
+import {dashboardView,detailView,loginView,studySettingsView,PqrUI} from '../js/pqr-ui.mjs';
 
 test('same-day boundary uses Colombia even when UTC has entered the next day',()=>{
  assert.equal(today(new Date('2026-10-17T04:59:59Z')),'2026-10-16');
@@ -47,4 +47,25 @@ test('evidence links reject active content, duplicates collapse, and CSV escapes
  assert.equal(safeUrl('javascript:alert(1)'),null);assert.equal(safeUrl('data:text/html,bad'),null);assert.equal(safeUrl('http://unsafe.test'),null);
  assert.equal(evidenceEntries({meta:{foto:'https://example.test/photo'}},{foto:'https://example.test/photo'}).length,1);
  assert.match(csv(['Name'],[['=1+1']]),/"'=1\+1"/);assert.match(loginView('supervisor'),/autocomplete="current-password"/);
+});
+test('supervisor can configure each study separately and one analyst can own two studies',()=>{
+ const settings=[{study:'Moderno',analyst_id:'kenya',percentage:20},{study:'Tradicional',analyst_id:'kenya',percentage:20},
+  {study:'Chile',analyst_id:'joseph',percentage:25},{study:'Lindley',analyst_id:'margarita',percentage:15}];
+ const analysts=[{id:'kenya',name:'Kenya',active:true,available:true},{id:'joseph',name:'Joseph',active:true,available:true},
+  {id:'margarita',name:'Margarita',active:true,available:false},{id:'deleted',name:'Retirada',deleted_at:'2026-10-20'}];
+ const html=studySettingsView(settings,analysts);
+ assert.equal((html.match(/value="kenya" selected/g)||[]).length,2);
+ for(const s of settings){assert.match(html,new RegExp('name="percentage_'+s.study+'"[^>]*value="'+s.percentage+'"'));assert.match(html,new RegExp('name="analyst_'+s.study+'"'));}
+ assert.doesNotMatch(html,/value="deleted"/);assert.match(html,/Margarita · Reparto pausado/);assert.match(html,/Sin responsable/);
+ const dashboard=dashboardView({context:{role:'supervisor',name:'Supervisión'},study_settings:settings,analysts,reviews:[],study_stats:[{study:'Chile',analyst_name:'Joseph',eligible:101,percentage:25,target:26,selected:26,assigned:26,completed:10}]},{status:'all',offset:0});
+ assert.match(dashboard,/Estudios y porcentajes/);assert.match(dashboard,/Meta por estudio/);assert.match(dashboard,/KO Tradicional CHILE · 25%/);
+});
+test('analysts see their study percentages without supervisor configuration controls',()=>{
+ const html=dashboardView({context:{role:'analyst',name:'Kenya'},study_settings:[{study:'Moderno',percentage:20},{study:'Tradicional',percentage:20}],analysts:[],reviews:[]},{status:'all'});
+ assert.match(html,/Mis estudios:/);assert.match(html,/KO Moderno CAM · 20%/);assert.match(html,/KO Tradicional CAM · 20%/);
+ assert.doesNotMatch(html,/pqr-settings|name="analyst_|name="percentage_/);
+});
+test('unsaved study configuration survives automatic refreshes',async()=>{
+ let calls=0;const ui=new PqrUI({}, {async call(){calls++;throw new Error('Must not fetch');}});
+ ui.configDirty=true;await ui.load({silent:true});assert.equal(calls,0);
 });

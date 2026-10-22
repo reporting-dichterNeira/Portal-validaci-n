@@ -8,7 +8,7 @@ No modifica perfiles, políticas, asignaciones, respuestas ni RPCs de los valida
 
 1. En PQR, abrir **Administrar accesos PQR** e ingresar con una cuenta administrativa existente.
 2. Crear la cuenta independiente de la supervisora PQR, con un usuario y una contraseña de al menos 8 caracteres. El usuario se normaliza a minúsculas.
-3. La supervisora entra por **Supervisión PQR**, configura el porcentaje y crea los analistas.
+3. La supervisora entra por **Supervisión PQR**, crea los analistas y configura **Reparto por estudio**: responsable y porcentaje de cada estudio. Un analista puede llevar varios estudios; cada estudio tiene un responsable.
 4. Entregar cada código a su analista. Supervisión puede recuperarlo con **Copiar código**; se conserva cifrado en Supabase Vault y su hash se usa para autenticar. La lista y las descargas nunca incluyen el código.
 5. Una vez listo el equipo, pulsar **Distribuir pendientes de hoy**. En adelante el reparto se actualiza automáticamente.
 
@@ -28,11 +28,13 @@ Restablecer contraseña requiere al menos 8 caracteres, reemplaza su hash bcrypt
 
 - Solo auditorías completadas en Bloqueantes. La cohorte corresponde a `completed_at` en `America/Bogota`, nunca a la fecha de carga.
 - Se toma la última finalización del día por estudio, país e ID externo; se excluyen registros retirados/reemplazados y casos sin alertas.
-- Meta: `ceil(auditorías elegibles × porcentaje / 100)`, por defecto 20%.
+- Meta de cada estudio: `ceil(auditorías elegibles del estudio × porcentaje del estudio / 100)`, por defecto 20%. La meta total suma estas metas, redondeadas por separado. Solo incluye auditorías finalizadas ese día en Bloqueantes.
 - Riesgo: 40 puntos para el 20% más rápido del estudio con tiempo medible; hasta 20 por proporción de No aplica, hasta 15 por cantidad de No aplica (máximo a partir de 5) y hasta 25 por volumen de alertas (máximo a partir de 10).
-- Toda nueva selección se prioriza por riesgo. El único porcentaje configurable es el total a revisar. Se conservan las auditorías que ya habían sido seleccionadas. No se extrapola su tasa de error al universo.
+- Toda nueva selección se prioriza por riesgo dentro de su estudio. Se conservan las auditorías que ya habían sido seleccionadas. No se extrapola su tasa de error al universo.
 - La muestra se completa de forma incremental; nunca se retiran selecciones ni asignaciones existentes al cambiar el porcentaje.
-- Reparto por carga pendiente de alertas, seguido por cantidad de auditorías, entre analistas activos y disponibles.
+- Cada estudio se entrega únicamente a su responsable activo y disponible. Un responsable pausado, inactivo, eliminado o ausente deja nuevas asignaciones en espera; nunca pasan a un analista de otro estudio. Un 0% detiene nuevas selecciones, conservando la muestra existente.
+- Cambiar responsable traslada únicamente pendientes de hoy sin inicio ni borrador. Se conservan el analista y el historial de revisiones iniciadas, terminadas y de jornadas anteriores. La reasignación manual también exige el responsable del estudio.
+- **Gestión por analista** muestra los estudios y porcentajes actuales. **Meta por estudio** presenta elegibles, porcentaje, meta, seleccionadas, asignadas y terminadas de la jornada seleccionada. El histórico conserva los porcentajes de su propia jornada.
 - La primera asignación necesita activación de la supervisora. Después se actualiza cada minuto mediante `validaflow-pqr-same-day` en pg_cron y al consultar la operación.
 - Todo vence al terminar el mismo día en Colombia. Una revisión tardía conserva su cohorte, aparece vencida y no cuenta como cumplimiento del mismo día.
 - Al cambiar de día se cierra una vez la cohorte anterior para capturar las validaciones posteriores al último minuto de cron. Esos casos conservan la fecha anterior y no se asignan automáticamente como trabajo nuevo de hoy.
@@ -57,6 +59,8 @@ El CSV tiene una fila por alerta y conserva separadas la respuesta original y la
 - La cuenta administrativa existente solo inicia la configuración y crea cuentas PQR; no se cambia su perfil.
 
 Instalación idempotente: `supabase/sql/pqr-operation.sql`.
+Actualización de PQR existente: `supabase/sql/pqr-study-distribution.sql`. Configurar los responsables desde el panel antes de activar el reparto. La actualización no crea ni cambia códigos de acceso.
 Pruebas locales: `node --test tests/pqr-domain.test.mjs`.
 Pruebas reales: `tests/pqr-integration.sql`, que revierte todos los datos simulados dentro de una subtransacción.
+Pruebas de reparto por estudio: `tests/pqr-study-distribution.sql`, también con reversión de todos los cambios simulados.
 Vista sintética para QA: `node tests/pqr-preview.cjs`, puerto 8777.

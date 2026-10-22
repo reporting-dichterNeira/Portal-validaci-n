@@ -23,8 +23,8 @@ begin
   perform set_config('request.jwt.claim.sub',admin_id::text,true);
   response:=public.pqr_api('dashboard');
   if response->'stats'->>'target' is null then raise exception 'Missing daily statistics';end if;
-  if (response->'stats'->>'target')::integer<>ceil((response->'stats'->>'eligible')::integer*(response->'stats'->>'percentage')::numeric/100.0) then raise exception 'Incorrect 20 percent target';end if;
-  checks:=checks||jsonb_build_array('Daily target reconciles eligible completions and configured percentage');
+  if (response->'stats'->>'target')::integer<>(select coalesce(sum(target),0) from private.pqr_day_studies where day=(now() at time zone 'America/Bogota')::date) then raise exception 'Incorrect per-study target total';end if;
+  checks:=checks||jsonb_build_array('Daily target reconciles the sum of per-study targets');
   perform private.pqr_refresh_today();perform private.pqr_refresh_today();
   if exists(select 1 from private.pqr_reviews group by day,source_key having count(*)>1) then raise exception 'Duplicate sample audit';end if;
   checks:=checks||jsonb_build_array('Repeated refreshes do not duplicate selected audits');
@@ -34,9 +34,14 @@ begin
   perform public.pqr_api('create_supervisor',jsonb_build_object('username',supervisor_name,'name','QA supervision','password','Pqr-QA-temporary-2026!'));
   analyst1:=public.pqr_api('create_analyst',jsonb_build_object('name','QA analyst one'));
   analyst2:=public.pqr_api('create_analyst',jsonb_build_object('name','QA analyst two'));
+  perform public.pqr_api('study_settings',jsonb_build_object('studies',jsonb_build_array(
+   jsonb_build_object('study','Chile','analyst_id',analyst1->>'id','percentage',20),
+   jsonb_build_object('study','Moderno','analyst_id',analyst1->>'id','percentage',20),
+   jsonb_build_object('study','Tradicional','analyst_id',analyst1->>'id','percentage',20),
+   jsonb_build_object('study','Lindley','analyst_id',analyst2->>'id','percentage',20))));
   perform public.pqr_api('start_distribution');
   if not exists(select 1 from private.pqr_reviews r where r.analyst_id=(analyst1->>'id')::uuid) or not exists(select 1 from private.pqr_reviews r where r.analyst_id=(analyst2->>'id')::uuid) then raise exception 'Distribution did not reach both analysts';end if;
-  checks:=checks||jsonb_build_array('Pending assignments are distributed across the available team');
+  checks:=checks||jsonb_build_array('Pending assignments are distributed to their study owners');
   insert into auth.users(id,aud,role,is_anonymous) values(analyst_user,'authenticated','authenticated',true),(other_user,'authenticated','authenticated',true),(supervisor_user,'authenticated','authenticated',true);
   perform set_config('request.jwt.claim.sub',supervisor_user::text,true);
   response:=public.pqr_login('supervisor',supervisor_name,'Pqr-QA-temporary-2026!');
