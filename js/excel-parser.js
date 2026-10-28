@@ -92,12 +92,27 @@ export class ExcelParser {
     return verified?.channel || audit.canal || audit.channel || '';
   }
 
+  static getValidatorExportMap(validators) {
+    return new Map((validators || []).filter(v => v.id != null && v.id !== '').map(v => [String(v.id), v]));
+  }
+
+  static getValidatorForExport(audit, validatorMap = new Map()) {
+    // Historical audits carry their validator even when that person is not in
+    // the current study roster. Use the same fallback as the case detail.
+    const id = String(audit.assignedValidatorId ?? '');
+    const validator = id ? validatorMap.get(id) : null;
+    return {
+      name: validator?.name || audit._validatorName || (id || audit._validatorCode ? 'Validador sin identificar' : 'Sin asignar'),
+      code: validator?.code || audit._validatorCode || ''
+    };
+  }
+
   static buildConsolidatedExportRows(audits, validators) {
     const uniqueAudits = this.deduplicateById(audits);
-    const valMap = new Map((validators || []).map(v => [v.id, v]));
+    const valMap = this.getValidatorExportMap(validators);
 
     return uniqueAudits.map(audit => {
-      const validador = valMap.get(audit.assignedValidatorId);
+      const validador = this.getValidatorForExport(audit, valMap);
       const kpisParaRevisar = (audit.kpis || []).filter(k => k.needsReview);
       const row = {
         'ID Auditoría': audit.id,
@@ -107,8 +122,8 @@ export class ExcelParser {
         'Canal': this.getReportChannel(audit),
         'Fecha Auditoría': audit.fecha,
         'Auditor': audit.usuario,
-        'Validador Asignado': validador ? validador.name : 'Sin asignar',
-        'Código Validador': validador ? validador.code : '',
+        'Validador Asignado': validador.name,
+        'Código Validador': validador.code,
         'Estado Validación': (audit.validationStatus || 'pendiente').toUpperCase(),
         ...this.getTimingExportFields(audit),
         ...this.getSmartCommentExportFields(audit),
@@ -575,8 +590,17 @@ export class ExcelParser {
     const rows = this.buildConsolidatedExportRows(audits, validators);
 
     // Hoja 2: Resumen por Validador
-    const validatorSummary = (validators || []).map(val => {
-      const assigned = audits.filter(a => a.assignedValidatorId === val.id);
+    const summaryValidators = this.getValidatorExportMap(validators);
+    const currentValidatorIds = new Set(summaryValidators.keys());
+    audits.forEach(audit => {
+      const id = String(audit.assignedValidatorId ?? '');
+      if (!id || currentValidatorIds.has(id)) return;
+      const previous = summaryValidators.get(id);
+      const historical = this.getValidatorForExport(audit);
+      summaryValidators.set(id, { id, name: audit._validatorName || previous?.name || historical.name, code: audit._validatorCode || previous?.code || historical.code });
+    });
+    const validatorSummary = [...summaryValidators.values()].map(val => {
+      const assigned = audits.filter(a => a.assignedValidatorId != null && String(a.assignedValidatorId) === String(val.id));
       const completed = assigned.filter(a => a.validationStatus === 'completada');
       const pending = assigned.filter(a => a.validationStatus === 'pendiente');
       const inProgress = assigned.filter(a => a.validationStatus === 'en_progreso');
@@ -655,13 +679,13 @@ export class ExcelParser {
     }
 
     const uniqueAudits = this.deduplicateById(audits);
-    const valMap = new Map((validators || []).map(v => [v.id, v]));
+    const valMap = this.getValidatorExportMap(validators);
     const wb = XLSX.utils.book_new();
 
     // Función auxiliar para transformar lista de auditorías a filas de Excel
     const formatAuditRows = (list) => {
       return list.map(audit => {
-        const validador = valMap.get(audit.assignedValidatorId);
+        const validador = this.getValidatorForExport(audit, valMap);
         const kpisParaRevisar = (audit.kpis || []).filter(k => k.needsReview);
 
         const row = {
@@ -672,8 +696,8 @@ export class ExcelParser {
           'Canal': this.getReportChannel(audit),
           'Fecha Captura': audit.fecha,
           'Auditor': audit.usuario,
-          'Validador Asignado': validador ? validador.name : 'Sin asignar',
-          'Código Validador': validador ? validador.code : '',
+          'Validador Asignado': validador.name,
+          'Código Validador': validador.code,
           'Estado Validación': (audit.validationStatus || 'pendiente').toUpperCase(),
           ...this.getTimingExportFields(audit),
           ...this.getSmartCommentExportFields(audit),
@@ -763,7 +787,7 @@ export class ExcelParser {
       return;
     }
 
-    const valMap = new Map((validators || []).map(v => [v.id, v]));
+    const valMap = this.getValidatorExportMap(validators);
     const dayAudits = audits.filter(audit => {
       // La fecha del reporte es la jornada/base cargada. La fecha en que el
       // validador terminó puede ser posterior y no debe moverla de jornada.
@@ -785,7 +809,7 @@ export class ExcelParser {
     const wb = XLSX.utils.book_new();
 
     const rows = dayAudits.map(audit => {
-      const validador = valMap.get(audit.assignedValidatorId);
+      const validador = this.getValidatorForExport(audit, valMap);
       const kpisParaRevisar = (audit.kpis || []).filter(k => k.needsReview);
 
       const row = {
@@ -796,8 +820,8 @@ export class ExcelParser {
         'Canal': this.getReportChannel(audit),
         'Fecha Captura': audit.fecha,
         'Auditor': audit.usuario,
-        'Validador Responsable': validador ? validador.name : 'Sin asignar',
-        'Código Validador': validador ? validador.code : '',
+        'Validador Responsable': validador.name,
+        'Código Validador': validador.code,
         'Estado': (audit.validationStatus || 'pendiente').toUpperCase(),
         ...this.getTimingExportFields(audit),
         ...this.getSmartCommentExportFields(audit)
@@ -956,8 +980,8 @@ export class ExcelParser {
       'ID Auditoría': audit.id,
       'ID PDV': audit.idPDV || '',
       'Estudio / Canal': audit.estudio || audit.modelo || audit.canal || '',
-      'Validador': audit._validatorName || audit.assignedValidatorId || 'Sin asignar',
-      'Código validador': audit._validatorCode || '',
+      'Validador': this.getValidatorForExport(audit).name,
+      'Código validador': this.getValidatorForExport(audit).code,
       'Estado': (audit.validationStatus || 'pendiente').toUpperCase(),
       ...this.getTimingExportFields(audit)
     }));
