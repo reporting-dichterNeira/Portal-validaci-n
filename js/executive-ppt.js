@@ -27,7 +27,7 @@ export function buildExecutivePowerPoint(PptxGenJS, data) {
   const ppt = new PptxGenJS();
   ppt.layout = 'LAYOUT_WIDE';
   ppt.author = 'dichter & neira';
-  ppt.subject = 'Indicadores comerciales de ValidaFlow';
+  ppt.subject = 'Indicadores comerciales del Portal de alertas';
   ppt.title = 'Calidad y resultado de las alertas';
   ppt.company = 'dichter & neira';
   ppt.lang = 'es-CO';
@@ -44,7 +44,7 @@ export function buildExecutivePowerPoint(PptxGenJS, data) {
     text(slide, 'dichter & neira', .6, .25, 8, .35, { fontSize: 16, bold: true });
     text(slide, title, .6, .85, 12.1, .6, { fontSize: 30, bold: true });
     if (subtitle) text(slide, subtitle, .6, 1.52, 12.1, .55, { fontSize: 15, color: muted });
-    slide.addNotes(`Fuente: informe comercial de ValidaFlow. Estudios: ${data.scope}. Módulo: ${data.module}. Fecha de emisión: ${data.date}. Los datos respetan la selección al iniciar la descarga.`);
+    slide.addNotes(`Fuente: informe comercial del Portal de alertas. Estudios: ${data.scope}. Módulo: ${data.module}. Fecha de emisión: ${data.date}. Los datos respetan la selección al iniciar la descarga.`);
     return slide;
   };
   const tableSlides = (title, headers, rows, widths, subtitle = '') => {

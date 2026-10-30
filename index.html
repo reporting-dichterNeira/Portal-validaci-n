@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>dichter & neira | Portal de Validación y Control de Calidad</title>
+  <title>dichter & neira | Portal de alertas</title>
   <meta name="description" content="Portal de validación de auditorías, alertas de KPIs, control de calidad y detección de anomalías para dichter & neira." />
   
   <!-- Google Fonts: Inter & Outfit -->
@@ -233,7 +233,7 @@
         <img src="assets/dn-logo-color.png" alt="dichter & neira" class="header-dn-logo" />
         <div class="logo-text">
           <div class="app-title-wrap">
-            <span class="logo-title">ValidaFlow</span>
+            <span class="logo-title">Portal de alertas</span>
             <span class="logo-badge" id="header-mode-badge">Inicio</span>
           </div>
         </div>
@@ -532,7 +532,7 @@
       <div class="supervisor-hub-container admin-console">
         <div class="hub-header-row">
           <div>
-            <div class="corporate-badge">dichter & neira • Administración de ValidaFlow</div>
+            <div class="corporate-badge">dichter & neira • Administración del Portal de alertas</div>
             <h1 class="hub-title">Administrador</h1>
             <p class="hub-subtitle">Crea supervisores y asigna uno o varios estudios a cada usuario.</p>
           </div>
@@ -779,7 +779,7 @@
           <div class="stats-grid admin-analysis-stats">
             <div class="stat-card"><div class="stat-icon-wrapper icon-blue">🧾</div><div class="stat-details"><span class="stat-label">Auditorías del export</span><strong class="stat-value" id="admin-alerts-source-count">0</strong></div></div>
             <div class="stat-card"><div class="stat-icon-wrapper icon-magenta">🚨</div><div class="stat-details"><span class="stat-label">Auditorías sin cruce</span><strong class="stat-value" id="admin-alerts-count">0</strong></div></div>
-            <div class="stat-card"><div class="stat-icon-wrapper icon-emerald">🔗</div><div class="stat-details"><span class="stat-label">Cruzadas con ValidaFlow</span><strong class="stat-value" id="admin-alerts-matched-count">0</strong></div></div>
+            <div class="stat-card"><div class="stat-icon-wrapper icon-emerald">🔗</div><div class="stat-details"><span class="stat-label">Cruzadas con el Portal de alertas</span><strong class="stat-value" id="admin-alerts-matched-count">0</strong></div></div>
             <div class="stat-card"><div class="stat-icon-wrapper icon-purple">📊</div><div class="stat-details"><span class="stat-label">Tasa de cruce</span><strong class="stat-value" id="admin-alerts-match-rate">0%</strong></div></div>
           </div>
 
@@ -793,7 +793,7 @@
 
           <section class="admin-analysis-card admin-analysis-table-card">
             <div class="admin-analysis-table-heading"><div><h3>Detalle cruzado de alertas</h3><p class="form-help">Consulta los KPIs alertados y su decisión final en cada auditoría.</p></div><button class="btn btn-success btn-sm" type="button" onclick="window.app?.exportAdminAlertsTable()">📊 Descargar tabla filtrada</button></div>
-            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Estudio</th><th>Alertas</th><th>Aplica</th><th>No aplica</th><th>Auditor</th><th>PDV</th><th>País / ciudad</th><th>Canal</th><th>Cruce ValidaFlow</th><th>Detalle</th></tr></thead><tbody id="admin-alerts-analysis-tbody"><tr><td colspan="12" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Estudio</th><th>Alertas</th><th>Aplica</th><th>No aplica</th><th>Auditor</th><th>PDV</th><th>País / ciudad</th><th>Canal</th><th>Cruce en el Portal de alertas</th><th>Detalle</th></tr></thead><tbody id="admin-alerts-analysis-tbody"><tr><td colspan="12" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
           </section>
         </section>
 
@@ -856,7 +856,7 @@
               </select>
               <span class="form-help" id="admin-editions-filter-count">—</span>
             </div>
-            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Auditor</th><th>País / ciudad</th><th>Alerta</th><th>Modificaciones</th><th>Usuario fin 1ra validación</th><th>Usuario fin últ. validación</th><th>Validador ValidaFlow</th><th>Estado</th><th>Detalle</th></tr></thead><tbody id="admin-editions-analysis-tbody"><tr><td colspan="11" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
+            <div class="table-responsive"><table class="data-table admin-analysis-table"><thead><tr><th>ID auditoría</th><th>Mes</th><th>Auditor</th><th>País / ciudad</th><th>Alerta</th><th>Modificaciones</th><th>Usuario fin 1ra validación</th><th>Usuario fin últ. validación</th><th>Validador del Portal de alertas</th><th>Estado</th><th>Detalle</th></tr></thead><tbody id="admin-editions-analysis-tbody"><tr><td colspan="11" class="text-center text-muted">Sin información cargada.</td></tr></tbody></table></div>
             <div class="admin-editions-filter-bar" aria-label="Paginación de ediciones">
               <button type="button" class="btn btn-outline btn-sm" id="admin-editions-page-prev" disabled>Anterior</button>
               <span class="form-help" id="admin-editions-page-status" aria-live="polite">0 registros</span>
@@ -870,7 +870,7 @@
             <div>
               <div class="corporate-badge">Notas finales por PDV y alerta bloqueante</div>
               <h2>Notas de PDV y sub-KPIs afectados</h2>
-              <p>Carga el consolidado mensual de notas. Se comparan la nota final de la última medición y la actual; además se cruza el ID de auditoría y PDV con las alertas Bloqueantes validadas en ValidaFlow.</p>
+              <p>Carga el consolidado mensual de notas. Se comparan la nota final de la última medición y la actual; además se cruza el ID de auditoría y PDV con las alertas Bloqueantes validadas en el Portal de alertas.</p>
             </div>
             <button class="btn btn-outline btn-sm" type="button" onclick="window.app?.refreshAdminExternalAnalysis({ force: true })">↻ Actualizar</button>
           </div>
@@ -2578,7 +2578,7 @@
       </div>
 
       <div class="modal-footer commercial-dossier-footer">
-        <span class="text-muted" style="font-size:0.85rem;">dichter & neira • Sistema de Inteligencia Operativa ValidaFlow</span>
+        <span class="text-muted" style="font-size:0.85rem;">dichter & neira • Portal de alertas · Inteligencia Operativa</span>
         <div style="display:flex; flex-wrap:wrap; gap:0.65rem;">
           <button class="btn btn-secondary" onclick="document.getElementById('modal-commercial-report-preview').classList.add('hidden')">Cerrar</button>
           <button class="btn btn-success" onclick="window.exportExecutiveExcel()">📊 Exportar Excel (.xlsx)</button>
@@ -2874,7 +2874,7 @@
     <footer class="print-doc-footer">
       <div class="print-footer-left">
         <strong>dichter & neira</strong> • Inteligencia de mercados para marcas de consumo masivo<br/>
-        <span>Portal de Inteligencia Operativa y Control de Calidad ValidaFlow • Realizado por el <strong>Equipo de Reporting</strong></span>
+        <span>Portal de alertas · Inteligencia Operativa y Control de Calidad • Realizado por el <strong>Equipo de Reporting</strong></span>
       </div>
       <div class="print-footer-right">
         <span>https://dichter-neira.com</span><br/>
@@ -2887,11 +2887,11 @@
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Scripts ES Modules -->
-  <script src="js/indicator-metrics.js?v=1.12"></script>
+  <script src="js/indicator-metrics.js?v=1.13"></script>
   <script src="js/indicator-catalog.js?v=1.2"></script>
   <script src="js/indicator-dashboard.js?v=6.18"></script>
   <script src="js/indicator-report.js?v=1.5"></script>
   <script src="js/pending-workspace.js?v=2.0"></script>
-  <script type="module" src="js/app.js?v=147.9"></script>
+  <script type="module" src="js/app.js?v=147.10"></script>
 </body>
 </html>

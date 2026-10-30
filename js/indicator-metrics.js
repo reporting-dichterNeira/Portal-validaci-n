@@ -222,7 +222,7 @@
     const rows = parseCSV(raw);
     const columns = Object.keys(rows[0]);
     const resultColumns = columns.filter(h => /^\[.+\] Resultado$/.test(h));
-    if (!columns.includes('ID Auditoría') || !resultColumns.length) throw new Error('Usa el consolidado de ValidaFlow con ID Auditoría y columnas [KPI] Resultado; no una base diaria sin decisiones.');
+    if (!columns.includes('ID Auditoría') || !resultColumns.length) throw new Error('Usa el consolidado del Portal de alertas con ID Auditoría y columnas [KPI] Resultado; no una base diaria sin decisiones.');
     return normalizeAudits(rows.map(row => ({ id: row['ID Auditoría'], study: row['Estudio / Canal'] || study,
       country: row['País'], pdv: row['ID PDV'], auditor: row.Auditor,
       region:row['Región'] || row.region, channel:row['Canal'] || row.canal, subchannel:row['Subcanal'] || row.subcanal,

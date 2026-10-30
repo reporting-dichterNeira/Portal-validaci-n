@@ -6,7 +6,7 @@
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.1';
 import { ExcelParser } from './excel-parser.js?v=34.5';
 import { getStudyDisplayName } from './study-labels.js?v=1.1';
-import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.0';
+import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.1';
 import { Distributor } from './distributor.js?v=25.0';
 import { ValidatorUI } from './validator-ui.js?v=37.2';
 import { SupabaseBackend } from './supabase-backend.js?v=65.4';
@@ -1946,8 +1946,8 @@ class ValidaFlowApp {
     const moduleStatus = visualizationModule === 'all' ? '' : ` · Vista: ${this.getVisualizationModuleLabel(visualizationModule)}.`;
     setText('admin-alerts-import-status', alertImport ? `Último export: ${alertImport.source_filename} · ${this.formatExternalImportMonth(alertImport.period_month)} · ${formatNumber(alertImport.row_count)} registros útiles.${moduleStatus}` : 'Aún no se ha cargado un export general.');
     setText('admin-editions-import-status', editionImport
-      ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles. Cruzado contra ${formatNumber(platformAlertAudits.length)} auditorías con alertas ya validadas en ValidaFlow.${moduleStatus}`
-      : 'Carga el export de ediciones para cruzarlo con las alertas validadas en ValidaFlow.');
+      ? `Último export: ${editionImport.source_filename} · ${this.formatExternalImportMonth(editionImport.period_month)} · ${formatNumber(editionImport.row_count)} registros útiles. Cruzado contra ${formatNumber(platformAlertAudits.length)} auditorías con alertas ya validadas en el Portal de alertas.${moduleStatus}`
+      : 'Carga el export de ediciones para cruzarlo con las alertas validadas en el Portal de alertas.');
     renderImportList('admin-alerts-import-list', alertImports, 'alerts', 'Aún no hay exports generales cargados.');
     renderImportList('admin-editions-import-list', editionImports, 'editions', 'Aún no hay exports de ediciones cargados.');
     setText('admin-alerts-source-count', formatNumber(filteredAlertRows.length));
@@ -1984,7 +1984,7 @@ class ValidaFlowApp {
         const detailsKey = encodeURIComponent(auditId);
         const valueOrDash = value => matched ? formatNumber(value) : '—';
         return `<tr>
-          <td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(record.period_month))}</td><td>${escapeHtml(getStudyDisplayName(record.study))}</td><td><strong>${valueOrDash(summary.total)}</strong></td><td><strong class="text-success">${valueOrDash(summary.applicableAlerts.length)}</strong></td><td><strong class="text-magenta">${valueOrDash(summary.noApplicableAlerts.length)}</strong></td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${matched ? 'badge-success' : 'badge-warning'}">${matched ? 'Encontrada' : 'No encontrada'}</span></td><td><button class="btn btn-outline btn-sm" type="button" ${matched ? `onclick="window.app?.showAlertAuditDetail(decodeURIComponent('${detailsKey}'))"` : 'disabled title="No se encontró esta auditoría en ValidaFlow"'}>Ver detalle</button></td>
+          <td><code>${escapeHtml(auditId)}</code></td><td>${escapeHtml(this.formatExternalImportMonth(record.period_month))}</td><td>${escapeHtml(getStudyDisplayName(record.study))}</td><td><strong>${valueOrDash(summary.total)}</strong></td><td><strong class="text-success">${valueOrDash(summary.applicableAlerts.length)}</strong></td><td><strong class="text-magenta">${valueOrDash(summary.noApplicableAlerts.length)}</strong></td><td>${escapeHtml(record.auditor)}</td><td>${escapeHtml(record.pdv_id)}<small>${escapeHtml(record.pdv_name)}</small></td><td>${escapeHtml(record.country)}<small>${escapeHtml(record.city)}</small></td><td>${escapeHtml(record.channel)}</td><td><span class="badge ${matched ? 'badge-success' : 'badge-warning'}">${matched ? 'Encontrada' : 'No encontrada'}</span></td><td><button class="btn btn-outline btn-sm" type="button" ${matched ? `onclick="window.app?.showAlertAuditDetail(decodeURIComponent('${detailsKey}'))"` : 'disabled title="No se encontró esta auditoría en el Portal de alertas"'}>Ver detalle</button></td>
         </tr>`;
       }).join('') : '<tr><td colspan="12" class="text-center text-muted">No hay auditorías que cumplan con los filtros seleccionados.</td></tr>';
     }
@@ -2496,7 +2496,7 @@ class ValidaFlowApp {
   showAlertAuditDetail(auditId) {
     const item = this.adminAlertCrossByAuditId?.get(this.normalizeAuditId(auditId));
     if (!item?.matched) {
-      this.showToast('No se encontró el detalle de alertas de esta auditoría en ValidaFlow.', 'warning');
+      this.showToast('No se encontró el detalle de alertas de esta auditoría en el Portal de alertas.', 'warning');
       return;
     }
     const escapeHtml = value => String(value ?? '—').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
@@ -7267,7 +7267,7 @@ class ValidaFlowApp {
       pdf.setFont('helvetica', 'normal');
       pdf.setFontSize(9);
       pdf.setTextColor(71, 85, 105);
-      pdf.text('El 100% de las auditorías y alertas cuenta con revisión humana y trazabilidad de ValidaFlow.', margin + 4, y + 9);
+      pdf.text('El 100% de las auditorías y alertas cuenta con revisión humana y trazabilidad del Portal de alertas.', margin + 4, y + 9);
       y += 18;
 
       sectionTitle('1. Resumen ejecutivo', 'Métricas consolidadas del proceso de validación y control de calidad.');
@@ -7359,7 +7359,7 @@ class ValidaFlowApp {
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(9);
         pdf.setTextColor(100, 116, 139);
-        pdf.text('ValidaFlow - Intelligence & Quality Control', margin, pageHeight - 6);
+        pdf.text('Portal de alertas - Intelligence & Quality Control', margin, pageHeight - 6);
         pdf.text(`Página ${page} de ${pageCount}`, pageWidth - margin, pageHeight - 6, { align: 'right' });
       }
       pdf.save(`informe-ejecutivo-validaflow-${dateStamp}.pdf`);

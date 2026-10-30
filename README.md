@@ -1,4 +1,4 @@
-# Portal de Validación y Control de Calidad
+# Portal de alertas
 
 Portal web de dichter & neira para distribuir auditorías, validar alertas Smart y Bloqueantes, y analizar los exports operativos mensuales.
 
