@@ -185,12 +185,19 @@
       return [a.module === 'smart' ? 'Smart' : 'Bloqueantes',a.id,a.pdv,a.periodDate,a.auditDate,a.alertUploadedAt,k.validatedAt,
         studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,raw._validatorName || raw.assignedValidatorId || '',
         k.name,decisionLabel(k.decision),k.reason,decision.observaciones || '',raw.validationStatus || '',a.segment,
-        a.startedAt,a.completedAt,...Object.values(M.validationSlaExport(a))];
+        guatemalaDateTime(a.startedAt),guatemalaDateTime(a.completedAt),...Object.values(M.validationSlaExport(a))];
     })) : [];
     return {inputs,rows,headers:['Módulo','ID auditoría','ID PDV','Jornada','Fecha auditoría original','Fecha de carga','Fecha de decisión',
       'Estudio','País','Región','Canal','Subcanal','Auditor','Validador','Sub-KPI','Decisión','Tipificación','Observaciones','Estado auditoría','Segmento',
       'Inicio de validación','Fin de validación',...Object.keys(M.validationSlaExport({}))],
       counts:M.totals(inputs.flatMap(a=>a.kpis)),audits:inputs.filter(a=>a.kpis.length).length};
+  }
+  function guatemalaDateTime(value) {
+    if (!value || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(String(value)) || !/(?:Z|[+-]\d{2}:?\d{2})$/i.test(String(value))) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {timeZone:'America/Guatemala',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'}).formatToParts(date).map(p=>[p.type,p.value]));
+    return `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute}:${parts.second}`;
   }
   function signalPanel(result) {
     const signals = root.PortalIndicatorReport?.signals(result) || [];
@@ -840,7 +847,7 @@
     }
     target.querySelector('[data-indicator-download]')?.addEventListener('click',()=>download(['Módulo','ID auditoría','ID PDV','Jornada','Fecha auditoría original','Fecha de carga','Fecha de decisión','Estudio','País','Región','Canal','Subcanal','Auditor','Sub-KPI','Decisión','Tipificación','Segmento','Validador','Código validador','Inicio de validación','Fin de validación',...Object.keys(M.validationSlaExport({}))],result.alerts.map(a=>{
       const source=auditIndex.get(JSON.stringify([a.module,a.id,a.study]));
-      return [a.module==='smart'?'Smart':'Bloqueantes',a.id,source?.pdv || '',a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,decisionLabel(a.decision),a.reason,a.segment,source?.validatorName || source?.validatorId,source?.validatorCode,source?.startedAt,source?.completedAt,...Object.values(M.validationSlaExport(source || {},asOf))];
+      return [a.module==='smart'?'Smart':'Bloqueantes',a.id,source?.pdv || '',a.periodDate,source?.auditDate,source?.alertUploadedAt,a.validatedAt,studyLabel(a.study),a.country,a.region,a.channel,a.subchannel,a.auditor,a.name,decisionLabel(a.decision),a.reason,a.segment,source?.validatorName || source?.validatorId,source?.validatorCode,guatemalaDateTime(source?.startedAt),guatemalaDateTime(source?.completedAt),...Object.values(M.validationSlaExport(source || {},asOf))];
     }),'Indicadores-'+(module || 'blocking')+'-'+asOf+'.csv'));
   }
   root.PortalIndicators={createReportFieldReader:indexedFieldReader,adapt,reportDimensions,canonical,render,csv,download,alertExport,signalPanel,receiptShare,auditorComparisonData,auditorComparison,territoryComparisonData,territoryComparison,channelSegmentComparisonData,channelSegmentComparison,summaryBenchmarkData,summaryBenchmark,universePanel,studyLabel,esc,table,row,panel,story,decisionBar,journey,committeeJourney,committeeData,committeeSection,inheritedPanel,databricksAuditor,macroData,macroDashboard,groupedChart,outcomeChart,decisionDonut,monthlyTrend,monthlyChart,timingChart,chartTableData,bindChartTableExports};

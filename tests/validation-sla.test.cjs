@@ -43,6 +43,9 @@ test('historical CSV repeats the audit total per alert while retaining missing m
   const out=U.alertExport(rows),column=out.headers.indexOf('SLA total de validación (seg)');
   assert.equal(column>=0,true);assert.deepEqual(out.rows.map(r=>r[column]),[125,125,'']);
   assert.equal(out.rows[0][out.headers.indexOf('Validador')],'Validador Uno');
+  assert.equal(out.rows[0][out.headers.indexOf('Inicio de validación')],'10/10/2026 09:00:00');
+  assert.equal(out.rows[0][out.headers.indexOf('Fin de validación')],'10/10/2026 09:02:05');
+  assert.equal(out.rows[2][out.headers.indexOf('Inicio de validación')],'');
   assert.equal(out.rows[2][out.headers.indexOf('Estado de medición SLA')],'Sin inicio o cierre con hora');
 });
 
@@ -61,7 +64,7 @@ test('every metrics chapter downloads audit SLA under the same filters, summary 
       if(section==='timing'){assert.match(target.innerHTML,/SLA por validador/);assert.match(target.innerHTML,/Mediana/);assert.match(target.innerHTML,/P90/);assert.match(target.innerHTML,/Validador Uno/);}
     }
   }finally{delete global.document;URL.createObjectURL=originalURL;}
-  return Promise.all(blobs.map(async blob=>{const parsed=M.parseCSV(await blob.text());assert.equal(parsed[0]['SLA total de validación (seg)'],'125');assert.equal(parsed[0].Validador,'Validador Uno');}));
+  return Promise.all(blobs.map(async blob=>{const parsed=M.parseCSV(await blob.text());assert.equal(parsed[0]['SLA total de validación (seg)'],'125');assert.equal(parsed[0].Validador,'Validador Uno');assert.equal(parsed[0]['Inicio de validación'],'10/10/2026 09:00:00');assert.equal(parsed[0]['Fin de validación'],'10/10/2026 09:02:05');}));
 });
 
 test('PDF includes SLA average card and paginates all validators without changing the filtered sample',()=>{
