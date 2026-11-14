@@ -8,8 +8,8 @@ import { ExcelParser } from './excel-parser.js?v=34.5';
 import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.1';
 import { Distributor } from './distributor.js?v=25.0';
-import { ValidatorUI } from './validator-ui.js?v=37.2';
-import { SupabaseBackend } from './supabase-backend.js?v=65.4';
+import { ValidatorUI } from './validator-ui.js?v=37.3';
+import { SupabaseBackend } from './supabase-backend.js?v=65.5';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.1';
 
@@ -3140,7 +3140,7 @@ class ValidaFlowApp {
   async persistRemoteState(syncTarget = null) {
     if (!this.backend.configured) return;
 
-    if (this.isSupervisor) {
+    if (this.isSupervisor && !syncTarget?.audit) {
       await this.backend.saveSupervisorState(
         this.validators,
         this.smartAudits || [],

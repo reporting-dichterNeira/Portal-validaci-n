@@ -32,6 +32,12 @@ function app() {
   return { a, calls };
 }
 
+test('validator audit save never performs a supervisor batch upload when role state is stale', async()=>{
+ const {a}=app();const calls=[];const audit={id:'42',_rowId:42,validationStatus:'completada',validationResults:{K:{status:'aplica'}}};
+ Object.assign(a,{isSupervisor:true,validatorUI:{currentValidator:{id:'v1'},currentModule:'smart'},smartAudits:[audit],blockingAudits:[],isExpiredPendingAudit:()=>false,saveState(){},backend:{configured:true,async saveSupervisorState(){throw Error('Unexpected batch upload');},async saveAuditProgress(row,module){calls.push([row.id,module]);return {...row};}}});
+ const saved=await a.persistRemoteState({audit,module:'smart'});assert.equal(saved.id,'42');assert.deepEqual(calls,[['42','smart']]);
+});
+
 test('cada pestaña carga solo sus dependencias, comparte histórico y no pisa otras bases', async () => {
   const { a, calls } = app();
   await Promise.all([a.refreshAdminExternalAnalysis(), a.refreshAdminExternalAnalysis()]);

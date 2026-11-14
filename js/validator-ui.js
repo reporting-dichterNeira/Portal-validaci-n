@@ -124,6 +124,9 @@ export class ValidatorUI {
       }
 
       this.currentValidator = validator;
+      this.app.isSupervisor = false;
+      this.app.currentRole = 'validator';
+      this.app.currentScope = null;
       if (this.app.backend.configured) {
         await this.app.refreshFromBackend();
         this.app.startRealtimeSync();

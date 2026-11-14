@@ -251,6 +251,8 @@ export class SupabaseBackend {
   async signInValidator(code) {
     this.ensureConfigured();
     await this.client.auth.signOut({ scope: 'local' });
+    this.currentScope = null;
+    this.currentAssignments = [];
 
     const normalizedCode = String(code || '').trim().toUpperCase();
 
