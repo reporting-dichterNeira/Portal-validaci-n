@@ -54,7 +54,7 @@ function loadAppClass(document = { getElementById: () => null }) {
       }
     },
     getStudyDisplayName: value => value, loadPowerPointEngine: () => {}, buildExecutivePowerPoint: () => {},
-    Distributor: class {}, ValidatorUI: class {}, SupabaseBackend: class {},
+    Distributor: class { static countriesWithoutValidators() { return []; } }, ValidatorUI: class {}, SupabaseBackend: class {},
     formatNicaraguaDate: value => value, formatNicaraguaDateTime: value => value,
     getNicaraguaDateKey: value => typeof value === 'string'
       ? value.slice(0, 10)

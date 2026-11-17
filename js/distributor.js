@@ -15,6 +15,21 @@ export class Distributor {
       || countries.some(country => this.countryKey(audit.pais || audit.country) === this.countryKey(country));
   }
 
+  static countriesWithoutValidators(audits, validators, options = {}) {
+    if (!options.restrictByCountry) return [];
+    const missing = new Map();
+    const active = (validators || []).filter(v => v.isActive !== false);
+    for (const audit of audits || []) {
+      if (active.some(validator => this.canAssignCountry(audit, validator, options))) continue;
+      const country = String(audit.pais || audit.country || '').trim() || 'Sin país identificado';
+      const key = this.countryKey(country);
+      const item = missing.get(key) || { country, count: 0 };
+      item.count++;
+      missing.set(key, item);
+    }
+    return [...missing.values()].sort((a,b)=>a.country.localeCompare(b.country, 'es'));
+  }
+
   static getSmartCountries(validator) {
     const values = Array.isArray(validator.smartCountries) ? validator.smartCountries
       : validator.smartCountry ? [validator.smartCountry] : [];

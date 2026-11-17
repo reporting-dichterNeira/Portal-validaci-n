@@ -15,6 +15,14 @@ const { ExcelParser, Distributor, SupabaseBackend, App } = context;
 const audit = (id,pais) => ({id:String(id),pais,kpis:[{needsReview:true}],validationStatus:'pendiente'});
 const options = {restrictByCountry:true};
 
+test('avisa países sin validador activo y cuenta auditorías por país',()=>{
+ const input=[audit(1,'Panamá'),audit(2,'PANAMA'),audit(3,'Costa Rica')];
+ const validators=[{id:'inactive',isActive:false,smartCountries:['Panamá']},{id:'active',smartCountries:['Costa Rica']}];
+ assert.deepEqual(JSON.parse(JSON.stringify(Distributor.countriesWithoutValidators(input,validators,options))),[{country:'Panamá',count:2}]);
+ assert.equal(Distributor.countriesWithoutValidators(input,[...validators,{id:'all',smartCountries:[]}],options).length,0);
+ assert.equal(Distributor.countriesWithoutValidators(input,[],{restrictByCountry:false}).length,0);
+});
+
 test('equipos independientes permiten Smart propio y compartido, sin activar el otro módulo',()=>{
  const app=Object.assign(Object.create(App.prototype),{currentProject:'Moderno',currentModule:'smart',isSupervisor:true,validators:[
  {id:'blocking',estudio:'Moderno',blockingEnabled:true,blockingActive:true},

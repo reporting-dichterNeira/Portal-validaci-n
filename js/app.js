@@ -7,7 +7,7 @@ import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAUL
 import { ExcelParser } from './excel-parser.js?v=34.5';
 import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.1';
-import { Distributor } from './distributor.js?v=25.0';
+import { Distributor } from './distributor.js?v=26.0';
 import { ValidatorUI } from './validator-ui.js?v=37.3';
 import { SupabaseBackend } from './supabase-backend.js?v=65.5';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
@@ -4494,8 +4494,6 @@ class ValidaFlowApp {
       return;
     }
 
-    modal?.classList.add('hidden');
-
     // Etiquetar todas las auditorías del archivo con el estudio seleccionado y la fecha de jornada
     result.audits.forEach(audit => {
       audit.estudio = studyName;
@@ -4524,6 +4522,13 @@ class ValidaFlowApp {
 
     // Distribuir entre validadores del estudio con balanceo simultáneo
     const projectVals = this.getValidatorsForCurrentProject();
+    const missingCountries = Distributor.countriesWithoutValidators(result.audits, projectVals, this.getDistributionOptions(studyName));
+    if (missingCountries.length) {
+      const details = missingCountries.map(item => `${String(item.country).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c])} (${item.count})`).join(', ');
+      this.showToast(`No se cargó la base: faltan validadores activos para ${details}. Activa o asigna un validador a cada país y vuelve a intentar.`, 'warning', 12000);
+      return;
+    }
+    modal?.classList.add('hidden');
     if (projectVals.length > 0) {
       result.audits = Distributor.distribute(result.audits, projectVals, this.getDistributionOptions(studyName));
     }
@@ -8792,7 +8797,7 @@ class ValidaFlowApp {
   // ==========================================
   // TOAST NOTIFICATIONS
   // ==========================================
-  showToast(message, type = 'info') {
+  showToast(message, type = 'info', duration = 3500) {
     const container = document.getElementById('toast-container');
     if (!container) return;
 
@@ -8814,7 +8819,7 @@ class ValidaFlowApp {
     setTimeout(() => {
       toast.classList.add('toast-fade-out');
       setTimeout(() => toast.remove(), 300);
-    }, 3500);
+    }, duration);
   }
 }
 
