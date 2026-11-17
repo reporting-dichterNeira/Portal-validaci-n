@@ -1,4 +1,4 @@
-import {dashboardView as qaDashboardView,detailView as qaDetailView} from './qa-ui.mjs?v=1.1';
+import {dashboardView as qaDashboardView,detailView as qaDetailView} from './qa-ui.mjs?v=1.2';
 import {escapeText as e,number as n,percent,dateTime,duration,decisionLabel,verdictLabel,statusLabel,reasons,reviewError,reviewResults,csv,exportRows,exportHeaders,studyLabel} from './pqr-domain.mjs?v=1.1';
 const table=(headers,rows)=>`<div class="pqr-table-wrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${r.map(c=>`<td>${c??'—'}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${headers.length}" class="pqr-empty">No hay registros para esta selección.</td></tr>`}</tbody></table></div>`;
 const card=(label,value,note='',tone='')=>`<article class="pqr-card ${tone}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`;
