@@ -2,6 +2,14 @@
 <html lang="es" data-theme="light">
 <head>
   <meta charset="UTF-8" />
+  <script>
+    // Conservar los enlaces existentes del portal publicado en GitHub Pages.
+    if (location.hostname.toLowerCase() === 'reporting-dichterneira.github.io' &&
+        /^\/portal-validaci-n(?:\/|$)/i.test(location.pathname)) {
+      const relativePath = location.pathname.replace(/^\/portal-validaci-n\/?/i, '');
+      location.replace('https://portal-validacion.vercel.app/' + relativePath + location.search + location.hash);
+    }
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>dichter & neira | Portal de alertas</title>
   <meta name="description" content="Portal de validación de auditorías, alertas de KPIs, control de calidad y detección de anomalías para dichter & neira." />
