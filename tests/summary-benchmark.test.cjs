@@ -14,6 +14,13 @@ test('summary counts unique alerted audits across modules and uses each territor
   assert.equal(group.territories[0].alertedShare,.01);assert.equal(group.territories[1].alertedShare,.005);
   const html=U.summaryBenchmark(result,scope(),{});
   assert.match(html,/% de auditorías alertadas/);assert.match(html,/Total de auditorías/);assert.match(html,/aria-expanded="false"/);
+  assert.equal(group.editedAudits,1);assert.equal(group.territories[0].editedAudits,1);assert.match(html,/Auditorías editadas/);
+});
+
+test('valid and invalid shares use decided alerts, while pending uses total',()=>{
+ const html=U.decisionDonut({total:6854,applies:1293,rejects:3847,pending:1714});
+ assert.match(html,/25,2% de revisadas/);assert.match(html,/74,8% de revisadas/);assert.match(html,/25% del total/);assert.match(html,/5\.140/);
+ const pending=U.decisionDonut({total:2,applies:0,rejects:0,pending:2});assert.doesNotMatch(pending,/NaN|Infinity/);assert.match(pending,/background:#e1e6ed/);
 });
 test('summary never substitutes the study base for a missing territory or failed query',()=>{
   const u=scope(),result={alerts:[alert('1')]};u.entry.data.territories=[];

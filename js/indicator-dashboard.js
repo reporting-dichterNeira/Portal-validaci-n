@@ -285,11 +285,11 @@
   }
   function decisionDonut(c) {
     if(!c.total)return '<p class="indicator-empty">Sin alertas generadas para calcular la distribución.</p>';
-    const applies=c.applies/c.total*100,decided=(c.applies+c.rejects)/c.total*100;
-    const series=[{key:'applies',label:'Alertas válidas',tone:'green'},{key:'rejects',label:'Alertas no válidas',tone:'magenta'},{key:'pending',label:'Pendientes',tone:'orange'}];
+    const reviewed=c.applies+c.rejects,applies=reviewed?c.applies/reviewed*100:0,decided=reviewed?100:0;
+    const series=[{key:'applies',label:'Alertas válidas',tone:'green'},{key:'rejects',label:'Alertas no válidas',tone:'magenta'}];
     series.sort((a,b)=>c[b.key]-c[a.key]);
-    return '<div class="metric-donut-layout" data-metric-chart="donut"><div class="metric-donut" style="--donut-applies:'+applies+'%;--donut-decided:'+decided+'%" aria-hidden="true"><div><strong>'+num(c.total)+'</strong><span>Alertas generadas</span></div></div><div class="metric-donut-key">'+series.map(s=>'<div class="indicator-tone-'+s.tone+'"><i aria-hidden="true"></i><span>'+s.label+'</span><strong>'+num(c[s.key])+'</strong><small>'+pct(c[s.key]/c.total)+'</small></div>').join('')+'</div></div>'+
-      chartDetails(table(['Resultado','Alertas','% de alertas generadas'],series.map(s=>row([s.label,num(c[s.key]),pct(c[s.key]/c.total)]))));
+    return '<div class="metric-donut-layout" data-metric-chart="donut"><div class="metric-donut" style="--donut-applies:'+applies+'%;--donut-decided:'+decided+'%;'+(!reviewed?'background:#e1e6ed;':'')+'" aria-hidden="true"><div><strong>'+num(reviewed)+'</strong><span>Alertas revisadas</span></div></div><div class="metric-donut-key">'+series.map(s=>'<div class="indicator-tone-'+s.tone+'"><i aria-hidden="true"></i><span>'+s.label+'</span><strong>'+num(c[s.key])+'</strong><small>'+pct(reviewed?c[s.key]/reviewed:null)+' de revisadas</small></div>').join('')+'<div class="indicator-tone-orange"><i aria-hidden="true"></i><span>Pendientes</span><strong>'+num(c.pending)+'</strong><small>'+pct(c.pending/c.total)+' del total</small></div></div></div>'+
+      chartDetails(table(['Resultado','Alertas','Porcentaje y base'],[...series.map(s=>row([s.label,num(c[s.key]),pct(reviewed?c[s.key]/reviewed:null)+' de revisadas'])),row(['Pendientes',num(c.pending),pct(c.pending/c.total)+' del total'])]));
   }
   function monthlyTrend(range,month='',limit=null) {
     const scopes=new Map();
@@ -472,7 +472,7 @@
   }
   function summaryBenchmarkData(result,u) {
     const studies=new Map();
-    const create=()=>({ids:new Set(),total:0,applies:0,rejects:0});
+    const create=()=>({ids:new Set(),editedIds:new Set(),total:0,applies:0,rejects:0});
     for(const name of u.names)studies.set(name,{...create(),study:name,territories:new Map()});
     for(const alert of result.alerts) {
       if(!studies.has(alert.study))studies.set(alert.study,{...create(),study:alert.study,territories:new Map()});
@@ -480,7 +480,7 @@
       if(!study.territories.has(geography))study.territories.set(geography,{...create(),geography});
       for(const group of [study,study.territories.get(geography)]) {
         group.ids.add(String(alert.id).replace(/^0+/,''));group.total++;
-        if(alert.decision==='aplica')group.applies++;
+        if(alert.decision==='aplica'){group.applies++;group.editedIds.add(String(alert.id).replace(/^0+/,''));}
         if(alert.decision==='no_aplica')group.rejects++;
       }
     }
@@ -493,7 +493,7 @@
     };
     return [...studies.values()].map(study=>{
       const lifted=base(u.rows,r=>r.study_name===study.study);
-      const finish=(group,total)=>({...group,audits:group.ids.size,lifted:total,alertedShare:receiptShare(group.ids.size,total)});
+      const finish=(group,total)=>({...group,audits:group.ids.size,editedAudits:group.editedIds.size,lifted:total,alertedShare:receiptShare(group.ids.size,total)});
       const territories=[...study.territories.values()].sort((a,b)=>b.total-a.total || a.geography.localeCompare(b.geography,'es')).map(group=>
         finish(group,base(u.entry.data?.territories||[],r=>r.study_name===study.study && r.geography===group.geography,true)));
       return {...finish(study,lifted),territories};
@@ -508,7 +508,7 @@
     app.expandedSummaryStudies ||= new Set();
     const metricCells=group=>{
       const decided=group.applies+group.rejects,confirmation=receiptShare(group.applies,decided);
-      return '<td><strong>'+num(group.audits)+'</strong></td><td>'+(group.lifted===null?(u.entry.loading?'Consultando…':'Sin base'):num(group.lifted))+'</td><td><strong>'+pct(group.alertedShare)+'</strong></td><td><span class="badge badge-purple">'+num(group.total)+' alertas</span></td><td><strong class="text-success">'+num(group.applies)+'</strong></td><td><strong class="text-magenta">'+num(group.rejects)+'</strong></td><td>'+pct(confirmation)+'</td>';
+      return '<td><strong>'+num(group.audits)+'</strong></td><td><strong>'+num(group.editedAudits)+'</strong></td><td>'+(group.lifted===null?(u.entry.loading?'Consultando…':'Sin base'):num(group.lifted))+'</td><td><strong>'+pct(group.alertedShare)+'</strong></td><td><span class="badge badge-purple">'+num(group.total)+' alertas</span></td><td><strong class="text-success">'+num(group.applies)+'</strong></td><td><strong class="text-magenta">'+num(group.rejects)+'</strong></td><td>'+pct(confirmation)+'</td>';
     };
     const rows=groups.map((group,i)=>{
       const expanded=app.expandedSummaryStudies.has(group.study),isRegion=['Chile','Lindley'].includes(group.study),unit=isRegion?(group.territories.length===1?'región':'regiones'):(group.territories.length===1?'país':'países');
@@ -517,7 +517,7 @@
       return '<tr class="benchmark-study-parent"><td data-export-value="'+esc(studyLabel(group.study))+'">'+(group.territories.length?button:esc(studyLabel(group.study)))+'</td>'+metricCells(group)+'</tr>'+group.territories.map((territory,j)=>'<tr id="summary-territory-'+i+'-'+j+'" class="benchmark-country-row" data-summary-parent="'+esc(group.study)+'" '+(expanded?'':'hidden')+'><td data-export-value="'+esc(studyLabel(group.study)+' / '+territory.geography)+'"><span class="benchmark-country-label">↳ '+esc(territory.geography)+'</span></td>'+metricCells(territory)+'</tr>').join('');
     }).join('');
     return panel('Resumen por estudio, país y región','Auditorías alertadas / total de auditorías levantadas × 100. Despliega cada estudio para consultar su detalle.',
-      totalsWarning(u)+chartDetails('<div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Resumen por estudio, país y región"><table class="data-table benchmark-table summary-benchmark"><thead><tr>'+['Estudio / País / Región','Auditorías alertadas','Total de auditorías','% de auditorías alertadas','Total alertas','Alertas válidas','Alertas no válidas','Tasa de confirmación'].map(label=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>',{collapsible:false})+'<p class="story-note">Orden descendente por alertas generadas, tanto entre estudios como dentro de cada estudio. El CSV incluye todos los países y regiones, aunque estén plegados. El total de auditorías proviene del levantamiento de Databricks. En Consolidado, los IDs alertados se cuentan una sola vez por estudio; las alertas y sus decisiones conservan cada módulo. La tasa de confirmación usa solo alertas revisadas. Los filtros de mes y fecha usan los mismos cortes que el consolidado superior.</p>');
+      totalsWarning(u)+chartDetails('<div class="table-responsive benchmark-scroll" tabindex="0" role="region" aria-label="Resumen por estudio, país y región"><table class="data-table benchmark-table summary-benchmark"><thead><tr>'+['Estudio / País / Región','Auditorías alertadas','Auditorías editadas','Total de auditorías','% de auditorías alertadas','Total alertas','Alertas válidas','Alertas no válidas','Tasa de confirmación'].map(label=>'<th>'+label+'</th>').join('')+'</tr></thead><tbody>'+rows+'</tbody></table></div>',{collapsible:false})+'<p class="story-note">Auditorías editadas: ID único con al menos una alerta con decisión Aplica; este indicador no verifica una edición efectiva en el sistema de origen. Orden descendente por alertas generadas. El CSV incluye todos los países y regiones, aunque estén plegados. El total de auditorías proviene del levantamiento de Databricks. En Consolidado, los IDs se cuentan una sola vez por estudio; las alertas y sus decisiones conservan cada módulo. La tasa de confirmación usa solo alertas revisadas.</p>');
   }
   function universePanel(u,result,smart,app) {
     const unavailable=u.entry.error?'Error al consultar':'Sin corte conectado';
