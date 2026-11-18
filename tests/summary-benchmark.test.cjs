@@ -17,9 +17,9 @@ test('summary counts unique alerted audits across modules and uses each territor
   assert.equal(group.editedAudits,1);assert.equal(group.territories[0].editedAudits,1);assert.match(html,/Auditorías editadas/);
 });
 
-test('valid and invalid shares use decided alerts and omit pending',()=>{
+test('valid and invalid shares use decided alerts and pending shows no percentage',()=>{
  const html=U.decisionDonut({total:6854,applies:1293,rejects:3847,pending:1714});
- assert.match(html,/25,2% de revisadas/);assert.match(html,/74,8% de revisadas/);assert.doesNotMatch(html,/Pendientes/);assert.match(html,/5\.140/);
+ assert.match(html,/25,2% de revisadas/);assert.match(html,/74,8% de revisadas/);assert.match(html,/<span>Pendientes<\/span><strong>1\.714<\/strong><small><\/small>/);assert.match(html,/5\.140/);
  const pending=U.decisionDonut({total:2,applies:0,rejects:0,pending:2});assert.doesNotMatch(pending,/NaN|Infinity/);assert.match(pending,/background:#e1e6ed/);
 });
 test('summary never substitutes the study base for a missing territory or failed query',()=>{

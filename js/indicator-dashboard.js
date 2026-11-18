@@ -288,8 +288,8 @@
     const reviewed=c.applies+c.rejects,applies=reviewed?c.applies/reviewed*100:0,decided=reviewed?100:0;
     const series=[{key:'applies',label:'Alertas válidas',tone:'green'},{key:'rejects',label:'Alertas no válidas',tone:'magenta'}];
     series.sort((a,b)=>c[b.key]-c[a.key]);
-    return '<div class="metric-donut-layout" data-metric-chart="donut"><div class="metric-donut" style="--donut-applies:'+applies+'%;--donut-decided:'+decided+'%;'+(!reviewed?'background:#e1e6ed;':'')+'" aria-hidden="true"><div><strong>'+num(reviewed)+'</strong><span>Alertas revisadas</span></div></div><div class="metric-donut-key">'+series.map(s=>'<div class="indicator-tone-'+s.tone+'"><i aria-hidden="true"></i><span>'+s.label+'</span><strong>'+num(c[s.key])+'</strong><small>'+pct(reviewed?c[s.key]/reviewed:null)+' de revisadas</small></div>').join('')+'</div></div>'+
-      chartDetails(table(['Resultado','Alertas','Porcentaje y base'],series.map(s=>row([s.label,num(c[s.key]),pct(reviewed?c[s.key]/reviewed:null)+' de revisadas']))));
+    return '<div class="metric-donut-layout" data-metric-chart="donut"><div class="metric-donut" style="--donut-applies:'+applies+'%;--donut-decided:'+decided+'%;'+(!reviewed?'background:#e1e6ed;':'')+'" aria-hidden="true"><div><strong>'+num(reviewed)+'</strong><span>Alertas revisadas</span></div></div><div class="metric-donut-key">'+series.map(s=>'<div class="indicator-tone-'+s.tone+'"><i aria-hidden="true"></i><span>'+s.label+'</span><strong>'+num(c[s.key])+'</strong><small>'+pct(reviewed?c[s.key]/reviewed:null)+' de revisadas</small></div>').join('')+'<div class="indicator-tone-orange"><i aria-hidden="true"></i><span>Pendientes</span><strong>'+num(c.pending)+'</strong><small></small></div></div></div>'+
+      chartDetails(table(['Resultado','Alertas','Porcentaje y base'],[...series.map(s=>row([s.label,num(c[s.key]),pct(reviewed?c[s.key]/reviewed:null)+' de revisadas'])),row(['Pendientes',num(c.pending),'—'])]));
   }
   function monthlyTrend(range,month='',limit=null) {
     const scopes=new Map();
