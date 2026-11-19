@@ -42,6 +42,8 @@ export class ExcelParser {
 
   static normalizeCountry(value) {
     const raw = String(value ?? '').replace(/\s+/g, ' ').trim();
+    // Algunos exports sustituyen la última letra acentuada por U+FFFD.
+    if (/^panam\uFFFD$/i.test(raw)) return 'Panamá';
     const key = this.normalizeHeader(raw).replace(/_/g, '');
     if (!raw || /^\d+(?:[.,]0+)?$/.test(raw) || ['glb', 'global', 'alcanceinterno', 'sinpais', 'sindato', 'na', 'n_a'].includes(key)) return '';
     const aliases = {

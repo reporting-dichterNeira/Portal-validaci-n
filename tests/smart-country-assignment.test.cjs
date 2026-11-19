@@ -77,6 +77,14 @@ test('encabezado de país tiene prioridad sobre F y puede estar en cualquier col
   assert.equal(blocking.audits[0].pais,'Costa Rica');
 });
 
+test('Smart reconoce Panamá con carácter dañado en el país y permite asignarlo', () => {
+  const result=ExcelParser.transformRowsToObjects([
+    ['ID_de_audito','Fecha_de_Sincronizacion','Estado','Pais','ID_de_PDV','Segmento','Alerta precio'],
+    ['5797631','2026-11-13','En Proceso','Panam\uFFFD','1405204199','ORO','Revisar']]);
+  assert.equal(result.audits[0].pais,'Panamá');
+  assert.equal(Distributor.countriesWithoutValidators(result.audits,[{smartCountries:['Panamá']}],options).length,0);
+});
+
 test('Perú para Lindley y Chile para Chile sobreviven guardado y lectura; KO preserva país real', () => {
   for (const [estudio,pais] of [['Lindley','Perú'],['Chile','Chile'],['Moderno','Panamá'],['Tradicional','Panamá']]) {
     const row=context.auditToRow({...audit(1,'Panamá'),estudio},'smart',null);
