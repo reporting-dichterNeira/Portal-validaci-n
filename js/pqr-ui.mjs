@@ -1,5 +1,5 @@
 import {buildQualityPdf} from './quality-report.mjs?v=1.0';
-import {dashboardView as qaDashboardView,detailView as qaDetailView} from './qa-ui.mjs?v=1.6';
+import {dashboardView as qaDashboardView,detailView as qaDetailView} from './qa-ui.mjs?v=1.7';
 import {escapeText as e,number as n,percent,dateTime,duration,decisionLabel,verdictLabel,statusLabel,reasons,reviewError,reviewResults,csv,exportRows,exportHeaders,studyLabel} from './pqr-domain.mjs?v=1.1';
 const table=(headers,rows)=>`<div class="pqr-table-wrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${r.map(c=>`<td>${c??'—'}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${headers.length}" class="pqr-empty">No hay registros para esta selección.</td></tr>`}</tbody></table></div>`;
 const card=(label,value,note='',tone='')=>`<article class="pqr-card ${tone}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`;
@@ -120,7 +120,7 @@ export class PqrUI{
  async onSubmit(event){const form=event.target,values=Object.fromEntries(new FormData(form));
   if(form.id==='pqr-login-form'||form.id==='pqr-admin-login')return this.busy(async()=>{this.context=await this.backend.login(form.id==='pqr-admin-login'?'admin':this.mode,values);await this.load();});
   if(form.classList.contains('qa-kpi-settings'))return this.busy(async()=>{await this.backend.call('kpi_settings',{id:form.dataset.analyst,patterns:String(values.patterns||'').split(',').map(v=>v.trim()).filter(Boolean)});await this.load();this.message('KPI guardados.');});
-  if(form.id==='pqr-filter-form'){this.filters={day:values.day,status:values.status,previous:values.previous==='on',offset:0};return this.busy(()=>this.load());}
+  if(form.id==='pqr-filter-form'){this.filters={...(this.backend.operation==='qa'?{study:values.study||'all'}:{}),day:values.day,status:values.status,previous:values.previous==='on',offset:0};return this.busy(()=>this.load());}
   if(form.id==='pqr-create-analyst')return this.busy(async()=>{const result=await this.backend.call('create_analyst',{name:values.name});this.showSecret(result.code);await this.load();});
   if(form.id==='pqr-create-supervisor')return this.busy(async()=>{await this.backend.call('create_supervisor',values);await this.load();this.message('Supervisora PQR creada. Puede ingresar con su usuario y contraseña en el acceso de Supervisión PQR.');});
   if(form.id==='pqr-settings')return this.busy(async()=>{await this.backend.call('study_settings',{...(this.backend.operation==='qa'?{percentage:Number(values.qa_percentage)}:{}),studies:studies.map(study=>({study,analyst_id:values['analyst_'+study]||null,...(this.backend.operation==='qa'?{secondary_analyst_id:values['secondary_'+study]||null}:{}),percentage:Number(this.backend.operation==='qa'?values.qa_percentage:values['percentage_'+study])}))});this.configDirty=false;await this.load();this.message('Reparto guardado. Cada estudio usa su porcentaje y su responsable desde hoy.');});
