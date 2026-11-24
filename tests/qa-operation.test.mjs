@@ -30,3 +30,11 @@ test('QA and PQR analyst credentials use their separate endpoints',async()=>{
  assert.equal(backend.operation,'qa');assert.equal(client.calls.at(-1)[0],'qa_login');assert.equal(client.calls.at(-1)[1].p_kind,'analyst');
  await backend.login('analyst',{code:'PQR-ABCDEFGH2345'});assert.equal(backend.operation,'pqr');assert.equal(client.calls.at(-1)[0],'pqr_login');
 });
+
+test('shared studies display both owners and retain the global sample percentage',()=>{
+ const html=studySettingsView([{study:'Moderno',analyst_id:'first',percentage:17.5},{study:'Moderno',analyst_id:'second',percentage:17.5}],[{id:'first',name:'Jeffrey',active:true,available:true},{id:'second',name:'Cesar',active:true,available:true}],35);
+ assert.match(html,/name="qa_percentage"[^>]*value="35"/);
+ assert.match(html,/name="analyst_Moderno"[\s\S]*?value="first" selected/);
+ assert.match(html,/name="secondary_Moderno"[\s\S]*?value="second" selected/);
+ assert.match(html,/50% para cada responsable/);
+});
