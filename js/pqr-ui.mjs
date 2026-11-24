@@ -1,4 +1,4 @@
-import {dashboardView as qaDashboardView,detailView as qaDetailView} from './qa-ui.mjs?v=1.4';
+import {dashboardView as qaDashboardView,detailView as qaDetailView} from './qa-ui.mjs?v=1.5';
 import {escapeText as e,number as n,percent,dateTime,duration,decisionLabel,verdictLabel,statusLabel,reasons,reviewError,reviewResults,csv,exportRows,exportHeaders,studyLabel} from './pqr-domain.mjs?v=1.1';
 const table=(headers,rows)=>`<div class="pqr-table-wrap"><table><thead><tr>${headers.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.length?rows.map(r=>`<tr>${r.map(c=>`<td>${c??'—'}</td>`).join('')}</tr>`).join(''):`<tr><td colspan="${headers.length}" class="pqr-empty">No hay registros para esta selección.</td></tr>`}</tbody></table></div>`;
 const card=(label,value,note='',tone='')=>`<article class="pqr-card ${tone}"><span>${label}</span><strong>${value}</strong><small>${note}</small></article>`;
@@ -121,7 +121,7 @@ export class PqrUI{
   if(form.id==='pqr-filter-form'){this.filters={day:values.day,status:values.status,previous:values.previous==='on',offset:0};return this.busy(()=>this.load());}
   if(form.id==='pqr-create-analyst')return this.busy(async()=>{const result=await this.backend.call('create_analyst',{name:values.name});this.showSecret(result.code);await this.load();});
   if(form.id==='pqr-create-supervisor')return this.busy(async()=>{await this.backend.call('create_supervisor',values);await this.load();this.message('Supervisora PQR creada. Puede ingresar con su usuario y contraseña en el acceso de Supervisión PQR.');});
-  if(form.id==='pqr-settings')return this.busy(async()=>{await this.backend.call('study_settings',{...(this.backend.operation==='qa'?{percentage:Number(values.qa_percentage)}:{}),studies:studies.map(study=>({study,analyst_id:values['analyst_'+study]||null,percentage:Number(this.backend.operation==='qa'?values.qa_percentage:values['percentage_'+study])}))});this.configDirty=false;await this.load();this.message('Reparto guardado. Cada estudio usa su porcentaje y su responsable desde hoy.');});
+  if(form.id==='pqr-settings')return this.busy(async()=>{await this.backend.call('study_settings',{...(this.backend.operation==='qa'?{percentage:Number(values.qa_percentage)}:{}),studies:studies.map(study=>({study,analyst_id:values['analyst_'+study]||null,...(this.backend.operation==='qa'?{secondary_analyst_id:values['secondary_'+study]||null}:{}),percentage:Number(this.backend.operation==='qa'?values.qa_percentage:values['percentage_'+study])}))});this.configDirty=false;await this.load();this.message('Reparto guardado. Cada estudio usa su porcentaje y su responsable desde hoy.');});
   if(form.id==='pqr-review-form'){
    const results=reviewResults(this.detail.kpis,values,this.detail.original_results,this.detail.review_results);
    const complete=event.submitter?.value==='complete',error=reviewError(this.detail.kpis,results,complete);if(error){this.message(error,true);return;}
