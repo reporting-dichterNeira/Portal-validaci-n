@@ -45,3 +45,11 @@ test('only QA specialist gets a study filter and selection remains visible',()=>
  assert.match(html,/name="study"/);assert.match(html,/value="Lindley" selected/);assert.match(html,/Orden: estudio y auditoría/);
  assert.doesNotMatch(dashboardView(data('analyst'),{}),/name="study"/);
 });
+
+test('specialist sees three full-queue study progress cards',()=>{
+ const input=data('analyst');input.context.kpi_specialist=true;
+ input.specialist_progress=[{label:'CAM',assigned:43,completed:5,in_progress:1,pending:37,previous_pending:190},{label:'Lindley',assigned:0,completed:0},{label:'Chile',assigned:2,completed:1,pending:1}];
+ const html=dashboardView(input,{study:'Chile'});
+ assert.match(html,/<h3>CAM<\/h3>/);assert.match(html,/5 terminadas/);assert.match(html,/<h3>Lindley<\/h3>/);assert.match(html,/<h3>Chile<\/h3>/);assert.match(html,/190/);
+ assert.doesNotMatch(dashboardView(data('analyst'),{}),/Mi avance SOVI y SOCI/);
+});
