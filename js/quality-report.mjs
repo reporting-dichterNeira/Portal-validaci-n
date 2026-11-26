@@ -33,6 +33,10 @@ export function buildQualityPdf(JsPDF,data,operation='pqr',generatedAt=new Date(
  let previousStudy='';
  sectionTable('Detalle consolidado',['Estudio','País','Revisadas','Con errores','% error'],rows.map(r=>{const label=r.study===previousStudy?'':studyLabel(r.study);previousStudy=r.study;return [label,r.country,number(r.completed),number(r.errors),percent(r.errors,r.completed)];}),[82,72,40,40,35]);
  if(y+18<=H-18){text(wrap('PQR cuenta auditorías y QA cuenta alertas individuales. El porcentaje de error usa las revisiones terminadas de cada fila. Los países provienen de los datos originales de la auditoría.',U,8),M,y,8,'gray');}
+ page('Gestión diaria · revisiones completadas');
+ paragraph('Fecha de finalización de la revisión, hora de Colombia. Solo se muestran días con gestión completada.');
+ const daily=[...(history.daily||[])].filter(r=>Number(r.completed)>0).sort((a,b)=>String(a.day).localeCompare(String(b.day)));
+ sectionTable('Detalle por día',['Fecha de cierre','Revisadas','Con errores','% error'],daily.map(r=>[String(r.day||'').split('-').reverse().join('/'),number(r.completed),number(r.errors),percent(r.errors,r.completed)]),[89,60,60,60]);
  const total=pdf.getNumberOfPages();for(let i=1;i<=total;i++){pdf.setPage(i);pdf.setDrawColor(220,227,239);pdf.line(M,H-13,W-M,H-13);text('dichter & neira | Control de calidad '+name,M,H-7,8,'gray');text(i+' / '+total,W-M-13,H-7,8,'gray');}
  return pdf;
 }
