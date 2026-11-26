@@ -120,3 +120,11 @@ test('a repeated Blocking ID retains its completed validation instead of becomin
  const [chosen]=U.canonical([old,fresh]);
  assert.equal(chosen._batchId,1);assert.equal(chosen.validationStatus,'completada');
 });
+
+
+test('multiple dimensions use OR within filters and AND between filters',()=>{
+ const rows=[sample(1,['aplica'],{region:'Lima',channel:'A'}),sample(2,['no_aplica'],{region:'Sur',channel:'B'}),sample(3,['aplica'],{region:'Norte',channel:'A'}),sample(4,['aplica'],{region:'Sur',channel:'C'})];
+ const result=compute(rows,{region:['Lima','Sur'],channel:['A','B']});
+ assert.equal(result.counts.total,2);assert.equal(result.counts.applies,1);assert.equal(result.counts.rejects,1);
+ assert.deepEqual(result.alerts.map(a=>a.id),['1','2']);
+});

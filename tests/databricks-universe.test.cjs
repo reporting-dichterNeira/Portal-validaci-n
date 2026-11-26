@@ -94,7 +94,7 @@ test('el país seleccionado se envía a Export sin convertir Chile o Perú en un
   U.render(app,[{id:'1',_module:'blocking',estudio:'Chile',fecha:'2026-10-01',kpis:[]}]);
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(filters.country,'Chile');assert.equal(filters.geography,'all');assert.deepEqual(filters.studies,['Chile']);
-  assert.match(target.innerHTML,/data-metric-scope-filter="country"/);assert.match(target.innerHTML,/value="Chile" selected/);
+  assert.match(target.innerHTML,/data-metric-scope-filter="country"/);assert.match(target.innerHTML,/value="Chile" checked/);
  }finally{delete global.document;}
 });
 

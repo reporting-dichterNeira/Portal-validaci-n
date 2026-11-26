@@ -42,10 +42,10 @@
     const month = app.selectedMetricsMonth === 'all' ? '' : app.selectedMetricsMonth || '';
     const labels = [module === 'all' ? 'Bloqueantes + Smart' : module === 'smart' ? 'Smart' : 'Bloqueantes',
       'Estudio: '+((app.selectedStudies || ['ALL']).includes('ALL') ? 'Todos' : app.selectedStudies.map(studyLabel).join(', ')),
-      'País: '+(app.selectedMetricsCountry === '__missing__' ? 'Sin país identificado' : app.selectedMetricsCountry || 'all').replace(/^all$/,'Todos'),
+      'País: '+(Array.isArray(app.selectedMetricsCountry)?app.selectedMetricsCountry.map(v=>v==='__missing__'?'Sin país identificado':v).join(', '):(app.selectedMetricsCountry === '__missing__' ? 'Sin país identificado' : app.selectedMetricsCountry || 'all')).replace(/^all$/,'Todos'),
       'Mes: '+(month || 'Todos'), 'Desde: '+(app.visualizationDateFrom || 'Inicio del histórico'), 'Hasta: '+(app.visualizationDateTo || asOf),
       ...['region','channel','subchannel'].filter(k=>state[k]!=='all').map(k=>({region:'Región',channel:'Canal',subchannel:'Subcanal'}[k])+': '+state[k])];
-    return {asOf,scope:labels.join(' | '),result,trend:U.monthlyTrend(range,month || asOf.slice(0,7),6),signals:signals(result),alertTypes:alertBreakdown(result)};
+    return {asOf,scope:labels.join(' | '),result,trend:U.monthlyTrend(range,(Array.isArray(month)?[...month].sort().at(-1):month) || asOf.slice(0,7),6),signals:signals(result),alertTypes:alertBreakdown(result)};
   }
 
   // Compose vector charts and text directly; no DOM screenshot or canvas.

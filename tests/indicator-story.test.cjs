@@ -91,7 +91,7 @@ test('monthly macro reconciles study totals, counts audit IDs once and ranks rec
 });
 test('committee macro keeps month selector visible and empty data honest',()=>{
  const html=render('summary',true).html;
- assert.ok(html.indexOf('data-metric-scope-filter="month"')<html.indexOf('<details'));
+ assert.ok(html.indexOf('data-metric-scope-filter="month"')<html.indexOf('<details class="glass-panel story-filters"'));
  assert.match(html,/Métricas de validación/);
  assert.match(html,/Resumen/);
  const empty=U.macroDashboard(M.compute([],{asOf:'2026-10-10'}),'2026-10',true);

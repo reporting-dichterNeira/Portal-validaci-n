@@ -39,11 +39,11 @@ test('shared studies display both owners and retain the global sample percentage
  assert.match(html,/50% para cada responsable/);
 });
 
-test('only QA specialist gets a study filter and selection remains visible',()=>{
+test('QA study multi-filter is available and selection remains visible',()=>{
  const input=data('analyst');input.context.kpi_specialist=true;
  const html=dashboardView(input,{study:'Lindley'});
- assert.match(html,/name="study"/);assert.match(html,/value="Lindley" selected/);assert.match(html,/Orden: estudio y auditoría/);
- assert.doesNotMatch(dashboardView(data('analyst'),{}),/name="study"/);
+ assert.match(html,/name="study"/);assert.match(html,/value="Lindley" checked/);assert.match(html,/Orden: estudio y auditoría/);
+ assert.match(dashboardView(data('analyst'),{}),/name="study"/);
 });
 
 test('specialist sees three full-queue study progress cards',()=>{

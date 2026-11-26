@@ -1,5 +1,6 @@
 (function(root) {
   'use strict';
+  if(typeof module!=='undefined'&&module.exports&&!root.PortalMultiSelect)require('./multi-select.js');
   const M = root.PortalIndicatorMetrics;
   const studyLabel = value => root.PortalStudyLabels?.getStudyDisplayName(value) || value;
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -670,13 +671,13 @@
     const module = app.currentView === 'visualizations' ? app.getVisualizationModuleFilter() : app.currentModule;
     const legacy=Array.from(target.parentElement.children).filter(el=>el!==target);
     const state = app.indicatorFilters ||= {region:'all',channel:'all',subchannel:'all',month:''};
-    if(state.region!=='all')state.region=M.normalizeRegion(state.region)||'Sin región';
+    if(state.region!=='all')state.region=Array.isArray(state.region)?state.region.map(v=>M.normalizeRegion(v)||'Sin región'):M.normalizeRegion(state.region)||'Sin región';
     const options=app.getMetricsScopeOptions?.() || {studies:[],countries:[]};
     state.month=app.selectedMetricsMonth && app.selectedMetricsMonth!=='all'?app.selectedMetricsMonth:'';
     const selectedStudies=app.selectedStudies || ['ALL'];
-    const studyValue=!selectedStudies.length || selectedStudies.includes('ALL')?'all':selectedStudies.length===1?selectedStudies[0]:'__multiple__';
+    const studyValue=!selectedStudies.length || selectedStudies.includes('ALL')?'all':selectedStudies;
     const countryValue=app.selectedMetricsCountry || 'all';
-    const scopeSelect=(key,label,value,choices,disabled=false)=>'<label>'+label+'<select class="form-control" data-metric-scope-filter="'+key+'" '+(disabled?'disabled':'')+'>'+choices.map(option=>'<option value="'+esc(option.value)+'" '+(option.value===value?'selected':'')+'>'+esc(option.label)+'</option>').join('')+'</select></label>';
+    const scopeSelect=(key,label,value,choices,disabled=false)=>key!=='module'?globalThis.PortalMultiSelect.render(key,label,value,choices,'data-metric-scope-filter="'+key+'"'):'<label>'+label+'<select class="form-control" data-metric-scope-filter="'+key+'" '+(disabled?'disabled':'')+'>'+choices.map(option=>'<option value="'+esc(option.value)+'" '+(option.value===value?'selected':'')+'>'+esc(option.label)+'</option>').join('')+'</select></label>';
     const scopeControls='<section class="glass-panel metric-scope-panel" aria-label="Filtros de métricas"><div class="metric-scope-title"><strong>Filtrar métricas</strong><small>'+(daily?'La selección aplica al detalle diario y sus descargas. El consolidado histórico se muestra completo.':'La selección aplica a las gráficas, tablas y descargas de este apartado.')+'</small></div><div class="metric-scope-controls">'+
       scopeSelect('study','Estudio',studyValue,[{value:'all',label:'Todos los estudios'},...(studyValue==='__multiple__'?[{value:'__multiple__',label:'Selección múltiple ('+selectedStudies.length+')'}]:[]),...options.studies.map(option=>({...option,label:studyLabel(option.value)}))])+
       scopeSelect('country','País',countryValue,[{value:'all',label:'Todos los países'},...options.countries])+
@@ -686,7 +687,8 @@
       '<label>Hasta<input class="form-control" type="date" data-metric-scope-filter="to" value="'+esc(app.visualizationDateTo||'')+'"></label>'+
       '</div><div class="metric-scope-actions"><small>Mes y fechas se combinan por la jornada de auditoría. '+(daily?'El consolidado histórico incluye ambos módulos y todos los meses.':'La evolución compara hasta seis meses del rango.')+'</small><div class="metric-download-actions"><button type="button" class="btn btn-outline btn-sm" data-metric-dates-clear>Limpiar fechas</button>'+(!daily?'<button type="button" class="btn btn-primary btn-sm" data-indicator-pdf>📄 Descargar indicadores (PDF)</button><button type="button" class="btn btn-success btn-sm" data-indicator-download>📥 Descargar detalle de alertas (CSV)</button>':'')+'</div></div></section>';
     const bindScopeControls=()=>{
-      target.querySelectorAll('[data-metric-scope-filter]').forEach(el=>el.addEventListener('change',async()=>{
+      target.querySelectorAll('[data-metric-scope-filter]').forEach(el=>el.addEventListener('change',async(event)=>{
+        if(event && event.target!==el)return;
         if(el.value==='__multiple__')return;
         try {await app.setMetricsScopeFilter?.(el.dataset.metricScopeFilter,el.value);}
         catch(error) {console.error('No fue posible aplicar el filtro de métricas:',error);}
@@ -724,8 +726,8 @@
     const dimensions = [['region','Región','Sin región'],['channel','Canal','Sin canal'],['subchannel','Subcanal','Sin subcanal']];
     let controls = dimensions.map(([key,label,missing])=> {
       const values=[...new Set(inputs.map(a=>a[key] || missing))].sort();
-      if(state[key]!=='all'&&!values.includes(state[key]))state[key]='all';
-      return '<label>'+label+'<select class="form-control" data-indicator-filter="'+key+'"><option value="all">Todas</option>'+values.map(v=>'<option value="'+esc(v)+'" '+(v===state[key]?'selected':'')+'>'+esc(v)+'</option>').join('')+'</select></label>';
+      if(Array.isArray(state[key])){state[key]=state[key].filter(v=>values.includes(v));if(!state[key].length)state[key]='all';}else if(state[key]!=='all'&&!values.includes(state[key]))state[key]='all';
+      return globalThis.PortalMultiSelect.render(key,label,state[key],values.map(value=>({value,label:value})),'data-indicator-filter="'+key+'"');
     }).join('');
     const firstDate=inputs.map(a=>a.periodDate).filter(Boolean).sort()[0] || '';
     const from=app.visualizationDateFrom || (firstDate?firstDate.slice(0,7)+'-01':'');
@@ -734,12 +736,12 @@
     let calculated=snapshot.calculations.get(calculationKey);
     if(!calculated) {
       const rangeResult=M.compute(inputs,{...state,asOf,from,to,month:state.month||''});
-      const result=state.month ? M.compute(inputs.filter(a=>a.month===state.month),{...state,asOf,from,to}) : rangeResult;
+      const result=state.month ? M.compute(inputs.filter(a=>(Array.isArray(state.month)?state.month.includes(a.month):a.month===state.month)),{...state,asOf,from,to}) : rangeResult;
       const smartInputs=snapshot.smartInputs || [];
-      const smart=M.compute(state.month?smartInputs.filter(a=>a.month===state.month):smartInputs,{...state,asOf,from:app.visualizationDateFrom || '',to,month:state.month||''});
+      const smart=M.compute(state.month?smartInputs.filter(a=>(Array.isArray(state.month)?state.month.includes(a.month):a.month===state.month)):smartInputs,{...state,asOf,from:app.visualizationDateFrom || '',to,month:state.month||''});
       const receiptInputs=snapshot.receiptInputs || inputs;
-      const blocking=M.compute(state.month?receiptInputs.filter(a=>a.month===state.month):receiptInputs,{...state,asOf,from:app.visualizationDateFrom || '',to,month:state.month||''});
-      calculated={rangeResult,result,smart,blocking,committee:committeeData(result,rangeResult,historyInputs,state.month || to.slice(0,7),{...state,asOf})};
+      const blocking=M.compute(state.month?receiptInputs.filter(a=>(Array.isArray(state.month)?state.month.includes(a.month):a.month===state.month)):receiptInputs,{...state,asOf,from:app.visualizationDateFrom || '',to,month:state.month||''});
+      calculated={rangeResult,result,smart,blocking,committee:committeeData(result,rangeResult,historyInputs,(Array.isArray(state.month)?[...state.month].sort().at(-1):state.month) || to.slice(0,7),{...state,asOf})};
       // Bound retained cohorts while allowing fast back-and-forth navigation.
       if(snapshot.calculations.size>=2)snapshot.calculations.delete(snapshot.calculations.keys().next().value);
       snapshot.calculations.set(calculationKey,calculated);
@@ -765,7 +767,7 @@
       html+=panel('Evolución de tiempos','Promedios por mes de carga. Las fechas sin hora se miden en días calendario.',timingChart(committee.timing)+chartDetails(table(['Mes de carga','Tiempo auditoría → generación de alerta','Generación de alerta → decisión aplicada'],committee.timing.map(r=>row([esc(r.month),time(r.intake),time(r.validation)])))));
     }
     if(state.month && section==='pending') {
-      html+=inheritedPanel(committee,state.month,asOf);
+      html+=inheritedPanel(committee,Array.isArray(state.month)?[...state.month].sort().at(-1):state.month,asOf);
       html+=panel('⏳ Detalle del rezago heredado','Pendientes actuales de jornadas anteriores al mes seleccionado. Se presentan aparte del total del mes.',
         '<button type="button" class="btn btn-outline btn-sm" data-committee-inherited '+(!committee.inherited.counts.pending?'disabled':'')+'>📥 Descargar pendientes heredados (CSV)</button>'+table(['ID','Jornada original','Estudio','País / región','Alertas pendientes'],Object.values(committee.inherited.backlog).flat().slice(0,100).map(a=>row([esc(a.id),esc(a.periodDate),esc(studyLabel(a.study)),esc(a.geography),num(a.pending)]))));
     }
@@ -831,7 +833,7 @@
       app.renderReportsView();
     });
     target.querySelectorAll('[data-story-section]').forEach(el=>el.addEventListener('click',()=>{if(el.dataset.storySection===section)return;app[sectionKey]=el.dataset.storySection;render(app,audits,historyAudits,snapshot,receiptAudits);target.querySelector('[aria-current="page"]')?.focus({preventScroll:true});}));
-    target.querySelectorAll('[data-indicator-filter]').forEach(el=>el.addEventListener('change',()=>{state[el.dataset.indicatorFilter]=el.value;render(app,audits,historyAudits,snapshot,receiptAudits);}));
+    target.querySelectorAll('[data-indicator-filter]').forEach(el=>el.addEventListener('change',event=>{if(event && event.target!==el)return;state[el.dataset.indicatorFilter]=el.value;render(app,audits,historyAudits,snapshot,receiptAudits);}));
     target.querySelector('[data-committee-inherited]')?.addEventListener('click',()=>download(['ID auditoría','Jornada original','Estudio','País','Región','Sub-KPI','Estado actual'],committee.inherited.alerts.filter(a=>a.decision==='pendiente').map(a=>[a.id,a.periodDate,studyLabel(a.study),a.country,a.region,a.name,'Pendiente']),'Pendientes-heredados-antes-'+state.month+'.csv'));
     target.querySelectorAll('[data-indicator-bucket]').forEach(el=>el.addEventListener('click',()=>{
       target.querySelectorAll('[data-indicator-bucket]').forEach(button=>button.setAttribute('aria-pressed',String(button===el)));

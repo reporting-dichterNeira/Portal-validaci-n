@@ -6167,12 +6167,12 @@ class ValidaFlowApp {
     return studyFiltered.filter(audit => this.isWithinVisualizationDateRange(this.getAuditOperationDate(audit))
       && this.matchesMetricsCountry(audit)
       && (ignoreMonth || !this.selectedMetricsMonth || this.selectedMetricsMonth === 'all'
-        || this.getAuditOperationDate(audit).slice(0, 7) === this.selectedMetricsMonth));
+        || (Array.isArray(this.selectedMetricsMonth)?this.selectedMetricsMonth.includes(this.getAuditOperationDate(audit).slice(0,7)):this.getAuditOperationDate(audit).slice(0, 7) === this.selectedMetricsMonth)));
   }
 
   matchesMetricsCountry(audit) {
     const country = this.selectedMetricsCountry || 'all';
-    return country === 'all' || this.getReportCountry(audit) === (country === '__missing__' ? '' : country);
+    return country === 'all' || (Array.isArray(country)?country:[country]).some(value=>this.getReportCountry(audit)===(value==='__missing__'?'':value));
   }
 
   getMetricsScopeOptions() {
@@ -6193,7 +6193,7 @@ class ValidaFlowApp {
       .sort((a, b) => a.localeCompare(b, 'es'));
     for (const study of this.selectedStudies || []) if (study !== 'ALL' && !studies.includes(study)) studies.push(study);
     const months = [...new Set(source.map(audit => this.getAuditOperationDate(audit).slice(0, 7)).filter(value => /^\d{4}-\d{2}$/.test(value)))].sort().reverse();
-    if (this.selectedMetricsMonth && this.selectedMetricsMonth !== 'all' && !months.includes(this.selectedMetricsMonth)) months.push(this.selectedMetricsMonth);
+    for(const month of (Array.isArray(this.selectedMetricsMonth)?this.selectedMetricsMonth:[this.selectedMetricsMonth]))if(month && month!=='all'&&!months.includes(month))months.push(month);
     return { months: months.map(value => ({ value, label: value })), studies: studies.map(value => ({ value, label: getStudyDisplayName(value) })),
       countries: countries.map(value => ({ value, label: value === '__missing__' ? 'Sin país identificado' : value })) };
   }
@@ -6203,6 +6203,8 @@ class ValidaFlowApp {
     const current = this.selectedMetricsCountry || 'all';
     if (selectSingle && countries.length === 1 && countries[0].value !== '__missing__') {
       this.selectedMetricsCountry = countries[0].value;
+    } else if(Array.isArray(current)){
+      const valid=current.filter(v=>countries.some(option=>option.value===v));this.selectedMetricsCountry=valid.length?valid:'all';
     } else if (current !== 'all' && !countries.some(option => option.value === current)) {
       this.selectedMetricsCountry = 'all';
     }
@@ -6220,9 +6222,9 @@ class ValidaFlowApp {
       this.renderDailyReportsView();
       return;
     }
-    if (key === 'month') this.selectedMetricsMonth = /^\d{4}-\d{2}$/.test(value) ? value : 'all';
+    if (key === 'month') {const months=(Array.isArray(value)?value:[value]).filter(v=>/^\d{4}-\d{2}$/.test(v));this.selectedMetricsMonth=months.length?months:'all';}
     else if (key === 'study') {
-      this.selectedStudies = value === 'all' ? ['ALL'] : [value];
+      this.selectedStudies = value === 'all' ? ['ALL'] : Array.isArray(value)?value:[value];
       this.reconcileMetricsCountry({ selectSingle: value !== 'all' });
     }
     else if (key === 'country') this.selectedMetricsCountry = value || 'all';

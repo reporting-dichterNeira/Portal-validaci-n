@@ -286,10 +286,11 @@
     const { from = '', to = asOf, study = 'all', country = 'all', region='all', channel='all', subchannel='all', month = '' } = filters;
     if ((from && !dateKey(from)) || (to && !dateKey(to)) || (from && to && from > to)) throw new Error('El rango de fechas no es válido.');
     const dimension=(value,label)=>value || `Sin ${label}`;
-    const selectedRegion=region==='all'?'all':normalizeRegion(region)||'Sin región';
-    const scoped = excludeUndatedPending(audits).filter(a => (study === 'all' || a.study === study) && (country === 'all' || a.country === country)
-      && (selectedRegion==='all' || dimension(a.region,'región')===selectedRegion) && (channel==='all' || dimension(a.channel,'canal')===channel)
-      && (subchannel==='all' || dimension(a.subchannel,'subcanal')===subchannel));
+    const matches=(selection,value)=>!selection||selection==='all'||(Array.isArray(selection)?!selection.length||selection.includes(value):selection===value);
+    const selectedRegion=region==='all'?'all':Array.isArray(region)?region.map(v=>normalizeRegion(v)||'Sin región'):normalizeRegion(region)||'Sin región';
+    const scoped = excludeUndatedPending(audits).filter(a => matches(study,a.study) && matches(country,a.country)
+      && matches(selectedRegion,dimension(a.region,'región')) && matches(channel,dimension(a.channel,'canal'))
+      && matches(subchannel,dimension(a.subchannel,'subcanal')));
     const undated = scoped.filter(a => !a.periodDate).length;
     const selected = scoped.filter(a => a.periodDate && (!from || a.periodDate >= from) && (!to || a.periodDate <= to) && a.periodDate <= asOf);
     const alerts = selected.flatMap(a => a.kpis.map(k => ({ ...k, id: a.id, module:a.module, study: a.study, country: a.country, geography:a.geography, auditor: a.auditor,
@@ -320,7 +321,7 @@
       row.partial = !monthIsComplete(row.month);
       row.change = prev && !row.partial && !prev.partial && monthIsComplete(prev.month) ? ratio(row.total - prev.total, prev.total) : null;
     }
-    const monthlyAlerts = alerts.filter(a => !month || a.month === month);
+    const monthlyAlerts = alerts.filter(a => matches(month,a.month));
     const benchmark = groups(monthlyAlerts, ['study','geography']).sort((a,b) => b.total - a.total || a.study.localeCompare(b.study) || a.geography.localeCompare(b.geography));
     const rejectedTypes = groups(monthlyAlerts, ['name']).sort((a,b) => b.total - a.total || a.name.localeCompare(b.name));
     const dimensionKeys=['study','country','region','channel','subchannel'];

@@ -178,3 +178,12 @@ test('shared header indexes retain per-row values and preserve alias precedence 
  assert.equal(read({meta:{'Región':'ARICA','REGION':'IQUIQUE'}},['region']),'ARICA');
  assert.equal(read({meta:{'REGION':'PUERTO MONTT','Región':'TEMUCO'}},['region']),'PUERTO MONTT');
 });
+
+
+test('metrics scope accepts multiple studies, countries and months without cross-filter leakage',async()=>{
+ const app=Object.assign(Object.create(ctx.App.prototype),{selectedStudies:['ALL'],selectedMetricsMonth:'all',selectedMetricsCountry:'all',renderReportsView(){},renderDailyReportsView(){},reconcileMetricsCountry(){},isWithinVisualizationDateRange:()=>true,getStudyForAudit:a=>a.estudio,getReportCountry:a=>a.pais,getAuditOperationDate:a=>a.fecha});
+ await app.setMetricsScopeFilter('study',['Chile','Lindley']);await app.setMetricsScopeFilter('country',['Chile','Perú']);await app.setMetricsScopeFilter('month',['2026-08','2026-09']);
+ const rows=[audit('1',{fecha:'2026-08-01'}),audit('2',{estudio:'Lindley',pais:'Perú',fecha:'2026-09-01'}),audit('3',{fecha:'2026-10-01'}),audit('4',{estudio:'Moderno',pais:'Panamá',fecha:'2026-08-01'})];
+ assert.deepEqual(app.getStudyAndDateFilteredAuditsForReports(rows).map(a=>a.id),['1','2']);
+ assert.deepEqual(app.getStudyAndDateFilteredAuditsForReports(rows,{ignoreMonth:true}).map(a=>a.id),['1','2','3']);
+});
