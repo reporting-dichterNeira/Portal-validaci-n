@@ -3,7 +3,7 @@ const source=fs.readFileSync(require.resolve('../js/supabase-backend.js'),'utf8'
 function setup(reply) {
  const queries=[],progress=[],delays=[];let refreshes=0;
  const ctx=vm.createContext({SUPABASE_CONFIG:{},Date,setTimeout(fn,ms){delays.push(ms);queueMicrotask(fn);}});
- vm.runInContext(source+'\nthis.Backend=SupabaseBackend;',ctx);
+ vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+source+'\nthis.Backend=SupabaseBackend;',ctx);
  const backend=Object.assign(Object.create(ctx.Backend.prototype),{ensureConfigured(){},currentScope:{study:{id:'s'},country:{id:'c'}}});
  backend.client={auth:{async getSession(){return {data:{session:{expires_at:Date.now()/1000+3600}}};},async refreshSession(){refreshes++;return {data:{session:{}}};}},from(table){
   const query={table,filters:{}};

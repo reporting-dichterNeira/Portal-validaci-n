@@ -5,10 +5,10 @@ const ctx=vm.createContext({console,Date,setTimeout,clearTimeout,SUPABASE_CONFIG
  document:{getElementById:()=>null},getStudyDisplayName:v=>v,formatNicaraguaDate:v=>v,formatNicaraguaDateTime:v=>v});
 for(const [file,name] of [['excel-parser.js','ExcelParser'],['supabase-backend.js','SupabaseBackend']]){
  const code=fs.readFileSync(require.resolve('../js/'+file),'utf8').replace(/^import .*;\r?\n/gm,'').replace('export class','class');
- vm.runInContext(code+'\nthis.'+name+'='+name+';',ctx);
+ vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+code+'\nthis.'+name+'='+name+';',ctx);
 }
 const appCode=fs.readFileSync(require.resolve('../js/app.js'),'utf8');
-vm.runInContext(appCode.slice(0,appCode.indexOf('// Inicializar la aplicación inmediatamente')).replace(/^import .*;\r?\n/gm,'')+'\nthis.App=ValidaFlowApp;',ctx);
+vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+appCode.slice(0,appCode.indexOf('// Inicializar la aplicación inmediatamente')).replace(/^import .*;\r?\n/gm,'')+'\nthis.App=ValidaFlowApp;',ctx);
 const audit=(id,extra={})=>({id,estudio:'Chile',_module:'blocking',fecha:'2026-10-11',fechaAuditoriaOriginal:'2026-10-07',pais:'Chile',canal:'GROCERY SHOPPING',region:'Sin región',
  kpis:[{name:'A',needsReview:true}],validationResults:{A:{status:'aplica'}},...extra});
 const context=(id,region)=>({audit_external_id:id,study:'ko_trad_ch_202610',country:'Chile',region,channel:'HOME MARKET TRADICIONAL',segmento:'BRONCE'});

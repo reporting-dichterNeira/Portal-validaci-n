@@ -3,13 +3,13 @@ const M=require('../js/indicator-metrics.js');
 const nodes=new Map();
 const ctx=vm.createContext({console,Date,setTimeout:()=>0,clearTimeout,PortalIndicatorMetrics:M,
  document:{getElementById:id=>nodes.get(id)||null},SUPABASE_CONFIG:{},formatNicaraguaDateTime:v=>v||'',getNicaraguaDateKey:()=> '2026-10-20'});
-vm.runInContext(fs.readFileSync(require.resolve('../js/sample-data.js'),'utf8').replace(/export /g,'')+'\nthis.catalog=TIPIFICACIONES_POR_DECISION;',ctx);
+vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+fs.readFileSync(require.resolve('../js/sample-data.js'),'utf8').replace(/export /g,'')+'\nthis.catalog=TIPIFICACIONES_POR_DECISION;',ctx);
 for(const [file,name] of [['validator-ui.js','ValidatorUI'],['supabase-backend.js','SupabaseBackend'],['excel-parser.js','ExcelParser']]) {
  const source=fs.readFileSync(require.resolve('../js/'+file),'utf8').replace(/^import .*;\r?\n/gm,'').replace('export class','class');
- vm.runInContext(source+'\nthis.'+name+'='+name+';',ctx);
+ vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+source+'\nthis.'+name+'='+name+';',ctx);
 }
 const source=fs.readFileSync(require.resolve('../js/app.js'),'utf8');
-vm.runInContext(source.slice(0,source.indexOf('// Inicializar la aplicación inmediatamente')).replace(/^import .*;\r?\n/gm,'')+'\nthis.App=ValidaFlowApp;',ctx);
+vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+source.slice(0,source.indexOf('// Inicializar la aplicación inmediatamente')).replace(/^import .*;\r?\n/gm,'')+'\nthis.App=ValidaFlowApp;',ctx);
 const actions=['Alerta válida: encuesta editada','Alerta válida: encuesta cancelada','Alerta válida: sin cambios requeridos'];
 const audit=tipificacion=>({id:'999002',_rowId:999002,_module:'blocking',estudio:'Chile',pais:'Chile',fecha:'2026-10-20',fechaAuditoriaOriginal:'2026-10-19',
  kpis:[{name:'KPI 1',needsReview:true}],validationResults:{'KPI 1':{status:'aplica',tipificacion}}});

@@ -9,10 +9,10 @@ const context = vm.createContext({ console, SUPABASE_CONFIG: {}, document: { get
 for (const [file, className] of [['excel-parser.js', 'ExcelParser'], ['distributor.js', 'Distributor']]) {
   const source = fs.readFileSync(path.join(root, 'js', file), 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(`export class ${className}`, `class ${className}`);
-  vm.runInContext(`${source}\nthis.${className} = ${className};`, context);
+  vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+`${source}\nthis.${className} = ${className};`, context);
 }
 const appSource = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
-vm.runInContext(appSource.slice(0, appSource.indexOf('// Inicializar la aplicación inmediatamente'))
+vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+appSource.slice(0, appSource.indexOf('// Inicializar la aplicación inmediatamente'))
   .replace(/^import .*;\r?\n/gm, '') + '\nthis.ValidaFlowApp = ValidaFlowApp;', context);
 const { ExcelParser, Distributor, ValidaFlowApp } = context;
 const validators = ['A', 'B', 'C'].map(id => ({ id, estudio: 'Lindley' }));
@@ -25,7 +25,7 @@ test('Cantidad_de_fotos_PR se importa como cantidad y sobrevive al guardado y le
   assert.equal(parsed.audits[1].cantidadFotosPR, 0);
   assert.equal(parsed.audits[0].id, '5527124');
   const backendSource = fs.readFileSync(path.join(root, 'js/supabase-backend.js'), 'utf8');
-  vm.runInContext(backendSource.slice(0, backendSource.indexOf('export class SupabaseBackend'))
+  vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+backendSource.slice(0, backendSource.indexOf('export class SupabaseBackend'))
     .replace(/^import .*;\r?\n/gm, ''), context);
   const row = context.auditToRow(parsed.audits[0], 'smart', null);
   const restored = context.mapAudit(JSON.parse(JSON.stringify(row)));

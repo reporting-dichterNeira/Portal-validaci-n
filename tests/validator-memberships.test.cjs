@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const code = fs.readFileSync(path.join(__dirname, '../js/supabase-backend.js'), 'utf8')
   .replace(/^import .*;\r?\n/gm, '').replace('export class SupabaseBackend', 'class SupabaseBackend');
 const context = vm.createContext({ SUPABASE_CONFIG: {}, console });
-vm.runInContext(code + '\nthis.Backend = SupabaseBackend;', context);
+vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+code + '\nthis.Backend = SupabaseBackend;', context);
 function backend(client) {
   return Object.assign(Object.create(context.Backend.prototype), {
     configured: true, client, currentScope: { study: { id: 'study-2', name: 'Moderno' }, country: { id: 'country-2' } }

@@ -23,7 +23,7 @@ function loadExcelParser() {
       createElement: () => ({ style: {}, click() { this.clicked = true; }, remove() {} })
     }
   });
-  vm.runInContext(`${source}\nthis.ExcelParser = ExcelParser;`, context);
+  vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+`${source}\nthis.ExcelParser = ExcelParser;`, context);
   return { ExcelParser: context.ExcelParser, downloads, blobs };
 }
 
@@ -60,7 +60,7 @@ function loadAppClass(document = { getElementById: () => null }) {
       ? value.slice(0, 10)
       : new Date(value).toISOString().slice(0, 10)
   });
-  vm.runInContext(`${source}\nthis.ValidaFlowApp = ValidaFlowApp;`, context);
+  vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+`${source}\nthis.ValidaFlowApp = ValidaFlowApp;`, context);
   return context.ValidaFlowApp;
 }
 
@@ -269,7 +269,7 @@ test('las pendientes se conservan hasta que el supervisor las retire; no expiran
     .replace(/^import .*;\r?\n/gm, '')
     .replace('export class ValidatorUI', 'class ValidatorUI');
   const context = vm.createContext({ formatNicaraguaDateTime: value => value, getNicaraguaDateKey: value => value });
-  vm.runInContext(`${validatorSource}\nthis.ValidatorUI = ValidatorUI;`, context);
+  vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+`${validatorSource}\nthis.ValidatorUI = ValidatorUI;`, context);
   const validatorUI = Object.create(context.ValidatorUI.prototype);
   Object.assign(validatorUI, { app, currentValidator: { id: 'v1' }, currentModule: 'blocking' });
   assert.deepEqual(validatorUI.getMyAudits().map(audit => audit.id), ['old-completed', 'today-pending']);

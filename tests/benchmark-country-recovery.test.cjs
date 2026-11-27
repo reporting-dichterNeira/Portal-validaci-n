@@ -9,10 +9,10 @@ const context = vm.createContext({ console, SUPABASE_CONFIG: {}, getStudyDisplay
 for (const [file, name] of [['excel-parser.js', 'ExcelParser'], ['supabase-backend.js', 'SupabaseBackend']]) {
   const source = fs.readFileSync(path.join(root, 'js', file), 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(`export class ${name}`, `class ${name}`);
-  vm.runInContext(source + `\nthis.${name}=${name};`, context);
+  vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+source + `\nthis.${name}=${name};`, context);
 }
 const source = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
-vm.runInContext(source.slice(0, source.indexOf('// Inicializar la aplicación inmediatamente'))
+vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+source.slice(0, source.indexOf('// Inicializar la aplicación inmediatamente'))
   .replace(/^import .*;\r?\n/gm, '') + '\nthis.App=ValidaFlowApp;', context);
 const app = () => Object.assign(Object.create(context.App.prototype), {
   adminExternalAnalysis: { alertRecords: [] }, benchmarkCountryRows: []

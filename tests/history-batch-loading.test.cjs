@@ -1,7 +1,7 @@
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync(require.resolve('../js/supabase-backend.js'),'utf8').replace(/^import .*;\r?\n/gm,'').replace('export class','class');
 const ctx=vm.createContext({SUPABASE_CONFIG:{},Date,console});
-vm.runInContext(source+'\nthis.Backend=SupabaseBackend;',ctx);
+vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+source+'\nthis.Backend=SupabaseBackend;',ctx);
 function fixture({batches=[],audits=[],scope=null,failBatch=null}={}) {
  const requests=[],progress=[];let active=0,peak=0;
  const a=Object.assign(Object.create(ctx.Backend.prototype),{configured:true,currentScope:scope,

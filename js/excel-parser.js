@@ -1,3 +1,4 @@
+import {preferLindleyTraditional} from './lindley-models.mjs?v=1.0';
 import { getStudyDisplayName } from './study-labels.js?v=1.1';
 
 /**
@@ -7,6 +8,8 @@ import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 
 export class ExcelParser {
+  static preferLindleyTraditional(audit,study,module){return preferLindleyTraditional(audit,study,module);}
+
   static normalizeAuditId(value) {
     // Los IDs de auditoría son numéricos. Los proveedores pueden serializarlos
     // como texto, número de Excel o con separadores; se conserva un único valor
@@ -443,6 +446,7 @@ export class ExcelParser {
     if (!Array.isArray(audits)) return [];
     const map = new Map();
     audits.forEach(a => {
+      a = preferLindleyTraditional(a);
       if (!a || !a.id) return;
       const key = this.normalizeAuditId(a.id);
       if (!map.has(key)) {

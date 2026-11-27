@@ -7,10 +7,10 @@ const root = path.join(__dirname, '..');
 const context = vm.createContext({ console, SUPABASE_CONFIG: {}, getStudyDisplayName: value => value, document: { getElementById: () => null } });
 for (const [file, name] of [['excel-parser.js','ExcelParser'],['distributor.js','Distributor'],['supabase-backend.js','SupabaseBackend']]) {
   const source = fs.readFileSync(path.join(root,'js',file),'utf8').replace(/^import .*;\r?\n/gm,'').replace(`export class ${name}`,`class ${name}`);
-  vm.runInContext(source + `\nthis.${name}=${name};`, context);
+  vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+source + `\nthis.${name}=${name};`, context);
 }
 const appCode = fs.readFileSync(path.join(root,'js/app.js'),'utf8');
-vm.runInContext(appCode.slice(0,appCode.indexOf('// Inicializar la aplicación inmediatamente')).replace(/^import .*;\r?\n/gm,'')+'\nthis.App=ValidaFlowApp;',context);
+vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+appCode.slice(0,appCode.indexOf('// Inicializar la aplicación inmediatamente')).replace(/^import .*;\r?\n/gm,'')+'\nthis.App=ValidaFlowApp;',context);
 const { ExcelParser, Distributor, SupabaseBackend, App } = context;
 const audit = (id,pais) => ({id:String(id),pais,kpis:[{needsReview:true}],validationStatus:'pendiente'});
 const options = {restrictByCountry:true};

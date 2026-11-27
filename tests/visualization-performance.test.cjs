@@ -10,9 +10,9 @@ const ctx = vm.createContext({ console, document, Date, setTimeout, clearTimeout
   getNicaraguaDateKey: () => '2026-10-08', formatNicaraguaDate: value => value,
   getStudyDisplayName: value => value, ExcelParser: { normalizeAuditId: value => String(value), cleanDateOnly: value => String(value || '').slice(0, 10) } });
 const backendSource = fs.readFileSync(path.join(root, 'js/supabase-backend.js'), 'utf8').replace(/^import .*;\r?\n/gm, '').replace('export class', 'class');
-vm.runInContext(backendSource + '\nthis.Backend=SupabaseBackend;', ctx);
+vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+backendSource + '\nthis.Backend=SupabaseBackend;', ctx);
 const source = fs.readFileSync(path.join(root, 'js/app.js'), 'utf8');
-vm.runInContext(source.slice(0, source.indexOf('// Inicializar la aplicación inmediatamente')).replace(/^import .*;\r?\n/gm, '') + '\nthis.App=ValidaFlowApp;', ctx);
+vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+source.slice(0, source.indexOf('// Inicializar la aplicación inmediatamente')).replace(/^import .*;\r?\n/gm, '') + '\nthis.App=ValidaFlowApp;', ctx);
 function app() {
   const calls = [];
   const a = Object.assign(Object.create(ctx.App.prototype), {
@@ -284,7 +284,7 @@ test('mes y rango de fechas se combinan para jornadas y descargas; evolución co
   assert.ok(a.getMetricsScopeOptions().months.some(r => r.value === '2026-08'));
   await a.setMetricsScopeFilter('dates-clear', '');
   assert.equal(a.visualizationDateFrom, ''); assert.equal(a.visualizationDateTo, '');
-  assert.equal(a.selectedMetricsMonth, '2026-08');
+  assert.deepEqual(Array.from(a.selectedMetricsMonth), ['2026-08']);
   assert.ok(dailyRenders >= 5);
 });
 

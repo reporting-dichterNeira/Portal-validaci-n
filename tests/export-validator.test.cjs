@@ -14,7 +14,7 @@ function fixture(){
  const parser=fs.readFileSync(path.join(root,'js/excel-parser.js'),'utf8').replace(/^import .*;\r?\n/gm,'').replace('export class ExcelParser','class ExcelParser');
  const backend=fs.readFileSync(path.join(root,'js/supabase-backend.js'),'utf8');
  const mapper=backend.slice(backend.indexOf('function mapAudit('),backend.indexOf('function auditToRow('));
- vm.runInContext(`${mapper}\n${parser}\nthis.ExcelParser=ExcelParser;this.mapAudit=mapAudit;`,context);
+ vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+`${mapper}\n${parser}\nthis.ExcelParser=ExcelParser;this.mapAudit=mapAudit;`,context);
  const audit=context.mapAudit({id:10,external_id:'5719839',study:'Lindley',module:'blocking',assigned_validator_id:'historical-validator',
   validator_name:'Validador histórico Lindley',validator_code:'VAL-HIST-TEST',status:'completada',batch_operation_date:'2026-10-19',
   started_at:'2026-10-19T18:00:00Z',completed_at:'2026-10-20T18:03:00Z',validation_results:{Precio:{status:'no_aplica'}},

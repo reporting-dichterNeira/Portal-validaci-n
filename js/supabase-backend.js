@@ -1,3 +1,4 @@
+import {preferLindleyTraditional} from './lindley-models.mjs?v=1.0';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.3';
 import { SUPABASE_CONFIG } from './supabase-config.js?v=27.0';
 
@@ -54,7 +55,7 @@ function mapAudit(row) {
     ? (row.validators[0] || {})
     : (row.validators || {});
   const operationDate = row.original_operation_date || row.batch_operation_date || batch.operation_date || null;
-  return {
+  return preferLindleyTraditional({
     ...payload,
     databricksGeography: row.report_geography || payload.databricksGeography || null,
     pais: row.study === 'Lindley' ? 'Perú' : row.study === 'Chile' ? 'Chile' : (payload.pais || payload.country || ''),
@@ -85,12 +86,13 @@ function mapAudit(row) {
     _batchSourceFilename: row.original_source_filename || row.batch_source_filename || batch.source_filename || '',
     _validatorCode: row.validator_code || validator.code || '',
     _validatorName: row.validator_name || validator.name || ''
-  };
+  });
 }
 
 function auditToRow(audit, module, scope, batchId = null) {
-  const payload = { ...audit };
   const study = scope?.study?.name || audit.estudio || audit.modelo || audit.canal || 'Sin estudio';
+  audit=preferLindleyTraditional(audit,study,module);
+  const payload = { ...audit };
   if (study === 'Lindley') payload.pais = 'Perú';
   if (study === 'Chile') payload.pais = 'Chile';
   delete payload.validationResults;

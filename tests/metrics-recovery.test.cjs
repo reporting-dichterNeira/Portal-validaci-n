@@ -5,7 +5,7 @@ const source=fs.readFileSync(require.resolve('../js/supabase-backend.js'),'utf8'
 function backend(responses,{expires=Date.now()/1000+3600,session=true}={}) {
  const calls={rpc:0,refresh:0,delays:[]};
  const ctx=vm.createContext({SUPABASE_CONFIG:{},Date,setTimeout(fn,ms){calls.delays.push(ms);queueMicrotask(fn);}});
- vm.runInContext(source+'\nthis.Backend=SupabaseBackend;',ctx);
+ vm.runInContext(fs.readFileSync(require.resolve('../js/lindley-models.mjs'),'utf8').replace('export function','function')+'\n'+source+'\nthis.Backend=SupabaseBackend;',ctx);
  const a=Object.assign(Object.create(ctx.Backend.prototype),{configured:true,client:{auth:{
  async getSession(){return {data:{session:session?{expires_at:expires}:null}};},
  async refreshSession(){calls.refresh++;return {data:{session:{expires_at:Date.now()/1000+3600}}};}

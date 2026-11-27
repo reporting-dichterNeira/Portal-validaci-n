@@ -4,12 +4,12 @@
  */
 
 import { SAMPLE_CSV_DATA, BLOCKING_ALERTS_SAMPLE_CSV, DEFAULT_VALIDATORS, DEFAULT_TIPIFICACIONES, TIPIFICACIONES_POR_DECISION, seedSampleValidations } from './sample-data.js?v=22.1';
-import { ExcelParser } from './excel-parser.js?v=34.6';
+import { ExcelParser } from './excel-parser.js?v=34.6.1';
 import { getStudyDisplayName } from './study-labels.js?v=1.1';
 import { loadPowerPointEngine, buildExecutivePowerPoint } from './executive-ppt.js?v=1.1';
 import { Distributor } from './distributor.js?v=26.0';
 import { ValidatorUI } from './validator-ui.js?v=37.3';
-import { SupabaseBackend } from './supabase-backend.js?v=65.5';
+import { SupabaseBackend } from './supabase-backend.js?v=65.5.1';
 import { formatNicaraguaDate, formatNicaraguaDateTime, getNicaraguaDateKey } from './time-utils.js?v=1.0';
 import { buildBlockingKpiRows, filterBlockingKpiRows, summarizeBlockingKpiRows, blockingKpiRowsToCsv } from './blocking-kpi-analysis.js?v=1.1';
 
@@ -4497,6 +4497,7 @@ class ValidaFlowApp {
     // Etiquetar todas las auditorías del archivo con el estudio seleccionado y la fecha de jornada
     result.audits.forEach(audit => {
       audit.estudio = studyName;
+      if(audit.estudio==='Lindley' && this.currentModule!=='smart')Object.assign(audit,ExcelParser.preferLindleyTraditional(audit,audit.estudio,this.currentModule));
       audit.fechaAuditoriaOriginal ||= audit.fecha || '';
       audit.fecha = opDate;
       audit._studyId = this.currentScope?.study?.id || audit._studyId || null;
@@ -4639,6 +4640,7 @@ class ValidaFlowApp {
     const studyName = this.currentProject || 'Chile';
     result.audits.forEach(audit => {
       audit.estudio = studyName;
+      if(audit.estudio==='Lindley' && this.currentModule!=='smart')Object.assign(audit,ExcelParser.preferLindleyTraditional(audit,audit.estudio,this.currentModule));
       if (!audit.modelo) audit.modelo = studyName;
     });
 
@@ -4739,6 +4741,7 @@ class ValidaFlowApp {
     this.audits.forEach(audit => {
       if (this.getStudyForAudit(audit).toUpperCase() === prevStudy.toUpperCase()) {
         audit.estudio = targetStudy;
+      if(audit.estudio==='Lindley' && this.currentModule!=='smart')Object.assign(audit,ExcelParser.preferLindleyTraditional(audit,audit.estudio,this.currentModule));
         audit.canal = targetStudy;
         audit.modelo = targetStudy;
         if (targetStudy === 'Chile') audit.pais = 'Chile';
